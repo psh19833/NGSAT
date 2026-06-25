@@ -217,3 +217,11 @@ class TestTradingOrchestrator:
         orch = TradingOrchestrator(OverheatedMinuteBroker(), model)
         decision = await orch._refine_entry("005930")
         assert decision.should_enter is False
+
+    @pytest.mark.asyncio
+    async def test_refine_exit_fallback_when_unsupported(self, orchestrator):
+        """분봉 미지원 broker → 청산 정밀화 생략(시장가 폴백)."""
+        decision = await orchestrator._refine_exit("005930", -2.0)
+        assert decision.should_exit is False
+        assert decision.limit_price is None
+        assert "정밀화 생략" in decision.reason

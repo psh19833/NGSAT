@@ -40,6 +40,7 @@ from ml.inference import ExitPrediction, MLInference, MLPrediction
 from strategy.regime import RegimeResult, evaluate_regime
 from strategy.screener import ScreenCandidate, ScreenResult, screen_stocks
 from strategy.entry_timing import EntryDecision, EntryTiming, refine_entry
+from strategy.exit_timing import ExitDecision, ExitUrgency, refine_exit
 
 
 @dataclass
@@ -234,18 +235,23 @@ class TradingOrchestrator:
             if prices is None or len(prices) < 60:
                 continue
             
-            # Stop loss check
+            # 청산 정밀화: 분봉으로 매도 긴급도/가격 판단 (하이브리드 1단계)
+            exit_ref = await self._refine_exit(position.code, position.profit_loss_pct)
+            sell_price = None if exit_ref.urgency == ExitUrgency.IMMEDIATE else exit_ref.limit_price
+
+            # 1) 일봉 손절선 도달 → 손절 (분봉 급락이면 시장가 즉시)
             loss_pct = abs(min(position.profit_loss_pct, 0))
             if loss_pct >= position.stop_loss_pct:
                 exec_result = await self._executor.execute_sell(
                     code=position.code,
                     name=position.name,
                     quantity=position.quantity,
-                    price=None,
+                    price=sell_price,
                     action=DecisionAction.STOP_LOSS,
                     reason=(
                         f"손절: {position.name}({position.code}) "
-                        f"손실 {loss_pct:.1f}% >= 손절선 {position.stop_loss_pct:.1f}%"
+                        f"손실 {loss_pct:.1f}% >= 손절선 {position.stop_loss_pct:.1f}% "
+                        f"|| 청산정밀화: {exit_ref.reason}"
                     ),
                 )
                 if exec_result.success:
@@ -254,7 +260,23 @@ class TradingOrchestrator:
                     result.errors.append(f"손절 실패 {position.code}: {exec_result.error}")
                 continue
             
-            # ML exit prediction
+            # 2) 분봉 선제 청산 (일봉 ML보다 빠른 급락/과열익절 신호)
+            if exit_ref.should_exit:
+                exec_result = await self._executor.execute_sell(
+                    code=position.code,
+                    name=position.name,
+                    quantity=position.quantity,
+                    price=sell_price,
+                    action=DecisionAction.SELL,
+                    reason=f"분봉 청산: {exit_ref.reason}",
+                )
+                if exec_result.success:
+                    result.sells_executed += 1
+                else:
+                    result.errors.append(f"매도 실패 {position.code}: {exec_result.error}")
+                continue
+
+            # 3) 일봉 ML 청산 → 분봉 현재가 지정가로 매도가 정밀화
             exit_pred = self._inference.predict_exit(
                 position.code, position.name, prices, position.profit_loss_pct
             )
@@ -264,9 +286,9 @@ class TradingOrchestrator:
                     code=position.code,
                     name=position.name,
                     quantity=position.quantity,
-                    price=None,
+                    price=sell_price,
                     action=DecisionAction.SELL,
-                    reason=exit_pred.reason,
+                    reason=f"{exit_pred.reason} || 청산정밀화: {exit_ref.reason}",
                 )
                 if exec_result.success:
                     result.sells_executed += 1
@@ -312,6 +334,23 @@ class TradingOrchestrator:
                 reason="분봉 조회 실패 — 정밀화 생략(시장가 진입)", evidence={},
             )
         return refine_entry(minute_prices)
+
+    async def _refine_exit(self, code: str, profit_pct: float) -> ExitDecision:
+        """분봉으로 청산 긴급도/가격을 정밀화. 분봉 미가용 시 정밀화 생략(기존 로직 위임)."""
+        try:
+            minute_prices = await self._broker.get_minute_history(code)
+        except NotImplementedError:
+            return ExitDecision(
+                should_exit=False, urgency=ExitUrgency.NONE, limit_price=None,
+                reason="분봉 미지원 어댑터 — 청산 정밀화 생략", evidence={},
+            )
+        except Exception as e:
+            logger.warning(f"분봉 조회 실패({code}) — 청산 정밀화 생략: {type(e).__name__}")
+            return ExitDecision(
+                should_exit=False, urgency=ExitUrgency.NONE, limit_price=None,
+                reason="분봉 조회 실패 — 청산 정밀화 생략", evidence={},
+            )
+        return refine_exit(minute_prices, profit_pct)
     
     @staticmethod
     def _find_prices(
