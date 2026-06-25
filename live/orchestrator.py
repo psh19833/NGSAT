@@ -39,6 +39,7 @@ from live.risk import RiskManager, RiskCheckResult
 from ml.inference import ExitPrediction, MLInference, MLPrediction
 from strategy.regime import RegimeResult, evaluate_regime
 from strategy.screener import ScreenCandidate, ScreenResult, screen_stocks
+from strategy.entry_timing import EntryDecision, EntryTiming, refine_entry
 
 
 @dataclass
@@ -58,6 +59,7 @@ class CycleResult:
     regime: MarketRegime = MarketRegime.NEUTRAL
     candidates_found: int = 0
     buys_executed: int = 0
+    entries_deferred: int = 0
     sells_executed: int = 0
     errors: list[str] = field(default_factory=list)
     reason: str = ""
@@ -193,21 +195,28 @@ class TradingOrchestrator:
             pred = self._inference.predict_entry(candidate, prices)
             
             if pred and pred.action == DecisionAction.BUY:
-                # Calculate position size
+                # 진입 정밀화: 분봉으로 타이밍/가격 판단 (하이브리드 1단계)
+                entry = await self._refine_entry(pred.code)
+                if not entry.should_enter:
+                    result.entries_deferred += 1
+                    logger.info(f"진입 보류: {pred.name}({pred.code}) — {entry.reason}")
+                    continue
+
+                ref_price = entry.limit_price or prices[-1].close
                 budget = account.deposit * self._position_budget_pct
-                current_price = prices[-1].close
-                quantity = int(budget / current_price)
-                
+                quantity = int(budget / ref_price) if ref_price > 0 else 0
+
                 if quantity <= 0:
                     continue
-                
+
+                buy_reason = f"{pred.reason} || 진입정밀화: {entry.reason}"
                 exec_result = await self._executor.execute_buy(
                     code=pred.code,
                     name=pred.name,
                     quantity=quantity,
-                    price=None,  # Market order
+                    price=entry.limit_price,
                     action=pred.action,
-                    reason=pred.reason,
+                    reason=buy_reason,
                 )
                 
                 if exec_result.success:
@@ -269,7 +278,8 @@ class TradingOrchestrator:
             f"사이클 #{self._cycle_count} 완료: "
             f"레짐={regime_result.regime.value}({regime_result.score:.0f}점), "
             f"후보={result.candidates_found}개, "
-            f"매수={result.buys_executed}건, 매도={result.sells_executed}건"
+            f"매수={result.buys_executed}건(보류 {result.entries_deferred}건), "
+            f"매도={result.sells_executed}건"
         )
         
         if result.errors:
@@ -285,6 +295,23 @@ class TradingOrchestrator:
         except Exception as e:
             logger.error(f"포지션 조회 실패: {e}")
             return []
+
+    async def _refine_entry(self, code: str) -> EntryDecision:
+        """분봉으로 진입 타이밍/가격을 정밀화. 분봉 미가용 시 시장가 진입 폴백."""
+        try:
+            minute_prices = await self._broker.get_minute_history(code)
+        except NotImplementedError:
+            return EntryDecision(
+                timing=EntryTiming.ENTER_NOW, should_enter=True, limit_price=None,
+                reason="분봉 미지원 어댑터 — 정밀화 생략(시장가 진입)", evidence={},
+            )
+        except Exception as e:
+            logger.warning(f"분봉 조회 실패({code}) — 정밀화 생략: {type(e).__name__}")
+            return EntryDecision(
+                timing=EntryTiming.ENTER_NOW, should_enter=True, limit_price=None,
+                reason="분봉 조회 실패 — 정밀화 생략(시장가 진입)", evidence={},
+            )
+        return refine_entry(minute_prices)
     
     @staticmethod
     def _find_prices(

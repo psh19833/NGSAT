@@ -121,3 +121,25 @@ class BrokerAdapter(ABC):
             True if market is in trading hours.
         """
         ...
+
+    async def get_minute_history(
+        self,
+        code: str,
+        base_time: Optional[datetime] = None,
+        include_past: bool = True,
+    ) -> list[PriceData]:
+        """Fetch intraday minute-bar price data (optional capability).
+
+        Adapters that support intraday data (e.g. KIS) override this method.
+        The default implementation raises NotImplementedError so that callers
+        can fall back gracefully when an adapter does not support minute bars.
+
+        Args:
+            code: 6-digit stock code.
+            base_time: Reference time (only HH:MM:SS used); None = now.
+            include_past: Whether to include earlier bars of the same day.
+
+        Returns:
+            List of PriceData minute bars.
+        """
+        raise NotImplementedError("이 어댑터는 분봉 조회를 지원하지 않습니다")

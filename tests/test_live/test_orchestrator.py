@@ -55,6 +55,21 @@ class MockBroker(BrokerAdapter):
         pass
 
 
+class OverheatedMinuteBroker(MockBroker):
+    """분봉 과열 데이터를 반환하는 MockBroker — 진입 정밀화 보류 검증용."""
+
+    async def get_minute_history(self, code, base_time=None, include_past=True):
+        base = datetime(2026, 6, 25, 9, 0, 0)
+        closes = [70000.0]
+        for _ in range(24):
+            closes.append(closes[-1] * 1.003)  # 지속 상승 → RSI 과열
+        return [
+            PriceData(code=code, timestamp=base + timedelta(minutes=i),
+                      open=c, high=c * 1.001, low=c * 0.999, close=c, volume=1000)
+            for i, c in enumerate(closes)
+        ]
+
+
 def _train_quick_model():
     """Train a small model for testing."""
     universe = generate_synthetic_universe(n_stocks=5, n_days=120, seed=77)
@@ -187,3 +202,18 @@ class TestTradingOrchestrator:
         
         assert result.buys_executed == 0
         assert "리스크" in result.reason
+
+    @pytest.mark.asyncio
+    async def test_refine_entry_fallback_when_unsupported(self, orchestrator):
+        """분봉 미지원 broker → 진입 정밀화는 시장가 진입으로 폴백."""
+        decision = await orchestrator._refine_entry("005930")
+        assert decision.should_enter is True
+        assert decision.limit_price is None
+        assert "정밀화 생략" in decision.reason
+
+    @pytest.mark.asyncio
+    async def test_refine_entry_defers_on_overheated_minutes(self, model):
+        """분봉 과열 시 진입 보류(WAIT)."""
+        orch = TradingOrchestrator(OverheatedMinuteBroker(), model)
+        decision = await orch._refine_entry("005930")
+        assert decision.should_enter is False
