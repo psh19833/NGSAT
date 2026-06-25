@@ -248,6 +248,10 @@ async def run_live(config, args):
     tasks.append(asyncio.create_task(trading_loop()))
 
     # Dashboard API server
+    # Telegram command polling
+    if telegram_bot:
+        tasks.append(asyncio.create_task(telegram_bot.start_polling()))
+
     if dashboard_app:
         config_uvicorn = uvicorn.Config(
             dashboard_app,

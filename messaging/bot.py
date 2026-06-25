@@ -150,6 +150,65 @@ class TelegramBot:
             "/help — 도움말"
         )
     
+    async def start_polling(self) -> None:
+        """Start polling for Telegram commands (runs forever).
+
+        Uses get_updates long-polling to receive operator commands.
+        Runs as a background task — non-blocking for the trading loop.
+        """
+        if not self.is_configured:
+            logger.warning("텔레그램 미설정 — 폴링 시작 불가")
+            return
+
+        logger.info("텔레그램 명령어 폴링 시작")
+        if self._bot is None:
+            import importlib
+            telegram_lib = importlib.import_module("telegram")
+            self._bot = telegram_lib.Bot(token=self._bot_token)
+
+        offset: int = 0
+        while True:
+            try:
+                updates = await self._bot.get_updates(offset=offset, timeout=30)
+                for update in updates:
+                    offset = update.update_id + 1
+                    if not update.message or not update.message.text:
+                        continue
+                    text = update.message.text.strip()
+                    if not text.startswith("/"):
+                        continue
+
+                    # Parse command and args
+                    parts = text[1:].split(None, 1)
+                    cmd = parts[0].lower().split("@")[0]  # remove @botname
+                    arg = parts[1] if len(parts) > 1 else ""
+
+                    logger.info(f"텔레그램 명령어: /{cmd} {arg} (from {update.message.chat.id})")
+
+                    # Only respond to configured chat_id
+                    chat_id = str(update.message.chat.id)
+                    if chat_id != self._chat_id:
+                        await self._bot.send_message(
+                            chat_id=chat_id,
+                            text="권한이 없습니다. 관리자만 사용할 수 있습니다."
+                        )
+                        continue
+
+                    response = await self.process_command(cmd, arg)
+                    try:
+                        await self._bot.send_message(
+                            chat_id=self._chat_id,
+                            text=response,
+                            parse_mode=None,
+                        )
+                    except Exception as e:
+                        logger.error(f"응답 전송 실패: {e}")
+
+            except Exception as e:
+                logger.error(f"텔레그램 폴링 오류: {type(e).__name__}: {e}")
+                import asyncio
+                await asyncio.sleep(5)  # backoff on error
+
     async def process_command(self, command: str, args: str = "") -> str:
         """Process a command from the operator.
         
