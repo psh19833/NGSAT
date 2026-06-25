@@ -168,6 +168,67 @@ def parse_price_history(raw: dict[str, Any], code: str = "") -> list[PriceData]:
     return result
 
 
+def _parse_minute_timestamp(date_str: str, time_str: str) -> datetime:
+    """Combine KIS date (YYYYMMDD) + time (HHMMSS) into a datetime.
+
+    Falls back to date-only, then to now(), on malformed input.
+    """
+    date_str = (date_str or "").strip()
+    time_str = (time_str or "").strip()
+
+    if len(date_str) == 8:
+        if time_str:
+            t = time_str.zfill(6)
+            try:
+                return datetime.strptime(date_str + t, "%Y%m%d%H%M%S")
+            except ValueError:
+                pass
+        try:
+            return datetime.strptime(date_str, "%Y%m%d")
+        except ValueError:
+            pass
+    return datetime.now()
+
+
+def parse_minute_history(raw: dict[str, Any], code: str = "") -> list[PriceData]:
+    """Parse KIS intraday minute-chart response → list of PriceData.
+
+    KIS inquire-time-itemchartprice returns output2 as a list of minute bars,
+    each with stck_bsop_date / stck_cntg_hour and OHLCV fields.
+    Order is preserved as returned by KIS (typically most-recent first).
+    """
+    items = raw.get("output2") or raw.get("output") or []
+    if not isinstance(items, list):
+        items = [items] if items else []
+
+    result: list[PriceData] = []
+
+    for item in items:
+        if not isinstance(item, dict):
+            continue
+
+        date_str = str(item.get("stck_bsop_date") or item.get("date") or "")
+        time_str = str(item.get("stck_cntg_hour") or item.get("time") or "")
+        ts = _parse_minute_timestamp(date_str, time_str)
+
+        result.append(PriceData(
+            code=code,
+            timestamp=ts,
+            open=_float(item.get("stck_oprc") or item.get("open_price")),
+            high=_float(item.get("stck_hgpr") or item.get("high_price")),
+            low=_float(item.get("stck_lwpr") or item.get("low_price")),
+            close=_float(
+                item.get("stck_prpr")
+                or item.get("stck_clpr")
+                or item.get("close_price")
+            ),
+            volume=_int(item.get("cntg_vol") or item.get("acml_vol") or item.get("volume")),
+            change_pct=_float(item.get("prdy_ctrt") or item.get("change_pct")),
+        ))
+
+    return result
+
+
 def parse_stock_info(raw: dict[str, Any]) -> StockInfo:
     """Parse KIS stock-info response → StockInfo."""
     code = str(raw.get("pdno") or raw.get("stck_shrn_iscd") or raw.get("stock_code") or "")

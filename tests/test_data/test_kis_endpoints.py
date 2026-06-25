@@ -38,6 +38,14 @@ class TestEndpointCatalog:
         assert ep.category == KisCategory.QUOTATION
         assert ep.tr_id == "FHKST03010100"
 
+    def test_get_minute_chart_endpoint(self):
+        ep = get_endpoint("inquire_time_chart")
+        assert ep.category == KisCategory.QUOTATION
+        assert ep.tr_id == "FHKST03010200"
+        assert ep.method == "GET"
+        assert "inquire-time-itemchartprice" in ep.path
+        assert ep.is_order is False
+
     def test_order_endpoint_flagged(self):
         ep = get_endpoint("order_cash")
         assert ep.is_order is True

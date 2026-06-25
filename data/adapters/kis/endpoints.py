@@ -92,6 +92,15 @@ _DAILY_CHART = KisEndpoint(
     description="주식 일봉 차트 조회",
 )
 
+_MINUTE_CHART = KisEndpoint(
+    name="inquire_time_chart",
+    category=KisCategory.QUOTATION,
+    path="/uapi/domestic-stock/v1/quotations/inquire-time-itemchartprice",
+    method="GET",
+    tr_id="FHKST03010200",
+    description="주식 당일 분봉 차트 조회",
+)
+
 _ORDERBOOK = KisEndpoint(
     name="inquire_asking_price",
     category=KisCategory.QUOTATION,
@@ -140,7 +149,7 @@ _ENDPOINTS: dict[str, KisEndpoint] = {
     for ep in [
         _TOKEN_ISSUE,
         _BALANCE, _DAILY_FILLS, _ORDER_CASH,
-        _CURRENT_PRICE, _DAILY_CHART, _ORDERBOOK,
+        _CURRENT_PRICE, _DAILY_CHART, _MINUTE_CHART, _ORDERBOOK,
         _STOCK_BASIC,
         _MARKET_HOLIDAY, _MARKET_HOURS,
     ]

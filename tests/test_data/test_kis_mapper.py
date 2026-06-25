@@ -11,6 +11,7 @@ from data.adapters.kis.mapper import (
     parse_positions,
     parse_price,
     parse_price_history,
+    parse_minute_history,
     parse_stock_info,
 )
 
@@ -134,6 +135,44 @@ class TestParsePriceHistory:
 
     def test_empty_history(self):
         history = parse_price_history({}, code="005930")
+        assert len(history) == 0
+
+
+class TestParseMinuteHistory:
+    """Minute-bar history parsing from KIS intraday-chart response."""
+
+    def test_parse_multiple_minutes(self):
+        raw = {
+            "output2": [
+                {"stck_bsop_date": "20260625", "stck_cntg_hour": "090000", "stck_oprc": "70000", "stck_hgpr": "70200", "stck_lwpr": "69900", "stck_prpr": "70100", "cntg_vol": "1500"},
+                {"stck_bsop_date": "20260625", "stck_cntg_hour": "090100", "stck_oprc": "70100", "stck_hgpr": "70300", "stck_lwpr": "70000", "stck_prpr": "70250", "cntg_vol": "1200"},
+            ]
+        }
+        history = parse_minute_history(raw, code="005930")
+        assert len(history) == 2
+        assert history[0].code == "005930"
+        assert history[0].close == 70100
+        assert history[0].open == 70000
+        assert history[0].volume == 1500
+        assert history[0].timestamp.hour == 9
+        assert history[0].timestamp.minute == 0
+        assert history[1].timestamp.minute == 1
+
+    def test_missing_time_falls_back_to_date(self):
+        raw = {
+            "output2": [
+                {"stck_bsop_date": "20260625", "stck_oprc": "70000", "stck_hgpr": "70200", "stck_lwpr": "69900", "stck_prpr": "70100", "cntg_vol": "1000"},
+            ]
+        }
+        history = parse_minute_history(raw, code="005930")
+        assert len(history) == 1
+        assert history[0].timestamp.year == 2026
+        assert history[0].timestamp.month == 6
+        assert history[0].timestamp.day == 25
+        assert history[0].close == 70100
+
+    def test_empty_minute_history(self):
+        history = parse_minute_history({}, code="005930")
         assert len(history) == 0
 
 

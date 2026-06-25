@@ -25,6 +25,7 @@ from data.adapters.kis.mapper import (
     parse_positions,
     parse_price,
     parse_price_history,
+    parse_minute_history,
     parse_stock_info,
 )
 from data.adapters.kis.token_manager import KisTokenManager
@@ -190,6 +191,44 @@ class KisAdapter(BrokerAdapter):
 
         history = parse_price_history(resp.raw, code)
         logger.info(f"일봉 조회: {code} {len(history)}개")
+        return history
+
+    async def get_minute_history(
+        self,
+        code: str,
+        base_time: datetime | None = None,
+        include_past: bool = True,
+    ) -> list[PriceData]:
+        """Fetch intraday minute-bar price data for the current trading day.
+
+        Args:
+            code: 6-digit stock code.
+            base_time: Reference time (only HH:MM:SS is used); None = now.
+            include_past: Whether to include earlier bars of the same day.
+
+        Returns:
+            List of PriceData minute bars. KIS returns up to ~30 bars ending
+            at base_time; call again with an earlier base_time to page further
+            back within the same trading day.
+        """
+        hour_str = (base_time or datetime.now()).strftime("%H%M%S")
+        params = {
+            "FID_ETC_CLS_CODE": "",
+            "FID_COND_MRKT_DIV_CODE": "J",
+            "FID_INPUT_ISCD": code,
+            "FID_INPUT_HOUR_1": hour_str,
+            "FID_PW_DATA_INCU_YN": "Y" if include_past else "N",
+        }
+
+        resp = await self._http.get("inquire_time_chart", params=params)
+
+        if not resp.success:
+            raise BrokerError(
+                f"KIS minute-chart query failed for {code}: {resp.msg_cd} {resp.msg1}"
+            )
+
+        history = parse_minute_history(resp.raw, code)
+        logger.info(f"분봉 조회: {code} {len(history)}개")
         return history
 
     async def get_stock_list(self) -> list[StockInfo]:
