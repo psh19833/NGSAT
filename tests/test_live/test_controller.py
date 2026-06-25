@@ -75,3 +75,38 @@ class TestForceControls:
         controller.shutdown()
         assert controller.is_force_hold("005930") is False
         assert controller.is_force_hold("000660") is False
+
+
+class TestServerRestart:
+    """Server restart lifecycle tests."""
+
+    def test_restart_from_idle(self, controller):
+        msg = controller.restart()
+        assert controller.state == TradingState.IDLE
+        assert "재시작" in msg
+
+    def test_restart_from_running(self, controller):
+        controller.start()
+        msg = controller.restart()
+        assert controller.state == TradingState.IDLE
+        assert controller.is_running is False
+        assert "재시작" in msg
+
+    def test_restart_clears_force_holds(self, controller):
+        controller.force_hold("005930", "삼성전자")
+        controller.force_hold("000660", "SK하이닉스")
+        controller.restart()
+        assert controller.is_force_hold("005930") is False
+        assert controller.is_force_hold("000660") is False
+
+    def test_restart_from_halted(self, controller):
+        controller.halt_by_risk("일일 손실 한도")
+        msg = controller.restart()
+        assert controller.state == TradingState.IDLE
+        assert "재시작" in msg
+
+    def test_restart_from_shutdown(self, controller):
+        controller.shutdown()
+        msg = controller.restart()
+        assert controller.state == TradingState.IDLE
+        assert "재시작" in msg

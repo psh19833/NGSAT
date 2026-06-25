@@ -120,6 +120,14 @@ class TestDashboardAPI:
         data = resp.json()
         assert "종료" in data["message"]
 
+    def test_control_restart(self, client):
+        resp = client.post("/api/control/restart")
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["connected"] is True
+        assert "재시작" in data["message"]
+        assert data["state"] == "idle"
+
     def test_control_force_sell(self, client):
         resp = client.post("/api/control/forcesell", json={"code": "005930"})
         assert resp.status_code == 200

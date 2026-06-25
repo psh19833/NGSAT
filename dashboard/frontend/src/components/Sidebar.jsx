@@ -8,9 +8,10 @@ const TABS = [
   { id: 'control', label: '운영 제어', icon: '⊙' },
 ]
 
-export default function Sidebar({ activeTab, onTabChange, status }) {
+export default function Sidebar({ activeTab, onTabChange, onRestart, status }) {
   const state = status?.state || 'idle'
   const isRunning = status?.is_running || false
+  const serverConnected = status?.connected !== false
 
   return (
     <aside className="w-60 bg-ngsat-card border-r border-ngsat-border flex flex-col">
@@ -25,6 +26,28 @@ export default function Sidebar({ activeTab, onTabChange, status }) {
             <p className="text-xs text-ngsat-muted">Stock Auto Trader</p>
           </div>
         </div>
+      </div>
+
+      {/* Server Control */}
+      <div className="px-5 py-3 border-b border-ngsat-border">
+        <div className="flex items-center justify-between mb-2">
+          <div className="flex items-center gap-2">
+            <div className={`w-2 h-2 rounded-full ${serverConnected ? 'bg-ngsat-green' : 'bg-ngsat-red'}`} />
+            <span className="text-xs text-ngsat-muted">서버</span>
+          </div>
+          <span className={`text-xs font-medium ${serverConnected ? 'text-ngsat-green' : 'text-ngsat-red'}`}>
+            {serverConnected ? '연결됨' : '미연결'}
+          </span>
+        </div>
+        <button
+          onClick={onRestart}
+          disabled={!serverConnected}
+          className="w-full py-1.5 rounded text-xs font-medium transition-all
+            bg-ngsat-border/50 text-ngsat-muted hover:bg-ngsat-border hover:text-ngsat-text
+            disabled:opacity-30 disabled:cursor-not-allowed"
+        >
+          서버 재시작
+        </button>
       </div>
 
       {/* Navigation */}

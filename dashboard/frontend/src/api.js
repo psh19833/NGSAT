@@ -25,6 +25,7 @@ export const api = {
   start: () => fetchJSON('/control/start', { method: 'POST' }),
   stop: () => fetchJSON('/control/stop', { method: 'POST' }),
   shutdown: () => fetchJSON('/control/shutdown', { method: 'POST' }),
+  restart: () => fetchJSON('/control/restart', { method: 'POST' }),
   forceSell: (code) => fetchJSON('/control/forcesell', {
     method: 'POST',
     body: JSON.stringify({ code }),

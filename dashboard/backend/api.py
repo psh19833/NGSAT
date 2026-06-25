@@ -255,7 +255,17 @@ def create_app(orchestrator=None) -> FastAPI:
         
         msg = orch.controller.shutdown()
         return {"connected": True, "message": msg, "state": orch.controller.state.value}
-    
+
+    # ── Control: Restart ──
+    @app.post("/api/control/restart")
+    async def control_restart():
+        orch = _get_orchestrator()
+        if orch is None:
+            return _not_connected()
+        
+        msg = orch.controller.restart()
+        return {"connected": True, "message": msg, "state": orch.controller.state.value}
+
     # ── Control: Force Sell ──
     @app.post("/api/control/forcesell")
     async def control_force_sell(req: ForceSellRequest):

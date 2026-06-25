@@ -161,3 +161,18 @@ class TradingController:
         """
         self._state = TradingState.HALTED
         logger.warning(f"리스크 자동 중단: {reason}")
+
+    def restart(self) -> str:
+        """서버 재시작 — 모든 상태를 초기화하고 대기 상태로.
+
+        강제홀드 목록도 초기화. HALTED/SHUTDOWN 상태에서도 사용 가능.
+        
+        Returns:
+            Status message.
+        """
+        self._state = TradingState.IDLE
+        self._force_hold_codes.clear()
+        self._started_at = None
+        msg = "서버 재시작 완료"
+        logger.info(msg)
+        return msg

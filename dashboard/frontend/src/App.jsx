@@ -54,6 +54,11 @@ export default function App() {
     refreshAll()
   }
 
+  const handleRestart = async () => {
+    await api.restart()
+    refreshAll()
+  }
+
   const connected = status?.connected !== false
 
   return (
@@ -62,6 +67,7 @@ export default function App() {
       <Sidebar
         activeTab={activeTab}
         onTabChange={setActiveTab}
+        onRestart={handleRestart}
         status={status}
       />
 
