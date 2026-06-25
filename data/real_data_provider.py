@@ -138,7 +138,9 @@ class RealDataProvider:
             if resp.success:
                 prices = parse_index_history(resp.raw, code="KOSPI")
                 logger.info(f"KOSPI 지수 조회: {len(prices)}일")
-                return prices
+                if len(prices) >= 20:
+                    return prices
+                logger.warning(f"KOSPI 지수 부족 ({len(prices)}일) — 합성 지수로 보강")
             else:
                 logger.warning(f"KOSPI 지수 조회 실패: {resp.msg_cd} {resp.msg1}")
         except Exception as e:

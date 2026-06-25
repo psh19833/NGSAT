@@ -60,7 +60,7 @@ def parse_args():
 
 
 async def run_backtest(config):
-    """Run a backtest with synthetic data (for initial validation)."""
+    """Run a backtest — attempts real KIS data first, falls back to synthetic."""
     from backtest.data_loader import generate_synthetic_index, generate_synthetic_universe
     from backtest.engine import BacktestEngine
     from backtest.report import generate_report, print_report
@@ -68,10 +68,26 @@ async def run_backtest(config):
 
     logger.info("=== NGSAT 백테스트 모드 ===")
 
-    # Generate synthetic data
-    logger.info("합성 데이터 생성 중...")
-    universe = generate_synthetic_universe(n_stocks=20, n_days=250, seed=42)
-    index_prices = generate_synthetic_index(n_days=250, seed=100)
+    # ── Try KIS real data first ──
+    universe = []
+    index_prices = []
+    try:
+        from data.real_data_provider import RealDataProvider
+        logger.info("KIS 실데이터 로드 시도...")
+        provider = RealDataProvider()
+        universe, index_prices = await provider.load()
+        if universe:
+            logger.info(f"KIS 실데이터 로드 성공: {len(universe)}종목, 지수 {len(index_prices)}일")
+        else:
+            logger.warning("KIS 데이터 없음 — 합성 데이터로 대체")
+    except Exception as e:
+        logger.warning(f"KIS 데이터 로드 실패: {type(e).__name__}: {e} — 합성 데이터로 대체")
+
+    # ── Fallback to synthetic ──
+    if not universe:
+        logger.info("합성 데이터 생성 중...")
+        universe = generate_synthetic_universe(n_stocks=20, n_days=250, seed=42)
+        index_prices = generate_synthetic_index(n_days=250, seed=100)
 
     all_prices = [prices for _, prices in universe]
     codes = [info.code for info, _ in universe]
@@ -86,10 +102,27 @@ async def run_backtest(config):
     )
     logger.info(train_result.reason)
 
-    # Run backtest
+    # Run backtest with strategy config
     logger.info("백테스트 실행 중...")
-    engine = BacktestEngine(model, initial_capital=10_000_000)
-    result = engine.run(universe, index_prices, start_day=60)
+    from strategy.regime import init_regime_config
+    from strategy.screener import init_screener_config
+    from strategy.mode_selector import init_mode_selector_config
+    init_regime_config(config.strategy)
+    init_screener_config(config.strategy)
+    init_mode_selector_config(config.strategy)
+    engine = BacktestEngine(
+        model,
+        initial_capital=10_000_000,
+        buy_threshold=config.strategy.buy_threshold,
+        sell_threshold=config.strategy.sell_threshold,
+    )
+    # start_day: last ~1 month of the shortest stock's data
+    if universe:
+        min_stock_days = min(len(prices) for _, prices in universe)
+        start_day = max(20, min_stock_days - 22)  # ~1 month
+    else:
+        start_day = 60
+    result = engine.run(universe, index_prices, start_day=start_day)
 
     # Generate and print report
     report = generate_report(result)

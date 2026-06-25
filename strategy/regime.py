@@ -44,6 +44,19 @@ class RegimeResult:
 
 
 # ── Scoring weights ──
+# ── Strategy config injection ──
+from core.config import StrategyConfig as _StrategyConfig
+
+_strategy_config: _StrategyConfig | None = None
+
+def init_regime_config(cfg: _StrategyConfig) -> None:
+    global _strategy_config
+    _strategy_config = cfg
+
+def _get_regime_config() -> _StrategyConfig:
+    return _strategy_config or _StrategyConfig()
+
+# ── Scoring weights (configurable via StrategyConfig) ──
 _WEIGHT_MA_ALIGNMENT = 35.0    # MA 정렬 (가장 중요)
 _WEIGHT_RSI = 20.0             # RSI 모멘텀
 _WEIGHT_BOLLINGER = 20.0       # 볼린저밴드 위치
