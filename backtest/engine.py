@@ -1,0 +1,447 @@
+"""NGSAT backtest engine — simulates the full trading pipeline on historical data.
+
+CRITICAL: This module is in the backtest/ package.
+It MUST NOT import anything from live/.
+It uses only core/, data/, strategy/, ml/ shared modules.
+
+Runs the complete NGSAT 3-stage pipeline on historical data:
+  1. Regime evaluation (strategy/regime.py)
+  2. Stock screening (strategy/screener.py)
+  3. ML prediction (ml/inference.py)
+  4. Simulated order execution
+  5. Portfolio tracking
+
+Simulates trading day-by-day with:
+- Starting capital
+- Buy/sell execution at closing price
+- Position tracking with P/L
+- Risk management (stop loss, daily loss limit)
+- Full trade log with reasons
+
+Every simulated trade includes a decision reason — same principle as live.
+"""
+
+from __future__ import annotations
+
+from dataclasses import dataclass, field
+from datetime import datetime
+from typing import Any
+
+import numpy as np
+
+from core.config import RiskConfig
+from core.logger import logger
+from core.types import (
+    DecisionAction,
+    DecisionReason,
+    Market,
+    MarketRegime,
+    OrderSide,
+    Position,
+    PriceData,
+    StockInfo,
+)
+from ml.features.builder import build_features, build_training_dataset, FEATURE_NAMES
+from ml.inference import MLInference, MLPrediction
+from ml.training.trainer import PriceRiseModel, train_from_price_data
+from strategy.regime import evaluate_regime, RegimeResult
+from strategy.screener import ScreenCandidate, ScreenResult, screen_stocks
+
+
+@dataclass
+class BacktestPosition:
+    """Simulated position in backtest."""
+    code: str
+    name: str
+    market: Market
+    quantity: int
+    buy_price: float
+    buy_date: str
+    stop_loss_pct: float = 3.0
+    stop_loss_reason: str = "기본 손절선 -3%"
+    is_force_hold: bool = False
+
+
+@dataclass
+class BacktestTrade:
+    """Simulated trade record."""
+    code: str
+    name: str
+    side: str               # buy / sell
+    quantity: int
+    price: float
+    amount: float
+    date: str
+    action: str
+    reason: str
+    evidence: dict[str, Any] = field(default_factory=dict)
+
+
+@dataclass
+class BacktestResult:
+    """Complete backtest result.
+    
+    Attributes:
+        start_date: Backtest start date.
+        end_date: Backtest end date.
+        initial_capital: Starting capital.
+        final_capital: Ending capital.
+        total_return: Total return percentage.
+        total_trades: Number of trades executed.
+        buy_count: Number of buy trades.
+        sell_count: Number of sell trades.
+        winning_trades: Number of profitable sells.
+        losing_trades: Number of losing sells.
+        win_rate: Win rate percentage.
+        max_drawdown: Maximum drawdown percentage.
+        trades: List of all trade records.
+        daily_capital: Daily capital tracking.
+        reason: Human-readable summary (Korean).
+    """
+    start_date: str
+    end_date: str
+    initial_capital: float
+    final_capital: float
+    total_return: float
+    total_trades: int
+    buy_count: int
+    sell_count: int
+    winning_trades: int
+    losing_trades: int
+    win_rate: float
+    max_drawdown: float
+    trades: list[BacktestTrade] = field(default_factory=list)
+    daily_capital: list[float] = field(default_factory=list)
+    reason: str = ""
+
+
+class BacktestEngine:
+    """Backtest execution engine.
+    
+    Runs the NGSAT pipeline on historical data, simulating trades
+    day by day. Does NOT use live/ modules — complete isolation.
+    
+    Usage:
+        engine = BacktestEngine(model, initial_capital=10_000_000)
+        result = engine.run(universe, index_prices)
+    """
+    
+    def __init__(
+        self,
+        model: PriceRiseModel,
+        initial_capital: float = 10_000_000,
+        risk_config: RiskConfig | None = None,
+        buy_threshold: float = 0.65,
+        sell_threshold: float = 0.35,
+    ):
+        self._model = model
+        self._inference = MLInference(model, buy_threshold, sell_threshold)
+        self._initial_capital = initial_capital
+        self._cash = initial_capital
+        self._risk = risk_config or RiskConfig()
+        self._positions: dict[str, BacktestPosition] = {}
+        self._trades: list[BacktestTrade] = []
+        self._daily_capital: list[float] = []
+        self._daily_loss: float = 0.0
+        self._is_halted: bool = False
+        self._peak_capital: float = initial_capital
+    
+    def run(
+        self,
+        universe: list[tuple[StockInfo, list[PriceData]]],
+        index_prices: list[PriceData],
+        start_day: int = 60,
+    ) -> BacktestResult:
+        """Run backtest on historical data.
+        
+        Args:
+            universe: List of (StockInfo, price history) tuples.
+            index_prices: Index price history for regime evaluation.
+            start_day: First day to start trading (need history for indicators).
+        
+        Returns:
+            BacktestResult with full performance metrics.
+        """
+        if not universe or not index_prices:
+            return self._empty_result()
+        
+        # Determine the number of trading days
+        n_days = min(len(index_prices), max(len(p) for _, p in universe if p))
+        
+        logger.info(f"백테스트 시작: {n_days}일, 종목 {len(universe)}개, 자본 {self._initial_capital:,.0f}")
+        
+        for day_idx in range(start_day, n_days):
+            date_str = str(index_prices[day_idx].timestamp.date()) if day_idx < len(index_prices) else f"day_{day_idx}"
+            
+            # Check if halted
+            if self._is_halted:
+                self._daily_capital.append(self._total_capital(universe, day_idx))
+                continue
+            
+            # 1. Regime evaluation
+            regime_index = index_prices[:day_idx + 1]
+            regime_result = evaluate_regime(
+                [p.close for p in regime_index],
+                [p.volume for p in regime_index],
+            )
+            
+            # 2. Screen stocks
+            stocks_for_screening: list[tuple[StockInfo, list[PriceData]]] = []
+            for info, prices in universe:
+                if len(prices) > day_idx:
+                    stocks_for_screening.append((info, prices[:day_idx + 1]))
+            
+            screen_result = screen_stocks(stocks_for_screening, regime_result)
+            
+            # 3. ML predictions for top candidates
+            for candidate in screen_result.candidates:
+                if candidate.code in self._positions:
+                    continue  # Already holding
+                
+                # Find price data for this candidate
+                prices = None
+                for info, p in universe:
+                    if info.code == candidate.code and len(p) > day_idx:
+                        prices = p[:day_idx + 1]
+                        break
+                
+                if prices is None or len(prices) < 60:
+                    continue
+                
+                pred = self._inference.predict_entry(candidate, prices)
+                
+                if pred and pred.action == DecisionAction.BUY:
+                    self._execute_buy(pred, prices[-1], date_str)
+            
+            # 4. Check exits for existing positions
+            positions_to_check = list(self._positions.items())
+            for code, pos in positions_to_check:
+                if pos.is_force_hold:
+                    continue
+                
+                prices = None
+                for info, p in universe:
+                    if info.code == code and len(p) > day_idx:
+                        prices = p[:day_idx + 1]
+                        break
+                
+                if prices is None:
+                    continue
+                
+                current_price = prices[-1].close
+                profit_pct = (current_price - pos.buy_price) / pos.buy_price * 100
+                
+                # Stop loss check
+                loss_pct = abs(min(profit_pct, 0))
+                if loss_pct >= pos.stop_loss_pct:
+                    self._execute_sell(
+                        pos, current_price, date_str,
+                        DecisionAction.STOP_LOSS,
+                        f"손절: {pos.name}({pos.code}) 손실 {loss_pct:.1f}% >= 손절선 {pos.stop_loss_pct:.1f}%",
+                    )
+                    continue
+                
+                # ML exit prediction
+                exit_pred = self._inference.predict_exit(code, pos.name, prices, profit_pct)
+                if exit_pred and exit_pred.action == DecisionAction.SELL:
+                    self._execute_sell(pos, current_price, date_str, DecisionAction.SELL, exit_pred.reason)
+            
+            # 5. Daily loss check
+            current_capital = self._total_capital(universe, day_idx)
+            self._daily_capital.append(current_capital)
+            
+            if current_capital > self._peak_capital:
+                self._peak_capital = current_capital
+            
+            daily_loss_pct = ((current_capital - self._peak_capital) / self._peak_capital * 100) if self._peak_capital > 0 else 0
+            
+            if abs(daily_loss_pct) >= self._risk.daily_loss_limit_pct:
+                self._is_halted = True
+                logger.warning(f"백테스트 일일 손실 한도 도달: {daily_loss_pct:.1f}% → 매매 중단")
+        
+        # Close all remaining positions at last price
+        for code, pos in list(self._positions.items()):
+            last_price = 0.0
+            for info, prices in universe:
+                if info.code == code and prices:
+                    last_price = prices[-1].close
+                    break
+            
+            if last_price > 0:
+                self._execute_sell(pos, last_price, str(n_days), DecisionAction.SELL, "백테스트 종료 - 전량 매도")
+        
+        return self._build_result(start_day, n_days, index_prices)
+    
+    def _execute_buy(
+        self,
+        pred: MLPrediction,
+        current_price: PriceData,
+        date_str: str,
+    ) -> None:
+        """Execute a simulated buy."""
+        price = current_price.close
+        
+        # Position sizing: use 10% of cash per position
+        budget = self._cash * 0.10
+        quantity = int(budget / price)
+        
+        if quantity <= 0:
+            return
+        
+        amount = price * quantity
+        
+        if amount > self._cash:
+            return
+        
+        self._cash -= amount
+        
+        self._positions[pred.code] = BacktestPosition(
+            code=pred.code,
+            name=pred.name,
+            market=Market.KOSPI,  # Simplified for backtest
+            quantity=quantity,
+            buy_price=price,
+            buy_date=date_str,
+            stop_loss_pct=self._risk.default_stop_loss_pct,
+        )
+        
+        trade = BacktestTrade(
+            code=pred.code,
+            name=pred.name,
+            side="buy",
+            quantity=quantity,
+            price=price,
+            amount=amount,
+            date=date_str,
+            action=pred.action.value,
+            reason=pred.reason,
+            evidence=pred.evidence,
+        )
+        self._trades.append(trade)
+        
+        logger.debug(f"백테스트 매수: {pred.name}({pred.code}) {quantity}주 @ {price:,.0f}")
+    
+    def _execute_sell(
+        self,
+        pos: BacktestPosition,
+        price: float,
+        date_str: str,
+        action: DecisionAction,
+        reason: str,
+    ) -> None:
+        """Execute a simulated sell."""
+        amount = price * pos.quantity
+        self._cash += amount
+        
+        self._trades.append(BacktestTrade(
+            code=pos.code,
+            name=pos.name,
+            side="sell",
+            quantity=pos.quantity,
+            price=price,
+            amount=amount,
+            date=date_str,
+            action=action.value,
+            reason=reason,
+        ))
+        
+        del self._positions[pos.code]
+        
+        logger.debug(f"백테스트 매도: {pos.name}({pos.code}) {pos.quantity}주 @ {price:,.0f}")
+    
+    def _total_capital(self, universe: list[tuple[StockInfo, list[PriceData]]], day_idx: int) -> float:
+        """Calculate total capital (cash + position values)."""
+        total = self._cash
+        
+        price_map: dict[str, float] = {}
+        for info, prices in universe:
+            if len(prices) > day_idx:
+                price_map[info.code] = prices[day_idx].close
+        
+        for code, pos in self._positions.items():
+            if code in price_map:
+                total += price_map[code] * pos.quantity
+        
+        return total
+    
+    def _build_result(self, start_day: int, n_days: int, index_prices: list[PriceData]) -> BacktestResult:
+        """Build the final backtest result."""
+        final_capital = self._cash
+        
+        buy_count = sum(1 for t in self._trades if t.side == "buy")
+        sell_count = sum(1 for t in self._trades if t.side == "sell")
+        
+        # Calculate win/loss from sell trades
+        winning = 0
+        losing = 0
+        for t in self._trades:
+            if t.side == "sell":
+                # Find corresponding buy
+                buy_trade = next((b for b in self._trades if b.code == t.code and b.side == "buy"), None)
+                if buy_trade and t.price > buy_trade.price:
+                    winning += 1
+                elif buy_trade:
+                    losing += 1
+        
+        win_rate = (winning / (winning + losing) * 100) if (winning + losing) > 0 else 0.0
+        
+        total_return = ((final_capital - self._initial_capital) / self._initial_capital * 100) if self._initial_capital > 0 else 0.0
+        
+        # Max drawdown
+        max_dd = 0.0
+        if self._daily_capital:
+            peak = self._daily_capital[0]
+            for cap in self._daily_capital:
+                if cap > peak:
+                    peak = cap
+                dd = (cap - peak) / peak * 100 if peak > 0 else 0
+                if dd < max_dd:
+                    max_dd = dd
+        
+        start_date = str(index_prices[start_day].timestamp.date()) if start_day < len(index_prices) else ""
+        end_date = str(index_prices[-1].timestamp.date()) if index_prices else ""
+        
+        reason = (
+            f"백테스트 완료: {start_date} ~ {end_date}, "
+            f"초기 자본 {self._initial_capital:,.0f} → 최종 {final_capital:,.0f}, "
+            f"수익률 {total_return:+.1f}%, "
+            f"거래 {len(self._trades)}회 (매수 {buy_count}/매도 {sell_count}), "
+            f"승률 {win_rate:.1f}%, 최대 낙폭 {max_dd:.1f}%"
+        )
+        
+        logger.info(reason)
+        
+        return BacktestResult(
+            start_date=start_date,
+            end_date=end_date,
+            initial_capital=self._initial_capital,
+            final_capital=final_capital,
+            total_return=total_return,
+            total_trades=len(self._trades),
+            buy_count=buy_count,
+            sell_count=sell_count,
+            winning_trades=winning,
+            losing_trades=losing,
+            win_rate=win_rate,
+            max_drawdown=max_dd,
+            trades=self._trades,
+            daily_capital=self._daily_capital,
+            reason=reason,
+        )
+    
+    def _empty_result(self) -> BacktestResult:
+        return BacktestResult(
+            start_date="",
+            end_date="",
+            initial_capital=self._initial_capital,
+            final_capital=self._initial_capital,
+            total_return=0.0,
+            total_trades=0,
+            buy_count=0,
+            sell_count=0,
+            winning_trades=0,
+            losing_trades=0,
+            win_rate=0.0,
+            max_drawdown=0.0,
+            reason="백테스트 데이터 없음",
+        )
