@@ -117,6 +117,8 @@ class StrategyConfig:
     screener_bear_max_candidates: int = 5
 
     # ── ML 학습 ──
+    ml_model_type: str = "random_forest"  # logistic/random_forest/gradient_boosting/xgboost/lightgbm
+    ml_auto_retrain: bool = False          # True: 매일 장 마감 후 자동 재학습
     ml_swing_forward_days: int = 3        # 스윙: N일 뒤 +2% 예측
     ml_short_forward_minutes: int = 60    # 단타: N분 뒤 +0.5% 예측
 
@@ -223,6 +225,8 @@ def load_config(env_file: str | None = None) -> Config:
     s.screener_bear_max_candidates = int(os.getenv("NGSAT_SCREENER_BEAR_MAX_CANDIDATES", "5"))
     s.mode_high_volatility_atr_pct = float(os.getenv("NGSAT_MODE_HIGH_VOL_ATR_PCT", "1.5"))
     s.mode_low_volatility_atr_pct = float(os.getenv("NGSAT_MODE_LOW_VOL_ATR_PCT", "0.5"))
+    s.ml_model_type = os.getenv("NGSAT_ML_MODEL_TYPE", "random_forest")
+    s.ml_auto_retrain = os.getenv("NGSAT_ML_AUTO_RETRAIN", "false").lower() == "true"
     s.ml_swing_forward_days = int(os.getenv("NGSAT_ML_SWING_FORWARD_DAYS", "3"))
     s.ml_short_forward_minutes = int(os.getenv("NGSAT_ML_SHORT_FORWARD_MINUTES", "60"))
     s.mode_swing_stop_loss_pct = float(os.getenv("NGSAT_MODE_SWING_STOP_LOSS", "3.0"))

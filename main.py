@@ -96,7 +96,7 @@ async def run_backtest(config):
     logger.info("ML 모델 학습 중...")
     model, train_result = train_from_price_data(
         all_prices, codes,
-        model_type="random_forest",
+        model_type=config.strategy.ml_model_type,
         forward_days=config.strategy.ml_swing_forward_days,
         forward_threshold=0.02,
     )
@@ -310,7 +310,7 @@ async def train_model(config):
 
     model, result = train_from_price_data(
         all_prices, codes,
-        model_type="random_forest",
+        model_type=config.strategy.ml_model_type,
         forward_days=config.strategy.ml_swing_forward_days,
         forward_threshold=0.02,
     )

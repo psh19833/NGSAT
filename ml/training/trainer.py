@@ -22,6 +22,14 @@ from typing import Any
 import numpy as np
 from sklearn.ensemble import RandomForestClassifier
 from sklearn.ensemble import HistGradientBoostingClassifier
+try:
+    from xgboost import XGBClassifier
+except ImportError:
+    XGBClassifier = None
+try:
+    from lightgbm import LGBMClassifier
+except ImportError:
+    LGBMClassifier = None
 from sklearn.linear_model import LogisticRegression
 from sklearn.metrics import (
     accuracy_score,
@@ -156,6 +164,25 @@ class PriceRiseModel:
                 learning_rate=0.1,
                 l2_regularization=1.0,
                 random_state=42,
+                class_weight="balanced",
+            )
+        elif self.model_type == "xgboost" and XGBClassifier is not None:
+            self._model = XGBClassifier(
+                n_estimators=100,
+                max_depth=6,
+                learning_rate=0.1,
+                random_state=42,
+                verbosity=0,
+                n_jobs=-1,
+            )
+        elif self.model_type == "lightgbm" and LGBMClassifier is not None:
+            self._model = LGBMClassifier(
+                n_estimators=100,
+                max_depth=6,
+                learning_rate=0.1,
+                random_state=42,
+                verbose=-1,
+                n_jobs=-1,
                 class_weight="balanced",
             )
         else:
@@ -343,6 +370,125 @@ class PriceRiseModel:
         
         logger.info(f"ML 모델 로드: {load_path}")
         return instance
+
+    def auto_tune(self, X, y, n_trials=50, timeout=300):
+        """Optuna 하이퍼파라미터 자동 튜닝.
+
+        Args:
+            X: Feature matrix.
+            y: Labels.
+            n_trials: Number of Optuna trials.
+            timeout: Max tuning time in seconds.
+
+        Returns:
+            dict with best_params and best_score.
+        """
+        import optuna
+        from sklearn.model_selection import cross_val_score, TimeSeriesSplit
+
+        def objective(trial):
+            if self.model_type == "random_forest":
+                params = {
+                    "n_estimators": trial.suggest_int("n_estimators", 50, 300, step=50),
+                    "max_depth": trial.suggest_int("max_depth", 3, 15),
+                    "class_weight": "balanced",
+                    "random_state": 42,
+                    "n_jobs": -1,
+                }
+                model = RandomForestClassifier(**params)
+            elif self.model_type == "xgboost" and XGBClassifier is not None:
+                params = {
+                    "n_estimators": trial.suggest_int("n_estimators", 50, 300, step=50),
+                    "max_depth": trial.suggest_int("max_depth", 3, 12),
+                    "learning_rate": trial.suggest_float("learning_rate", 0.01, 0.3, log=True),
+                    "random_state": 42,
+                    "verbosity": 0,
+                    "n_jobs": -1,
+                }
+                model = XGBClassifier(**params)
+            elif self.model_type == "lightgbm" and LGBMClassifier is not None:
+                params = {
+                    "n_estimators": trial.suggest_int("n_estimators", 50, 300, step=50),
+                    "max_depth": trial.suggest_int("max_depth", 3, 12),
+                    "learning_rate": trial.suggest_float("learning_rate", 0.01, 0.3, log=True),
+                    "random_state": 42,
+                    "verbose": -1,
+                    "n_jobs": -1,
+                    "class_weight": "balanced",
+                }
+                model = LGBMClassifier(**params)
+            elif self.model_type == "gradient_boosting":
+                params = {
+                    "max_iter": trial.suggest_int("max_iter", 100, 500, step=50),
+                    "max_depth": trial.suggest_int("max_depth", 3, 12),
+                    "learning_rate": trial.suggest_float("learning_rate", 0.01, 0.3, log=True),
+                    "random_state": 42,
+                    "class_weight": "balanced",
+                }
+                model = HistGradientBoostingClassifier(**params)
+            else:
+                return 0.0
+
+            cv = TimeSeriesSplit(n_splits=3)
+            scores = cross_val_score(model, X, y, cv=cv, scoring="roc_auc", n_jobs=-1)
+            return float(scores.mean())
+
+        study = optuna.create_study(direction="maximize")
+        study.optimize(objective, n_trials=n_trials, timeout=timeout)
+
+        # Train with best params
+        self._model = study.best_params
+        self._is_trained = True
+
+        logger.info(
+            f"Optuna 튜닝 완료: {self.model_type}, "
+            f"best AUC={study.best_value:.4f}, "
+            f"trials={len(study.trials)}, "
+            f"params={study.best_params}"
+        )
+        return {"best_params": study.best_params, "best_auc": study.best_value}
+
+    def auto_retrain(self, all_prices, codes):
+        """FreqAI-style 자동 재학습: 새 데이터로 학습 후 기존보다 좋으면 교체.
+
+        Returns:
+            (was_replaced: bool, new_result: TrainingResult)
+        """
+        from ml.features.builder import build_training_dataset
+
+        # Build dataset and train new model
+        X, y, _ = build_training_dataset(
+            all_prices, codes,
+            self.forward_days, self.forward_threshold,
+        )
+        if len(X) < 50:
+            logger.warning(f"재학습 데이터 부족: {len(X)}개")
+            return False, TrainingResult(success=False, reason=f"데이터 부족 ({len(X)}개)")
+
+        new_model = PriceRiseModel(self.model_type, self.forward_days, self.forward_threshold)
+        new_result = new_model.train(X, y)
+
+        if not new_result.success:
+            return False, new_result
+
+        # Compare: only replace if new model is better
+        if self._is_trained and new_result.auc <= getattr(self, '_last_auc', 0):
+            logger.info(
+                f"재학습 모델 성능 낮음 (기존 AUC={getattr(self, '_last_auc', 0):.3f} > "
+                f"신규 AUC={new_result.auc:.3f}) — 기존 모델 유지"
+            )
+            return False, new_result
+
+        # Replace
+        self._model = new_model._model
+        self._scaler = new_model._scaler
+        self._is_trained = True
+        self._last_auc = new_result.auc
+
+        logger.info(
+            f"모델 자동 교체: {self.model_type}, AUC={new_result.auc:.3f}"
+        )
+        return True, new_result
 
 
 def train_from_price_data(

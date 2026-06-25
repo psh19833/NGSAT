@@ -95,8 +95,19 @@ const SECTIONS = [
   {
     id: 'ml_training',
     title: '⑧ ML 학습 기간',
-    desc: 'AI가 "며칠 뒤 오를지" 예측할 때 기준이 되는 기간입니다. 스윙은 며칠 뒤, 단타는 몇 분 뒤를 봅니다.',
+    desc: 'AI 모델 종류와 예측 기간을 설정합니다.',
     fields: [
+      { key: 'ml_model_type', label: 'AI 모델 종류', type: 'select',
+        options: [
+          { value: 'random_forest', label: 'Random Forest (기본)' },
+          { value: 'gradient_boosting', label: 'Gradient Boosting' },
+          { value: 'xgboost', label: 'XGBoost (높은 정확도)' },
+          { value: 'lightgbm', label: 'LightGBM (빠른 학습)' },
+          { value: 'logistic', label: 'Logistic (가벼운 모델)' },
+        ],
+        hint: 'AI 모델을 선택합니다. XGBoost·LightGBM이 일반적으로 더 높은 성능을 냅니다. 변경 후 모델 재학습이 필요합니다.' },
+      { key: 'ml_auto_retrain', label: '자동 재학습', type: 'toggle',
+        hint: '켜면 매일 장 마감 후 새로운 데이터로 AI가 스스로 재학습합니다. 더 나은 성능이 나오면 자동으로 교체됩니다.' },
       { key: 'ml_swing_forward_days', label: '스윙 예측 기간', unit: '일', min: 1, max: 10, step: 1,
         hint: '스윙 모드: N일 뒤 +2% 상승을 예측합니다. 3일이면 "3일 뒤 오를까?"를 학습합니다.' },
       { key: 'ml_short_forward_minutes', label: '단타 예측 기간', unit: '분', min: 10, max: 240, step: 10,
@@ -176,6 +187,50 @@ const PRESETS = {
 // ── Components ──
 function FieldRow({ field, value, onChange }) {
   const displayValue = field.fmt ? field.fmt(value) : `${value}${field.unit || ''}`
+
+  // Select dropdown
+  if (field.type === 'select') {
+    return (
+      <div className="mb-4">
+        <label className="text-sm font-medium text-ngsat-text block mb-1">{field.label}</label>
+        <select
+          value={value || field.options?.[0]?.value}
+          onChange={e => onChange(field.key, e.target.value)}
+          className="w-full px-3 py-2 text-sm bg-ngsat-bg border border-ngsat-border rounded
+            text-ngsat-text focus:outline-none focus:border-ngsat-accent/50"
+        >
+          {field.options?.map(opt => (
+            <option key={opt.value} value={opt.value}>{opt.label}</option>
+          ))}
+        </select>
+        {field.hint && <p className="text-xs text-ngsat-muted mt-1">{field.hint}</p>}
+      </div>
+    )
+  }
+
+  // Toggle switch
+  if (field.type === 'toggle') {
+    return (
+      <div className="mb-4">
+        <div className="flex items-center justify-between">
+          <label className="text-sm font-medium text-ngsat-text">{field.label}</label>
+          <button
+            onClick={() => onChange(field.key, !value)}
+            className={`relative w-10 h-5 rounded-full transition-colors ${
+              value ? 'bg-ngsat-green' : 'bg-ngsat-border'
+            }`}
+          >
+            <div className={`absolute top-0.5 w-4 h-4 rounded-full bg-white transition-transform ${
+              value ? 'translate-x-5' : 'translate-x-0.5'
+            }`} />
+          </button>
+        </div>
+        {field.hint && <p className="text-xs text-ngsat-muted mt-1">{field.hint}</p>}
+      </div>
+    )
+  }
+
+  // Default: range slider + number input
 
   return (
     <div className="mb-4">
@@ -264,7 +319,7 @@ export default function StrategyConfigPanel({ api }) {
 
   const handleChange = (key, value) => {
     setConfig(prev => prev ? { ...prev, [key]: value } : prev)
-    setActivePreset('') // custom changed
+    setActivePreset('')
   }
 
   const handlePreset = (values) => {
