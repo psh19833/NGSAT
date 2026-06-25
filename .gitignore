@@ -1,0 +1,48 @@
+# Dependencies
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.venv/
+venv/
+env/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Environment
+.env
+.env.*
+!.env.example
+
+# Database
+*.db
+*.sqlite
+*.sqlite3
+
+# Logs
+*.log
+logs/
+
+# Build
+dist/
+build/
+*.egg-info/
+
+# Node (frontend)
+node_modules/
+npm-debug.log*
+
+# ML models
+*.pkl
+*.h5
+*.pt
+*.onnx
+models/trained/
