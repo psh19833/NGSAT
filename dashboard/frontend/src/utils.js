@@ -28,6 +28,15 @@ export function regimeColor(regime) {
   return 'text-ngsat-yellow'
 }
 
+export function formatDateTime(isoStr) {
+  if (!isoStr) return '—'
+  return new Date(isoStr).toLocaleString('ko-KR', {
+    year: 'numeric', month: '2-digit', day: '2-digit',
+    hour: '2-digit', minute: '2-digit', second: '2-digit',
+    hour12: false,
+  })
+}
+
 export function regimeLabel(regime) {
   if (regime === 'bull') return '강세장'
   if (regime === 'bear') return '약세장'

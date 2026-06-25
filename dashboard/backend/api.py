@@ -18,6 +18,7 @@ Endpoints:
 """
 
 from __future__ import annotations
+from datetime import datetime
 
 from dataclasses import asdict
 from typing import Any
@@ -124,6 +125,7 @@ def create_app(orchestrator=None) -> FastAPI:
             "current_mode": orch._current_mode,
             "mode_stop_loss_pct": risk.effective_stop_loss_pct,
             "mode_daily_loss_limit": risk.effective_daily_loss_limit,
+            "server_time": datetime.now().isoformat(),
         }
     
     # ── Account ──

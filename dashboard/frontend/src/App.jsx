@@ -3,7 +3,7 @@ import { api } from './api.js'
 import {
   formatNumber, formatPercent, formatWon,
   pnlColor, regimeColor, regimeLabel,
-  stateColor, stateLabel,
+  stateColor, stateLabel, formatDateTime,
 } from './utils.js'
 import Sidebar from './components/Sidebar.jsx'
 import StatusCard from './components/StatusCard.jsx'
@@ -90,6 +90,11 @@ export default function App() {
             <span className="text-sm text-ngsat-muted">
               {connected ? '연결됨' : '미연결'}
             </span>
+            {status?.server_time && (
+              <span className="text-sm text-ngsat-muted font-mono tabular-nums">
+                {formatDateTime(status.server_time)}
+              </span>
+            )}
             <button
               onClick={refreshAll}
               className="px-3 py-1.5 text-sm text-ngsat-muted hover:text-ngsat-text border border-ngsat-border rounded-lg hover:border-ngsat-accent/30 transition-all"
