@@ -41,10 +41,21 @@ class ModeDecision:
     evidence: dict[str, float] = field(default_factory=dict)
 
 
-# ── 변동성 임계 (ATR% 기준) ──
-# 종목 ATR%가 이 값 이상이면 '고변동성'으로 간주
-HIGH_VOLATILITY_ATR_PCT = 1.5   # 1.5% 이상 분봉 변동
-LOW_VOLATILITY_ATR_PCT = 0.5    # 0.5% 미만 = 저변동성
+# ── Strategy config injection ──
+from core.config import StrategyConfig as _StrategyConfig
+
+_strategy_config: _StrategyConfig | None = None
+
+def init_mode_selector_config(cfg: _StrategyConfig) -> None:
+    global _strategy_config
+    _strategy_config = cfg
+
+def _get_mode_config() -> _StrategyConfig:
+    return _strategy_config or _StrategyConfig()
+
+# Compatibility aliases (for tests that import these directly)
+HIGH_VOLATILITY_ATR_PCT = _get_mode_config().mode_high_volatility_atr_pct
+LOW_VOLATILITY_ATR_PCT = _get_mode_config().mode_low_volatility_atr_pct
 STRONG_TREND_SCORE = 60.0        # 레짐 점수 ≥ 60 → 강한 추세 (스윙 유리)
 
 
@@ -70,14 +81,14 @@ def select_mode(
         "regime_score": regime_score,
         "regime": {"bull": 0, "neutral": 1, "bear": 2}.get(regime.regime.value, 1),
         "atr_pct": vol,
-        "high_volatility": 1.0 if vol >= HIGH_VOLATILITY_ATR_PCT else 0.0,
-        "low_volatility": 1.0 if vol <= LOW_VOLATILITY_ATR_PCT else 0.0,
+        "high_volatility": 1.0 if vol >= _get_mode_config().mode_high_volatility_atr_pct else 0.0,
+        "low_volatility": 1.0 if vol <= _get_mode_config().mode_low_volatility_atr_pct else 0.0,
         "strong_trend": 1.0 if regime_score >= STRONG_TREND_SCORE else 0.0,
     }
 
     if regime.regime == MarketRegime.BULL:
         # 강세장 → 스윙 (추세를 따라간다)
-        if vol >= HIGH_VOLATILITY_ATR_PCT:
+        if vol >= _get_mode_config().mode_high_volatility_atr_pct:
             # 고변동성 강세 = 일부 단타도 가능하지만 기본은 스윙
             return ModeDecision(
                 mode=StrategyMode.SWING,
@@ -113,7 +124,7 @@ def select_mode(
 
     else:  # NEUTRAL
         # 중립장 → 변동성에 따라 단타/스윙 결정
-        if vol >= HIGH_VOLATILITY_ATR_PCT:
+        if vol >= _get_mode_config().mode_high_volatility_atr_pct:
             return ModeDecision(
                 mode=StrategyMode.SHORT_TERM,
                 confidence=0.8,
@@ -123,7 +134,7 @@ def select_mode(
                 ),
                 evidence=evidence,
             )
-        elif vol <= LOW_VOLATILITY_ATR_PCT:
+        elif vol <= _get_mode_config().mode_low_volatility_atr_pct:
             # 저변동성 중립 = 방향성도 없고 움직임도 없음 → 관망
             return ModeDecision(
                 mode=StrategyMode.HOLD,

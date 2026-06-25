@@ -41,30 +41,36 @@ class RiskManager:
     4. No reason = no extension
     """
 
-    # 모드별 리스크 기본값
-    # SWING (기본): 기존 설정 유지
-    # SHORT_TERM: 더 보수적
-    _MODE_STOP_LOSS: dict[str, float] = {
-        "swing": 3.0,        # -3%
-        "short_term": 1.5,   # -1.5% (단타는 더 타이트)
-        "hold": 3.0,         # -3% (청산만)
-    }
-    _MODE_DAILY_LOSS: dict[str, float] = {
-        "swing": 5.0,        # -5%
-        "short_term": 3.0,   # -3% (단타는 일일 손실 제한 더 엄격)
-        "hold": 5.0,         # -5%
-    }
-    _MODE_POSITION_SIZE: dict[str, float] = {
-        "swing": 0.10,       # 현금의 10% (기존)
-        "short_term": 0.05,  # 현금의 5% (단타는 더 작게)
-        "hold": 0.0,         # 0% (신규 진입 금지)
-    }
-
-    def __init__(self, config: RiskConfig):
+    def __init__(self, config: RiskConfig, strategy_config=None):
         self._config = config
         self._halted = False
         self._halt_reason: Optional[str] = None
         self._mode: str = "swing"  # 기본 스윙 모드
+        if strategy_config is None:
+            from core.config import StrategyConfig
+            strategy_config = StrategyConfig()
+        self._strategy = strategy_config
+
+    def _mode_stop_loss_map(self) -> dict[str, float]:
+        return {
+            "swing": self._strategy.mode_swing_stop_loss_pct,
+            "short_term": self._strategy.mode_short_stop_loss_pct,
+            "hold": self._strategy.mode_hold_stop_loss_pct,
+        }
+
+    def _mode_daily_loss_map(self) -> dict[str, float]:
+        return {
+            "swing": self._strategy.mode_swing_daily_loss_pct,
+            "short_term": self._strategy.mode_short_daily_loss_pct,
+            "hold": self._strategy.mode_hold_daily_loss_pct,
+        }
+
+    def _mode_position_size_map(self) -> dict[str, float]:
+        return {
+            "swing": self._strategy.mode_swing_position_size,
+            "short_term": self._strategy.mode_short_position_size,
+            "hold": self._strategy.mode_hold_position_size,
+        }
 
     @property
     def mode(self) -> str:
@@ -77,31 +83,31 @@ class RiskManager:
         Args:
             mode: "swing", "short_term", "hold"
         """
-        if mode not in self._MODE_STOP_LOSS:
+        if mode not in self._mode_stop_loss_map():
             logger.warning(f"알 수 없는 모드: {mode}, 기본(swing) 유지")
             return
         self._mode = mode
         logger.info(
             f"리스크 모드 변경: {mode} "
-            f"(손절 {self._MODE_STOP_LOSS[mode]:.1f}%, "
-            f"일일한도 {self._MODE_DAILY_LOSS[mode]:.1f}%, "
-            f"포지션크기 {self._MODE_POSITION_SIZE[mode]:.0%})"
+            f"(손절 {self._mode_stop_loss_map()[mode]:.1f}%, "
+            f"일일한도 {self._mode_daily_loss_map()[mode]:.1f}%, "
+            f"포지션크기 {self._mode_position_size_map()[mode]:.0%})"
         )
 
     @property
     def position_size_pct(self) -> float:
         """현재 모드의 포지션 크기 비율."""
-        return self._MODE_POSITION_SIZE.get(self._mode, 0.10)
+        return self._mode_position_size_map().get(self._mode, 0.10)
 
     @property
     def effective_stop_loss_pct(self) -> float:
         """현재 모드의 기본 손절선."""
-        return self._MODE_STOP_LOSS.get(self._mode, self._config.default_stop_loss_pct)
+        return self._mode_stop_loss_map().get(self._mode, self._config.default_stop_loss_pct)
 
     @property
     def effective_daily_loss_limit(self) -> float:
         """현재 모드의 일일 손실 한도."""
-        return self._MODE_DAILY_LOSS.get(self._mode, self._config.daily_loss_limit_pct)
+        return self._mode_daily_loss_map().get(self._mode, self._config.daily_loss_limit_pct)
 
     @property
     def is_halted(self) -> bool:

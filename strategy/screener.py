@@ -79,26 +79,39 @@ class ScreenResult:
     reason: str = ""
 
 
-# ── Screening thresholds by regime ──
-_REGIME_THRESHOLDS = {
-    MarketRegime.BULL: {
-        "min_score": 60.0,      # 강세장은 기준 완화
-        "max_candidates": 30,
-        "pattern_weight": 1.2,  # 패턴 가중치 상향
-    },
-    MarketRegime.NEUTRAL: {
-        "min_score": 70.0,      # 중립장은 기준 강화
-        "max_candidates": 15,
-        "pattern_weight": 1.0,
-    },
-    MarketRegime.BEAR: {
-        "min_score": 80.0,      # 약세장은 매우 엄격
-        "max_candidates": 5,
-        "pattern_weight": 0.8,  # 패턴 가중치 하향 (약세장 패턴 신뢰도 낮음)
-    },
-}
+# ── Strategy config injection ──
+from core.config import StrategyConfig as _StrategyConfig
 
-# KOSPI 가중치 보너스 (기획서: 코스피 비중 더 높게)
+_strategy_config: _StrategyConfig | None = None
+
+def init_screener_config(cfg: _StrategyConfig) -> None:
+    global _strategy_config
+    _strategy_config = cfg
+
+def _get_screener_config() -> _StrategyConfig:
+    return _strategy_config or _StrategyConfig()
+
+# ── Screening thresholds by regime (configurable via StrategyConfig) ──
+# Defaults match the original hardcoded values.
+def _build_regime_thresholds(cfg: _StrategyConfig) -> dict:
+    return {
+        MarketRegime.BULL: {
+            "min_score": cfg.screener_bull_min_score,
+            "max_candidates": cfg.screener_bull_max_candidates,
+            "pattern_weight": 1.2,
+        },
+        MarketRegime.NEUTRAL: {
+            "min_score": cfg.screener_neutral_min_score,
+            "max_candidates": cfg.screener_neutral_max_candidates,
+            "pattern_weight": 1.0,
+        },
+        MarketRegime.BEAR: {
+            "min_score": cfg.screener_bear_min_score,
+            "max_candidates": cfg.screener_bear_max_candidates,
+            "pattern_weight": 0.8,
+        },
+    }
+
 _KOSPI_BONUS = 5.0
 
 
@@ -123,9 +136,11 @@ def screen_stocks(
     Returns:
         ScreenResult with ranked candidates.
     """
-    thresholds = _REGIME_THRESHOLDS.get(
-        regime_result.regime, _REGIME_THRESHOLDS[MarketRegime.NEUTRAL]
+    thresholds = _build_regime_thresholds(_get_screener_config()).get(
+        regime_result.regime,
     )
+    if thresholds is None:
+        thresholds = {"min_score": 70.0, "max_candidates": 15, "pattern_weight": 1.0}
     
     candidates: list[ScreenCandidate] = []
     

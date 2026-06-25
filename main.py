@@ -141,8 +141,9 @@ async def run_live(config, args):
         broker=broker,
         model=model,
         risk_config=config.risk,
-        buy_threshold=0.65,
-        sell_threshold=0.35,
+        strategy_config=config.strategy,
+        buy_threshold=config.strategy.buy_threshold,
+        sell_threshold=config.strategy.sell_threshold,
     )
     logger.info("오케스트레이터 초기화 완료")
 

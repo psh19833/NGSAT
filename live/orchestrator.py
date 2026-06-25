@@ -98,9 +98,10 @@ class TradingOrchestrator:
         sell_threshold: float = 0.35,
         position_budget_pct: float = 0.10,
         minute_model=None,
+        strategy_config=None,
     ):
         self._broker = broker
-        self._risk = RiskManager(risk_config or RiskConfig())
+        self._risk = RiskManager(risk_config or RiskConfig(), strategy_config=strategy_config)
         self._controller = TradingController()
         self._executor = OrderExecutor(broker, self._risk, self._controller)
         self._inference = MLInference(model, buy_threshold, sell_threshold, minute_model=minute_model)
