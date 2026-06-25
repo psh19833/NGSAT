@@ -1,0 +1,238 @@
+"""KIS response mapper — transforms raw KIS API responses to NGSAT internal models.
+
+This is the translation layer between KIS-specific field names (stck_prpr, hldg_qty, etc.)
+and NGSAT's clean domain types (PriceData, Position, AccountSummary).
+
+Isolating the mapping here means:
+- If KIS changes field names, only this file needs updating
+- Other adapters (future brokers) have their own mappers
+- Business logic never sees KIS-specific field names
+"""
+
+from __future__ import annotations
+
+from datetime import datetime
+from typing import Any
+
+from core.types import AccountSummary, Market, OrderSide, Position, PriceData, StockInfo
+
+
+def _int(value: Any, default: int = 0) -> int:
+    """Safely convert KIS field to int."""
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        return default
+
+
+def _float(value: Any, default: float = 0.0) -> float:
+    """Safely convert KIS field to float."""
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return default
+
+
+def parse_account_summary(raw: dict[str, Any]) -> AccountSummary:
+    """Parse KIS balance response → AccountSummary.
+    
+    KIS balance endpoint returns:
+    - output2: account overview (total asset, deposit, etc.)
+    - output: list of positions
+    """
+    # output2 contains account-level summary
+    summary_data = raw.get("output2") or raw.get("output1") or raw
+
+    # If output2 is a list, take first element
+    if isinstance(summary_data, list):
+        summary_data = summary_data[0] if summary_data else {}
+
+    if not isinstance(summary_data, dict):
+        summary_data = {}
+
+    total_asset = _float(summary_data.get("tot_evlu_amt") or summary_data.get("dnca_tot_amt"))
+    deposit = _float(summary_data.get("prvs_rcdl_excc_amt") or summary_data.get("dnca_tot_amt"))
+    total_eval = _float(summary_data.get("evlu_tot_amt"))
+    total_pl = _float(summary_data.get("evlu_tot_pl"))
+    total_pl_pct = _float(summary_data.get("evlu_tot_pl_pct") or summary_data.get("tot_evlu_pl_pct"))
+
+    return AccountSummary(
+        total_asset=total_asset,
+        deposit=deposit,
+        total_eval=total_eval,
+        total_profit_loss=total_pl,
+        total_profit_loss_pct=total_pl_pct,
+    )
+
+
+def parse_positions(raw: dict[str, Any]) -> list[Position]:
+    """Parse KIS balance response → list of Position.
+    
+    KIS balance endpoint returns:
+    - output: list of held stocks with pdno (code), hldg_qty, pchs_avg_pric, prpr, etc.
+    """
+    positions_data = raw.get("output") or raw.get("output1") or []
+    if not isinstance(positions_data, list):
+        positions_data = [positions_data] if positions_data else []
+
+    positions: list[Position] = []
+
+    for item in positions_data:
+        if not isinstance(item, dict):
+            continue
+
+        qty = _int(item.get("hldg_qty") or item.get("ord_qty"))
+        if qty <= 0:
+            continue
+
+        code = str(item.get("pdno") or item.get("stock_code") or "")
+        name = str(item.get("prdt_name") or item.get("stock_name") or "")
+        buy_price = _float(item.get("pchs_avg_pric") or item.get("avg_buy_price"))
+        current_price = _float(item.get("prpr") or item.get("current_price"))
+        buy_amount = _float(item.get("pchs_amt") or item.get("buy_amt") or (buy_price * qty))
+        eval_amount = _float(item.get("evlu_amt") or (current_price * qty))
+        profit_loss = _float(item.get("evlu_pl") or (eval_amount - buy_amount))
+        profit_loss_pct = _float(item.get("evlu_pl_pct") or item.get("prdy_ctrt"))
+
+        # Determine market from code pattern
+        market = _infer_market(code)
+
+        positions.append(Position(
+            code=code,
+            name=name,
+            quantity=qty,
+            buy_price=buy_price,
+            current_price=current_price,
+            market=market,
+            buy_amount=buy_amount,
+            eval_amount=eval_amount,
+            profit_loss=profit_loss,
+            profit_loss_pct=profit_loss_pct,
+            stop_loss_pct=3.0,  # default, will be updated by risk manager
+        ))
+
+    return positions
+
+
+def parse_price(raw: dict[str, Any], code: str = "") -> PriceData:
+    """Parse KIS current-price response → PriceData.
+    
+    KIS inquire-price endpoint returns output with stck_prpr, stck_oprc, etc.
+    """
+    now = datetime.now()
+    return PriceData(
+        code=code or str(raw.get("stck_shrn_iscd") or raw.get("pdno") or ""),
+        timestamp=now,
+        open=_float(raw.get("stck_oprc") or raw.get("oprc")),
+        high=_float(raw.get("stck_hgpr") or raw.get("hgpr")),
+        low=_float(raw.get("stck_lwpr") or raw.get("lwpr")),
+        close=_float(raw.get("stck_prpr") or raw.get("prpr") or raw.get("current_price")),
+        volume=_int(raw.get("acml_vol") or raw.get("accumulated_volume")),
+        change_pct=_float(raw.get("prdy_ctrt") or raw.get("change_rate") or raw.get("chg_rate")),
+    )
+
+
+def parse_price_history(raw: dict[str, Any], code: str = "") -> list[PriceData]:
+    """Parse KIS daily-chart response → list of PriceData.
+    
+    KIS inquire-daily-chart returns output2 as list of daily OHLCV.
+    """
+    items = raw.get("output2") or raw.get("output") or []
+    if not isinstance(items, list):
+        items = [items] if items else []
+
+    result: list[PriceData] = []
+
+    for item in items:
+        if not isinstance(item, dict):
+            continue
+
+        date_str = str(item.get("stck_bsop_date") or item.get("date") or "")
+
+        try:
+            ts = datetime.strptime(date_str, "%Y%m%d") if len(date_str) == 8 else datetime.now()
+        except ValueError:
+            ts = datetime.now()
+
+        result.append(PriceData(
+            code=code,
+            timestamp=ts,
+            open=_float(item.get("stck_oprc") or item.get("open_price")),
+            high=_float(item.get("stck_hgpr") or item.get("high_price")),
+            low=_float(item.get("stck_lwpr") or item.get("low_price")),
+            close=_float(item.get("stck_clpr") or item.get("close_price")),
+            volume=_int(item.get("acml_vol") or item.get("volume")),
+            change_pct=_float(item.get("prdy_ctrt") or item.get("change_pct")),
+        ))
+
+    return result
+
+
+def parse_stock_info(raw: dict[str, Any]) -> StockInfo:
+    """Parse KIS stock-info response → StockInfo."""
+    code = str(raw.get("pdno") or raw.get("stck_shrn_iscd") or raw.get("stock_code") or "")
+    name = str(raw.get("prdt_name") or raw.get("stock_name") or raw.get("hts_kor_isnm") or "")
+
+    # Market inference from code or explicit field
+    market_str = str(raw.get("mrkt_cls_nm") or raw.get("market_code") or "").lower()
+    if "kosdaq" in market_str:
+        market = Market.KOSDAQ
+    elif "kospi" in market_str:
+        market = Market.KOSPI
+    else:
+        market = _infer_market(code)
+
+    return StockInfo(code=code, name=name, market=market)
+
+
+def build_order_payload(
+    code: str,
+    side: OrderSide,
+    quantity: int,
+    account_no: str,
+    account_product_code: str,
+    price: float | None = None,
+) -> dict[str, Any]:
+    """Build KIS order-cash request payload.
+    
+    Args:
+        code: 6-digit stock code
+        side: BUY or SELL
+        quantity: Number of shares
+        account_no: 8-digit account number (CANO)
+        account_product_code: 2-digit product code (ACNT_PRDT_CD)
+        price: Limit price (None = market order)
+    
+    Returns:
+        KIS order-cash payload dict.
+    """
+    payload: dict[str, Any] = {
+        "CANO": account_no,
+        "ACNT_PRDT_CD": account_product_code,
+        "PDNO": code,
+        "ORD_DVSN": "01" if price is None else "00",  # 01=시장가, 00=지정가
+        "ORD_QTY": str(quantity),
+    }
+
+    if price is not None:
+        payload["ORD_UNPR"] = str(int(price))
+
+    return payload
+
+
+def _infer_market(code: str) -> Market:
+    """Infer market (KOSPI/KOSDAQ) from stock code.
+    
+    This is a heuristic — KIS may provide explicit market info.
+    KOSPI codes are typically 6 digits starting with 0 or 1.
+    KOSDAQ codes typically start with 2 or 3.
+    Note: This is not 100% accurate; always prefer explicit market data when available.
+    """
+    code = code.strip()
+    if not code or len(code) < 6:
+        return Market.KOSPI  # default
+
+    first_digit = code[0]
+    if first_digit in ("2", "3", "4", "5", "6", "8", "9"):
+        return Market.KOSDAQ
+    return Market.KOSPI
