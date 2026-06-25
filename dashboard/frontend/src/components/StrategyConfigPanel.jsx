@@ -113,6 +113,14 @@ const SECTIONS = [
       { key: 'mode_low_volatility_atr_pct', label: '스윙 유지 기준', unit: '%', min: 0.2, max: 2, step: 0.1,
         hint: 'ATR이 이 값 이하면 스윙을 유지합니다. 높이면 단타 범위가 줄어듭니다.' },
     ],
+    warning: (cfg) => {
+      const high = cfg.mode_high_volatility_atr_pct
+      const low = cfg.mode_low_volatility_atr_pct
+      if (high <= low) {
+        return '⚠️ 단타 전환 기준이 스윙 유지 기준보다 낮거나 같으면 거의 항상 단타 모드로 동작합니다. 단타 전환 > 스윙 유지 가 되도록 설정하세요.'
+      }
+      return null
+    },
   },
 ]
 
@@ -370,6 +378,11 @@ export default function StrategyConfigPanel({ api }) {
           <div key={section.id} className="ngsat-card p-5">
             <h4 className="text-sm font-semibold text-ngsat-text mb-1">{section.title}</h4>
             <p className="text-xs text-ngsat-muted mb-4 leading-relaxed">{section.desc}</p>
+            {section.warning && section.warning(config) && (
+              <div className="bg-ngsat-red/10 border border-ngsat-red/20 rounded-lg p-3 mb-4 text-xs text-ngsat-red leading-relaxed">
+                {section.warning(config)}
+              </div>
+            )}
             <div className="pt-2 border-t border-ngsat-border/50">
               {section.fields.map(field => (
                 <FieldRow
