@@ -93,6 +93,17 @@ const SECTIONS = [
     ],
   },
   {
+    id: 'ml_training',
+    title: '⑧ ML 학습 기간',
+    desc: 'AI가 "며칠 뒤 오를지" 예측할 때 기준이 되는 기간입니다. 스윙은 며칠 뒤, 단타는 몇 분 뒤를 봅니다.',
+    fields: [
+      { key: 'ml_swing_forward_days', label: '스윙 예측 기간', unit: '일', min: 1, max: 10, step: 1,
+        hint: '스윙 모드: N일 뒤 +2% 상승을 예측합니다. 3일이면 "3일 뒤 오를까?"를 학습합니다.' },
+      { key: 'ml_short_forward_minutes', label: '단타 예측 기간', unit: '분', min: 10, max: 240, step: 10,
+        hint: '단타 모드: N분 뒤 +0.5% 상승을 예측합니다. 60분이면 "1시간 뒤 오를까?"를 학습합니다.' },
+    ],
+  },
+  {
     id: 'mode_switch',
     title: '⑦ 스윙 ↔ 단타 자동 전환',
     desc: '시장 변동성(ATR)이 어느 정도일 때 단타로 전환할지 정합니다.',
@@ -118,7 +129,8 @@ const PRESETS = {
       regime_bull_threshold: 70, regime_bear_threshold: 30,
       screener_bull_min_score: 70, screener_neutral_min_score: 80, screener_bear_min_score: 90,
       screener_bull_max_candidates: 8, screener_neutral_max_candidates: 5, screener_bear_max_candidates: 2,
-      mode_high_volatility_atr_pct: 2.0, mode_low_volatility_atr_pct: 0.7,
+      mode_high_volatility_atr_pct: 2.0,
+      ml_swing_forward_days: 3, ml_short_forward_minutes: 60, mode_low_volatility_atr_pct: 0.7,
     },
   },
   균형형: {
@@ -132,7 +144,8 @@ const PRESETS = {
       regime_bull_threshold: 65, regime_bear_threshold: 35,
       screener_bull_min_score: 60, screener_neutral_min_score: 70, screener_bear_min_score: 80,
       screener_bull_max_candidates: 15, screener_neutral_max_candidates: 10, screener_bear_max_candidates: 5,
-      mode_high_volatility_atr_pct: 1.5, mode_low_volatility_atr_pct: 0.5,
+      mode_high_volatility_atr_pct: 1.5,
+      ml_swing_forward_days: 3, ml_short_forward_minutes: 60, mode_low_volatility_atr_pct: 0.5,
     },
   },
   공격형: {
@@ -146,7 +159,8 @@ const PRESETS = {
       regime_bull_threshold: 55, regime_bear_threshold: 40,
       screener_bull_min_score: 50, screener_neutral_min_score: 60, screener_bear_min_score: 70,
       screener_bull_max_candidates: 25, screener_neutral_max_candidates: 15, screener_bear_max_candidates: 8,
-      mode_high_volatility_atr_pct: 1.0, mode_low_volatility_atr_pct: 0.3,
+      mode_high_volatility_atr_pct: 1.0,
+      ml_swing_forward_days: 3, ml_short_forward_minutes: 60, mode_low_volatility_atr_pct: 0.3,
     },
   },
 }

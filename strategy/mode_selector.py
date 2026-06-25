@@ -39,6 +39,7 @@ class ModeDecision:
     confidence: float
     reason: str
     evidence: dict[str, float] = field(default_factory=dict)
+    forward_days: int = 3  # ML 예측 기간 (스윙 기본 3일, 단타 60분)
 
 
 # ── Strategy config injection ──
@@ -98,6 +99,7 @@ def select_mode(
                     f"ATR {vol:.1f}%. 기본 스윙 모드. "
                     f"고변동 구간이므로 단타 부분 활용 가능."
                 ),
+                forward_days=_get_mode_config().ml_swing_forward_days,
                 evidence=evidence,
             )
         return ModeDecision(
@@ -107,6 +109,7 @@ def select_mode(
                 f"강세장 · 안정적: 레짐 점수 {regime_score:.0f}/100. "
                 f"추세 추종 스윙 모드."
             ),
+            forward_days=_get_mode_config().ml_swing_forward_days,
             evidence=evidence,
         )
 
@@ -119,6 +122,7 @@ def select_mode(
                 f"약세장: 레짐 점수 {regime_score:.0f}/100. "
                 f"신규 진입 금지, 기존 포지션만 청산."
             ),
+            forward_days=_get_mode_config().ml_swing_forward_days,
             evidence=evidence,
         )
 
@@ -132,6 +136,7 @@ def select_mode(
                     f"중립장 · 고변동성: 레짐 점수 {regime_score:.0f}/100, "
                     f"ATR {vol:.1f}%. 방향성 없고 변동 높음 → 단타 모드."
                 ),
+                forward_days=_get_mode_config().ml_short_forward_minutes,
                 evidence=evidence,
             )
         elif vol <= _get_mode_config().mode_low_volatility_atr_pct:
@@ -143,6 +148,7 @@ def select_mode(
                     f"중립장 · 저변동성: 레짐 점수 {regime_score:.0f}/100, "
                     f"ATR {vol:.1f}%. 시장 움직임 미약 → 관망."
                 ),
+                forward_days=_get_mode_config().ml_swing_forward_days,
                 evidence=evidence,
             )
         else:
@@ -154,6 +160,7 @@ def select_mode(
                     f"중립장 · 보통 변동성: 레짐 점수 {regime_score:.0f}/100. "
                     f"스윙 모드 유지, 단타 전환 조건 모니터링."
                 ),
+                forward_days=_get_mode_config().ml_swing_forward_days,
                 evidence=evidence,
             )
 

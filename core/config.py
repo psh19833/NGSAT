@@ -116,6 +116,10 @@ class StrategyConfig:
     screener_bear_min_score: float = 80.0
     screener_bear_max_candidates: int = 5
 
+    # ── ML 학습 ──
+    ml_swing_forward_days: int = 3        # 스윙: N일 뒤 +2% 예측
+    ml_short_forward_minutes: int = 60    # 단타: N분 뒤 +0.5% 예측
+
     # ── 모드 전환 ──
     mode_high_volatility_atr_pct: float = 1.5   # ATR ≥ 1.5% → 고변동성(단타)
     mode_low_volatility_atr_pct: float = 0.5     # ATR ≤ 0.5% → 저변동성(스윙)
@@ -219,6 +223,8 @@ def load_config(env_file: str | None = None) -> Config:
     s.screener_bear_max_candidates = int(os.getenv("NGSAT_SCREENER_BEAR_MAX_CANDIDATES", "5"))
     s.mode_high_volatility_atr_pct = float(os.getenv("NGSAT_MODE_HIGH_VOL_ATR_PCT", "1.5"))
     s.mode_low_volatility_atr_pct = float(os.getenv("NGSAT_MODE_LOW_VOL_ATR_PCT", "0.5"))
+    s.ml_swing_forward_days = int(os.getenv("NGSAT_ML_SWING_FORWARD_DAYS", "3"))
+    s.ml_short_forward_minutes = int(os.getenv("NGSAT_ML_SHORT_FORWARD_MINUTES", "60"))
     s.mode_swing_stop_loss_pct = float(os.getenv("NGSAT_MODE_SWING_STOP_LOSS", "3.0"))
     s.mode_swing_daily_loss_pct = float(os.getenv("NGSAT_MODE_SWING_DAILY_LOSS", "5.0"))
     s.mode_swing_position_size = float(os.getenv("NGSAT_MODE_SWING_POSITION_SIZE", "0.10"))

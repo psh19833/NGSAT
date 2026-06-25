@@ -97,7 +97,7 @@ async def run_backtest(config):
     model, train_result = train_from_price_data(
         all_prices, codes,
         model_type="random_forest",
-        forward_days=5,
+        forward_days=config.strategy.ml_swing_forward_days,
         forward_threshold=0.02,
     )
     logger.info(train_result.reason)
@@ -307,7 +307,7 @@ async def train_model(config):
     model, result = train_from_price_data(
         all_prices, codes,
         model_type="random_forest",
-        forward_days=5,
+        forward_days=config.strategy.ml_swing_forward_days,
         forward_threshold=0.02,
     )
 
