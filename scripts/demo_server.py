@@ -10,13 +10,18 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from dashboard.backend.api import create_app
 from tests.test_live.test_dashboard_api import MockOrchestrator
+from core.config import StrategyConfig, Config
 import uvicorn
 
 if __name__ == "__main__":
-    app = create_app(MockOrchestrator())
+    # Build config with strategy defaults
+    config = Config()
+    config.strategy = StrategyConfig()
+
+    app = create_app(MockOrchestrator(), config)
     print("=" * 50)
     print("  NGSAT 데모 대시보드 API 서버")
-    print("  http://127.0.0.1:8000")
+    print("  http://127.0.0.1:8001")
     print("  /api/health, /api/status, /api/control/* ")
     print("  실제 매매 없음 — UI 확인용")
     print("=" * 50)

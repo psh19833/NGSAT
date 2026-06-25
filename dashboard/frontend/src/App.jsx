@@ -12,6 +12,7 @@ import RegimeCard from './components/RegimeCard.jsx'
 import PositionsTable from './components/PositionsTable.jsx'
 import ControlPanel from './components/ControlPanel.jsx'
 import TradesTable from './components/TradesTable.jsx'
+import StrategyConfigPanel from './components/StrategyConfigPanel.jsx'
 
 export default function App() {
   const [status, setStatus] = useState(null)
@@ -82,6 +83,7 @@ export default function App() {
               {activeTab === 'positions' && '보유 포지션'}
               {activeTab === 'trades' && '거래 내역'}
               {activeTab === 'control' && '운영 제어'}
+              {activeTab === 'strategy' && '전략 설정'}
             </h1>
             <p className="text-sm text-ngsat-muted mt-0.5">NGSAT Dashboard</p>
           </div>
@@ -147,6 +149,10 @@ export default function App() {
 
           {connected && activeTab === 'trades' && (
             <TradesTable trades={trades} />
+          )}
+
+          {connected && activeTab === 'strategy' && (
+            <StrategyConfigPanel api={api} />
           )}
 
           {connected && activeTab === 'control' && (

@@ -18,9 +18,10 @@ Endpoints:
 """
 
 from __future__ import annotations
+from dataclasses import asdict
 from datetime import datetime
 
-from dataclasses import asdict
+from fastapi import FastAPI
 from typing import Any
 
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect
@@ -43,7 +44,7 @@ class ForceHoldRequest(BaseModel):
 
 # ── App factory ──
 
-def create_app(orchestrator=None) -> FastAPI:
+def create_app(orchestrator=None, config=None) -> FastAPI:
     """Create the FastAPI dashboard app.
     
     Args:
@@ -98,12 +99,92 @@ def create_app(orchestrator=None) -> FastAPI:
     
     # Store orchestrator reference
     app.state.orchestrator = orchestrator
+    app.state.config = config
     
     def _get_orchestrator():
         return app.state.orchestrator
     
     def _not_connected():
         return {"error": "거래 시스템이 연결되지 않았습니다", "connected": False}
+    
+    def _get_app_config():
+        """Get StrategyConfig from app state."""
+        if app.state.config is None:
+            return None
+        return app.state.config.strategy
+    
+    def _update_env_from_config(cfg):
+        """Write StrategyConfig values to .env file."""
+        from pathlib import Path
+        from core.config import PROJECT_ROOT
+        env_path = Path(PROJECT_ROOT) / ".env"
+        
+        if not env_path.exists():
+            return
+        
+        # Read existing .env lines
+        with open(env_path, "r") as f:
+            lines = f.readlines()
+        
+        # Build lookup of NGSAT_* env var names → config attribute
+        field_map = {
+            "NGSAT_BUY_THRESHOLD": "buy_threshold",
+            "NGSAT_SELL_THRESHOLD": "sell_threshold",
+            "NGSAT_REGIME_BULL_THRESHOLD": "regime_bull_threshold",
+            "NGSAT_REGIME_BEAR_THRESHOLD": "regime_bear_threshold",
+            "NGSAT_REGIME_WEIGHT_MA": "regime_weight_ma",
+            "NGSAT_REGIME_WEIGHT_RSI": "regime_weight_rsi",
+            "NGSAT_REGIME_WEIGHT_BOLLINGER": "regime_weight_bollinger",
+            "NGSAT_REGIME_WEIGHT_CHANGE_RATE": "regime_weight_change_rate",
+            "NGSAT_REGIME_WEIGHT_VOLUME": "regime_weight_volume",
+            "NGSAT_SCREENER_BULL_MIN_SCORE": "screener_bull_min_score",
+            "NGSAT_SCREENER_BULL_MAX_CANDIDATES": "screener_bull_max_candidates",
+            "NGSAT_SCREENER_NEUTRAL_MIN_SCORE": "screener_neutral_min_score",
+            "NGSAT_SCREENER_NEUTRAL_MAX_CANDIDATES": "screener_neutral_max_candidates",
+            "NGSAT_SCREENER_BEAR_MIN_SCORE": "screener_bear_min_score",
+            "NGSAT_SCREENER_BEAR_MAX_CANDIDATES": "screener_bear_max_candidates",
+            "NGSAT_MODE_HIGH_VOL_ATR_PCT": "mode_high_volatility_atr_pct",
+            "NGSAT_MODE_LOW_VOL_ATR_PCT": "mode_low_volatility_atr_pct",
+            "NGSAT_MODE_SWING_STOP_LOSS": "mode_swing_stop_loss_pct",
+            "NGSAT_MODE_SWING_DAILY_LOSS": "mode_swing_daily_loss_pct",
+            "NGSAT_MODE_SWING_POSITION_SIZE": "mode_swing_position_size",
+            "NGSAT_MODE_SHORT_STOP_LOSS": "mode_short_stop_loss_pct",
+            "NGSAT_MODE_SHORT_DAILY_LOSS": "mode_short_daily_loss_pct",
+            "NGSAT_MODE_SHORT_POSITION_SIZE": "mode_short_position_size",
+            "NGSAT_MODE_HOLD_STOP_LOSS": "mode_hold_stop_loss_pct",
+            "NGSAT_MODE_HOLD_DAILY_LOSS": "mode_hold_daily_loss_pct",
+            "NGSAT_MODE_HOLD_POSITION_SIZE": "mode_hold_position_size",
+        }
+        
+        # Update matching lines or append new ones
+        seen = set()
+        new_lines = []
+        for line in lines:
+            updated = False
+            for env_key, attr in field_map.items():
+                if line.startswith(env_key + "=") or line.startswith(env_key + " ="):
+                    val = getattr(cfg, attr, None)
+                    if val is not None:
+                        new_lines.append(f"{env_key}={val}\n")
+                    else:
+                        new_lines.append(line)
+                    seen.add(env_key)
+                    updated = True
+                    break
+            if not updated:
+                new_lines.append(line)
+        
+        # Append strategy keys that weren't in the file
+        for env_key in field_map:
+            if env_key not in seen:
+                attr = field_map[env_key]
+                val = getattr(cfg, attr, None)
+                if val is not None:
+                    new_lines.append(f"{env_key}={val}\n")
+        
+        # Write back
+        with open(env_path, "w") as f:
+            f.writelines(new_lines)
     
     # ── Status ──
     @app.get("/api/status")
@@ -292,6 +373,48 @@ def create_app(orchestrator=None) -> FastAPI:
         
         orch.controller.force_hold(req.code)
         return {"connected": True, "message": f"강제 홀드 설정: {req.code}"}
+    
+    # ── Strategy Config ──
+    @app.get("/api/strategy/config")
+    async def get_strategy_config():
+        """현재 전략·정책 설정값 반환."""
+        from dataclasses import asdict
+        cfg = _get_app_config()
+        if cfg is None:
+            return {"connected": False}
+        return {"connected": True, "config": asdict(cfg)}
+    
+    @app.put("/api/strategy/config")
+    async def update_strategy_config(data: dict):
+        """전략·정책 설정값 업데이트 → .env 반영.
+        
+        Body: { "buy_threshold": 0.70, ... } (부분 업데이트 가능)
+        "reset": true → 기본값으로 복원
+        """
+        cfg = _get_app_config()
+        if cfg is None:
+            return {"connected": False}
+        
+        if data.get("reset"):
+            # 기본값으로 복원: 복원된 config 반환
+            from core.config import StrategyConfig
+            restored = StrategyConfig()
+            _update_env_from_config(restored)
+            return {"connected": True, "message": "기본값으로 복원 완료", "config": asdict(restored), "restart_required": True}
+        
+        # 부분 업데이트
+        updated = 0
+        for key, value in data.items():
+            if key in ("connected", "reset", "restart_required"):
+                continue
+            if hasattr(cfg, key):
+                setattr(cfg, key, value)
+                updated += 1
+        
+        if updated > 0:
+            _update_env_from_config(cfg)
+        
+        return {"connected": True, "message": f"{updated}개 설정 저장 완료", "config": asdict(cfg), "restart_required": updated > 0}
     
     # ── Health ──
     @app.get("/api/health")

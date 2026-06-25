@@ -165,7 +165,7 @@ async def run_live(config, args):
     api_server = None
     if not args.no_dashboard:
         import uvicorn
-        dashboard_app = create_app(orchestrator)
+        dashboard_app = create_app(orchestrator, config)
         logger.info("대시보드 API 준비 완료 (포트 8000)")
 
     # ── 6. Start trading loop ──

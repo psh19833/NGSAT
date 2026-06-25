@@ -34,4 +34,10 @@ export const api = {
     method: 'POST',
     body: JSON.stringify({ code }),
   }),
+
+  getStrategyConfig: () => fetchJSON('/strategy/config'),
+  updateStrategyConfig: (data) => fetchJSON('/strategy/config', {
+    method: 'PUT',
+    body: JSON.stringify(data),
+  }),
 }
