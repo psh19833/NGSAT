@@ -1,0 +1,66 @@
+[project]
+name = "ngsat"
+version = "0.1.0"
+description = "New Generation Stock Auto Trader — Korean stock automated trading system"
+requires-python = ">=3.12"
+readme = "README.md"
+license = { text = "Private" }
+
+dependencies = [
+    # Web framework
+    "fastapi>=0.115.0",
+    "uvicorn[standard]>=0.32.0",
+    # Database
+    "sqlalchemy>=2.0.0",
+    "psycopg2-binary>=2.9.0",
+    "alembic>=1.14.0",
+    # Environment
+    "python-dotenv>=1.0.0",
+    # HTTP client (for broker APIs)
+    "httpx>=0.28.0",
+    # ML
+    "scikit-learn>=1.6.0",
+    "pandas>=2.2.0",
+    "numpy>=2.1.0",
+    # Telegram
+    "python-telegram-bot>=21.0",
+    # Logging
+    "structlog>=24.0.0",
+]
+
+[project.optional-dependencies]
+ml-advanced = [
+    "xgboost>=2.1.0",
+    "lightgbm>=4.5.0",
+]
+dev = [
+    "pytest>=8.0.0",
+    "pytest-asyncio>=0.24.0",
+    "pytest-cov>=6.0.0",
+    "ruff>=0.8.0",
+    "mypy>=1.13.0",
+]
+
+[tool.hatch.build.targets.wheel]
+packages = ["core", "data", "strategy", "ml", "live", "backtest", "telegram"]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.ruff]
+target-version = "py312"
+line-length = 100
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "N", "W", "UP"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+python_files = ["test_*.py"]
+asyncio_mode = "auto"
+
+[tool.mypy]
+python_version = "3.12"
+strict = true
+warn_return_any = true

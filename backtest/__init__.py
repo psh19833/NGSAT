@@ -1,0 +1,1 @@
+"""NGSAT package."""
