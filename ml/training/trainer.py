@@ -21,6 +21,7 @@ from typing import Any
 
 import numpy as np
 from sklearn.ensemble import RandomForestClassifier
+from sklearn.ensemble import HistGradientBoostingClassifier
 from sklearn.linear_model import LogisticRegression
 from sklearn.metrics import (
     accuracy_score,
@@ -32,6 +33,7 @@ from sklearn.metrics import (
 )
 from sklearn.model_selection import TimeSeriesSplit, cross_val_score
 from sklearn.preprocessing import StandardScaler
+from sklearn.inspection import permutation_importance
 
 from core.logger import logger
 from ml.features.builder import FEATURE_NAMES, build_training_dataset
@@ -66,6 +68,7 @@ class TrainingResult:
     recall: float = 0.0
     f1: float = 0.0
     auc: float = 0.0
+    positive_rate: float = 0.0
     cv_scores: list[float] = field(default_factory=list)
     feature_importance: dict[str, float] = field(default_factory=dict)
     n_samples: int = 0
@@ -76,9 +79,10 @@ class TrainingResult:
 class PriceRiseModel:
     """ML model for predicting stock price rise probability.
     
-    Supports two model types:
+    Supports model types:
     - "logistic": Logistic Regression (fast baseline)
     - "random_forest": Random Forest (better accuracy)
+    - "gradient_boosting": HistGradientBoosting (sklearn 내장 부스팅, 강력)
     
     Future: "xgboost", "lightgbm" when packages installed.
     """
@@ -145,6 +149,15 @@ class PriceRiseModel:
                 class_weight="balanced",
                 n_jobs=-1,
             )
+        elif self.model_type == "gradient_boosting":
+            self._model = HistGradientBoostingClassifier(
+                max_iter=200,
+                max_depth=6,
+                learning_rate=0.1,
+                l2_regularization=1.0,
+                random_state=42,
+                class_weight="balanced",
+            )
         else:
             return TrainingResult(
                 success=False,
@@ -166,6 +179,8 @@ class PriceRiseModel:
         
         try:
             auc = float(roc_auc_score(y_test, y_proba))
+            if np.isnan(auc):
+                auc = 0.0  # 검증셋에 한 클래스만 존재
         except ValueError:
             auc = 0.0  # Only one class in test set
         
@@ -199,12 +214,40 @@ class PriceRiseModel:
                 reverse=True,
             ):
                 feature_importance[name] = float(coef)
+        else:
+            # 부스팅 등 내장 중요도 없는 모델: permutation importance로 근거 제공
+            try:
+                perm = permutation_importance(
+                    self._model, X_test_scaled, y_test,
+                    n_repeats=5, random_state=42,
+                )
+                for name, imp in sorted(
+                    zip(FEATURE_NAMES, perm.importances_mean),
+                    key=lambda x: x[1],
+                    reverse=True,
+                ):
+                    feature_importance[name] = float(imp)
+            except Exception:
+                pass
         
+        pos_rate = float(np.mean(y))
+        test_pos = int(np.sum(y_test))
+        if pos_rate < 0.05:
+            imbalance_note = (
+                f", ⚠ 양성(상승)비율 {pos_rate:.1%} 매우 낮음 "
+                f"— 타겟 기준(forward_days/threshold) 재조정 권장"
+            )
+        elif test_pos == 0:
+            imbalance_note = ", ⚠ 검증셋에 상승샘플 없음 — 평가 신뢰도 낮음"
+        else:
+            imbalance_note = ""
+
         reason = (
             f"학습 완료: {self.model_type}, "
             f"정확도 {accuracy:.1%}, 정밀도 {precision:.1%}, "
             f"F1 {f1:.1%}, AUC {auc:.1%}, "
-            f"샘플 {len(X)}개, 피처 {X.shape[1]}개"
+            f"양성비율 {pos_rate:.1%}, "
+            f"샘플 {len(X)}개, 피처 {X.shape[1]}개{imbalance_note}"
         )
         
         logger.info(f"ML 모델 학습: {reason}")
@@ -217,6 +260,7 @@ class PriceRiseModel:
             recall=recall,
             f1=f1,
             auc=auc,
+            positive_rate=pos_rate,
             cv_scores=cv_scores,
             feature_importance=feature_importance,
             n_samples=len(X),
@@ -313,7 +357,7 @@ def train_from_price_data(
     Args:
         all_prices: List of price histories.
         codes: Stock codes.
-        model_type: "logistic" or "random_forest".
+        model_type: "logistic", "random_forest", or "gradient_boosting".
         forward_days: Days ahead for target.
         forward_threshold: Min return to label as "up".
     

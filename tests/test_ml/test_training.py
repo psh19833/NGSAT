@@ -68,6 +68,42 @@ class TestPriceRiseModel:
         assert result.success is True
         assert result.model_type == "logistic"
 
+    def test_train_gradient_boosting(self):
+        """Gradient Boosting (HistGradientBoosting) model should train successfully."""
+        all_prices, codes = _make_mixed_dataset(5, 120)
+        X, y, _ = build_training_dataset(all_prices, codes, forward_days=5, forward_threshold=0.02)
+
+        model = PriceRiseModel("gradient_boosting", forward_days=5, forward_threshold=0.02)
+        result = model.train(X, y)
+
+        assert result.success is True
+        assert result.model_type == "gradient_boosting"
+        assert result.n_features == 20
+        assert 0.0 <= result.positive_rate <= 1.0
+
+    def test_gradient_boosting_predict_proba(self):
+        """Gradient Boosting predict_proba should return valid probabilities."""
+        all_prices, codes = _make_mixed_dataset(5, 120)
+        X, y, _ = build_training_dataset(all_prices, codes)
+
+        model = PriceRiseModel("gradient_boosting")
+        model.train(X, y)
+        proba = model.predict_proba(X[:5])
+
+        assert len(proba) == 5
+        assert all(0 <= p <= 1 for p in proba)
+
+    def test_training_result_reports_positive_rate(self):
+        """TrainingResult should report the positive (상승) class rate."""
+        all_prices, codes = _make_mixed_dataset(5, 120)
+        X, y, _ = build_training_dataset(all_prices, codes)
+
+        model = PriceRiseModel("random_forest")
+        result = model.train(X, y)
+
+        assert 0.0 <= result.positive_rate <= 1.0
+        assert "양성비율" in result.reason
+
     def test_insufficient_data_fails_gracefully(self):
         """Training with < 50 samples should fail gracefully."""
         X = np.random.randn(30, 20)
