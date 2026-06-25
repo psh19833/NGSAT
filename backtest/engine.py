@@ -46,6 +46,8 @@ from ml.inference import MLInference, MLPrediction
 from ml.training.trainer import PriceRiseModel, train_from_price_data
 from strategy.regime import evaluate_regime, RegimeResult
 from strategy.screener import ScreenCandidate, ScreenResult, screen_stocks
+from strategy.entry_timing import refine_entry
+from strategy.exit_timing import refine_exit, ExitUrgency
 
 
 @dataclass
@@ -110,6 +112,7 @@ class BacktestResult:
     losing_trades: int
     win_rate: float
     max_drawdown: float
+    entries_deferred: int = 0
     trades: list[BacktestTrade] = field(default_factory=list)
     daily_capital: list[float] = field(default_factory=list)
     reason: str = ""
@@ -145,12 +148,14 @@ class BacktestEngine:
         self._daily_loss: float = 0.0
         self._is_halted: bool = False
         self._peak_capital: float = initial_capital
+        self._entries_deferred: int = 0
     
     def run(
         self,
         universe: list[tuple[StockInfo, list[PriceData]]],
         index_prices: list[PriceData],
         start_day: int = 60,
+        minute_provider=None,
     ) -> BacktestResult:
         """Run backtest on historical data.
         
@@ -211,7 +216,17 @@ class BacktestEngine:
                 pred = self._inference.predict_entry(candidate, prices)
                 
                 if pred and pred.action == DecisionAction.BUY:
-                    self._execute_buy(pred, prices[-1], date_str)
+                    entry_price = prices[-1].close
+                    if minute_provider is not None:
+                        minute_bars = minute_provider(candidate.code, day_idx)
+                        if minute_bars:
+                            entry = refine_entry(minute_bars)
+                            if not entry.should_enter:
+                                self._entries_deferred += 1
+                                continue
+                            if entry.limit_price:
+                                entry_price = entry.limit_price
+                    self._execute_buy(pred, entry_price, date_str)
             
             # 4. Check exits for existing positions
             positions_to_check = list(self._positions.items())
@@ -231,20 +246,35 @@ class BacktestEngine:
                 current_price = prices[-1].close
                 profit_pct = (current_price - pos.buy_price) / pos.buy_price * 100
                 
+                # 청산 정밀화: 분봉 제공 시 매도 긴급도/가격 반영 (하이브리드)
+                sell_price = current_price
+                exit_ref = None
+                if minute_provider is not None:
+                    minute_bars = minute_provider(code, day_idx)
+                    if minute_bars:
+                        exit_ref = refine_exit(minute_bars, profit_pct)
+                        if exit_ref.urgency != ExitUrgency.IMMEDIATE and exit_ref.limit_price:
+                            sell_price = exit_ref.limit_price
+
                 # Stop loss check
                 loss_pct = abs(min(profit_pct, 0))
                 if loss_pct >= pos.stop_loss_pct:
                     self._execute_sell(
-                        pos, current_price, date_str,
+                        pos, sell_price, date_str,
                         DecisionAction.STOP_LOSS,
                         f"손절: {pos.name}({pos.code}) 손실 {loss_pct:.1f}% >= 손절선 {pos.stop_loss_pct:.1f}%",
                     )
                     continue
                 
+                # 분봉 선제 청산 (급락/과열익절)
+                if exit_ref is not None and exit_ref.should_exit:
+                    self._execute_sell(pos, sell_price, date_str, DecisionAction.SELL, f"분봉 청산: {exit_ref.reason}")
+                    continue
+
                 # ML exit prediction
                 exit_pred = self._inference.predict_exit(code, pos.name, prices, profit_pct)
                 if exit_pred and exit_pred.action == DecisionAction.SELL:
-                    self._execute_sell(pos, current_price, date_str, DecisionAction.SELL, exit_pred.reason)
+                    self._execute_sell(pos, sell_price, date_str, DecisionAction.SELL, exit_pred.reason)
             
             # 5. Daily loss check
             current_capital = self._total_capital(universe, day_idx)
@@ -275,12 +305,10 @@ class BacktestEngine:
     def _execute_buy(
         self,
         pred: MLPrediction,
-        current_price: PriceData,
+        price: float,
         date_str: str,
     ) -> None:
         """Execute a simulated buy."""
-        price = current_price.close
-        
         # Position sizing: use 10% of cash per position
         budget = self._cash * 0.10
         quantity = int(budget / price)
@@ -406,7 +434,8 @@ class BacktestEngine:
             f"초기 자본 {self._initial_capital:,.0f} → 최종 {final_capital:,.0f}, "
             f"수익률 {total_return:+.1f}%, "
             f"거래 {len(self._trades)}회 (매수 {buy_count}/매도 {sell_count}), "
-            f"승률 {win_rate:.1f}%, 최대 낙폭 {max_dd:.1f}%"
+            f"승률 {win_rate:.1f}%, 최대 낙폭 {max_dd:.1f}%, "
+            f"진입보류 {self._entries_deferred}건"
         )
         
         logger.info(reason)
@@ -424,6 +453,7 @@ class BacktestEngine:
             losing_trades=losing,
             win_rate=win_rate,
             max_drawdown=max_dd,
+            entries_deferred=self._entries_deferred,
             trades=self._trades,
             daily_capital=self._daily_capital,
             reason=reason,

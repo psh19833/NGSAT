@@ -227,3 +227,77 @@ def generate_synthetic_universe(
         universe.append((info, prices))
     
     return universe
+
+
+def generate_synthetic_minute_bars(
+    day_bar: PriceData,
+    n_bars: int = 20,
+    intraday_vol: float = 0.004,
+    seed: int = 0,
+) -> list[PriceData]:
+    """일봉 한 개를 그날의 분봉 궤적(n_bars개)으로 분해(합성).
+
+    open에서 시작해 close로 수렴하는 선형 경로에 장중 노이즈를 더하고,
+    일봉 high/low 범위 안에 클리핑한다. 실제 과거 분봉이 없는 상황에서
+    백테스트의 진입/청산 정밀화(refine_entry/refine_exit)를 검증하기 위한
+    합성 데이터다.
+
+    Args:
+        day_bar: 분해할 일봉 PriceData.
+        n_bars: 생성할 분봉 개수.
+        intraday_vol: 장중 변동 크기(일봉 시가 대비 비율).
+        seed: 난수 시드.
+
+    Returns:
+        n_bars개의 분봉 PriceData (시간 오름차순).
+    """
+    rng = np.random.default_rng(seed)
+    o, h, l = float(day_bar.open), float(day_bar.high), float(day_bar.low)
+    c = float(day_bar.close)
+    base = max(o, 1.0)
+    bars: list[PriceData] = []
+    base_ts = day_bar.timestamp
+
+    for i in range(n_bars):
+        frac = (i + 1) / n_bars
+        mid = o + (c - o) * frac
+        price = mid + rng.normal(0, base * intraday_vol)
+        price = min(max(price, l), h)  # 일봉 범위 클리핑
+        prev = bars[-1].close if bars else o
+        hi = min(max(price, prev) + abs(rng.normal(0, base * intraday_vol * 0.3)), h)
+        lo = max(min(price, prev) - abs(rng.normal(0, base * intraday_vol * 0.3)), l)
+        bars.append(PriceData(
+            code=day_bar.code,
+            timestamp=base_ts + timedelta(minutes=i),
+            open=float(prev),
+            high=float(hi),
+            low=float(lo),
+            close=float(price),
+            volume=max(int(day_bar.volume / n_bars), 1),
+            change_pct=0.0,
+        ))
+
+    return bars
+
+
+def synthetic_minute_provider(
+    universe: list[tuple[StockInfo, list[PriceData]]],
+    n_bars: int = 20,
+    intraday_vol: float = 0.004,
+):
+    """universe 기반 분봉 provider 콜백 생성: (code, day_idx) -> list[PriceData] | None.
+
+    BacktestEngine.run(minute_provider=...) 인자로 전달하면, 백테스트가
+    라이브와 동일한 진입/청산 정밀화 경로를 태운다.
+    """
+    price_map = {info.code: prices for info, prices in universe}
+
+    def provider(code: str, day_idx: int) -> list[PriceData] | None:
+        prices = price_map.get(code)
+        if not prices or day_idx >= len(prices):
+            return None
+        return generate_synthetic_minute_bars(
+            prices[day_idx], n_bars=n_bars, intraday_vol=intraday_vol, seed=day_idx,
+        )
+
+    return provider

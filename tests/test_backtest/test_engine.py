@@ -134,3 +134,39 @@ class TestBacktestEngine:
         # With a 1% limit and downtrending market, should halt at some point
         # Just verify it doesn't crash
         assert isinstance(result, BacktestResult)
+
+    def test_synthetic_minute_bars_within_day_range(self, universe):
+        """합성 분봉은 일봉 high/low 범위 안에 있어야 한다."""
+        from backtest.data_loader import generate_synthetic_minute_bars
+        info, prices = universe[0]
+        day_bar = prices[70]
+        bars = generate_synthetic_minute_bars(day_bar, n_bars=20)
+        assert len(bars) == 20
+        for b in bars:
+            assert day_bar.low - 1 <= b.close <= day_bar.high + 1
+
+    def test_backtest_with_minute_provider_runs(self, trained_model, universe, index_prices):
+        """분봉 provider를 주면 진입/청산 정밀화 경로를 태우며 정상 작동한다."""
+        from backtest.data_loader import synthetic_minute_provider
+        provider = synthetic_minute_provider(universe)
+        engine = BacktestEngine(trained_model, initial_capital=10_000_000)
+        result = engine.run(universe, index_prices, start_day=60, minute_provider=provider)
+
+        assert isinstance(result, BacktestResult)
+        assert result.entries_deferred >= 0
+        assert "백테스트 완료" in result.reason
+        assert "진입보류" in result.reason
+        for trade in result.trades:
+            assert len(trade.reason) > 0
+
+    def test_minute_provider_backtest_no_crash_vs_baseline(self, trained_model, universe, index_prices):
+        """정밀화 백테스트도 일봉 백테스트와 동일하게 유효한 결과를 낸다."""
+        from backtest.data_loader import synthetic_minute_provider
+        baseline = BacktestEngine(trained_model).run(universe, index_prices, start_day=60)
+        refined = BacktestEngine(trained_model).run(
+            universe, index_prices, start_day=60,
+            minute_provider=synthetic_minute_provider(universe),
+        )
+        assert baseline.final_capital >= 0
+        assert refined.final_capital >= 0
+        assert refined.entries_deferred >= 0
