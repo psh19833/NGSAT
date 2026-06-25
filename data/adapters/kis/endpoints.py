@@ -110,6 +110,16 @@ _ORDERBOOK = KisEndpoint(
     description="주식 호가/10호가 조회",
 )
 
+# ── 지수 (Index) ──
+_INDEX_DAILY = KisEndpoint(
+    name="inquire_index_daily",
+    category=KisCategory.QUOTATION,
+    path="/uapi/domestic-stock/v1/quotations/inquire-daily-indexchartprice",
+    method="GET",
+    tr_id="FHPUP02110000",
+    description="업종 일자별 지수 (KOSPI/KOSDAQ 일봉)",
+)
+
 # ── 종목정보 (Stock Info) ──
 _STOCK_BASIC = KisEndpoint(
     name="inquire_stock_basic",
@@ -150,6 +160,7 @@ _ENDPOINTS: dict[str, KisEndpoint] = {
         _TOKEN_ISSUE,
         _BALANCE, _DAILY_FILLS, _ORDER_CASH,
         _CURRENT_PRICE, _DAILY_CHART, _MINUTE_CHART, _ORDERBOOK,
+        _INDEX_DAILY,
         _STOCK_BASIC,
         _MARKET_HOLIDAY, _MARKET_HOURS,
     ]

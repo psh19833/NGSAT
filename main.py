@@ -105,7 +105,7 @@ async def run_live(config, args):
     from dashboard.backend.api import create_app
     from live.orchestrator import TradingOrchestrator
     from ml.training.trainer import PriceRiseModel
-    from telegram.bot import TelegramBot
+    from messaging.bot import TelegramBot
 
     logger.info("=== NGSAT 실거래 모드 시작 ===")
 
@@ -172,16 +172,17 @@ async def run_live(config, args):
     logger.info(f"매매 사이클 주기: {tick_interval}초")
 
     async def trading_loop():
-        """Main trading loop — runs orchestrator cycle periodically."""
-        from backtest.data_loader import generate_synthetic_index, generate_synthetic_universe
+        """Main trading loop — runs orchestrator cycle with real KIS data."""
+        from data.real_data_provider import RealDataProvider
 
-        # TODO: Replace with real market data from KIS
-        # For now, use synthetic data as placeholder
-        logger.warning("주의: 실제 시장 데이터 연결은 다음 업데이트에서 구현됩니다")
-        logger.warning("현재는 합성 데이터로 파이프라인 검증만 수행합니다")
+        data_provider = RealDataProvider()
+        universe, index_prices = await data_provider.load()
 
-        universe = generate_synthetic_universe(n_stocks=20, n_days=100, seed=42)
-        index_prices = generate_synthetic_index(n_days=100, seed=100)
+        if not universe:
+            logger.error("실데이터 로드 실패 — 시스템 중단")
+            return
+
+        logger.info(f"KIS 실데이터 연결 완료: {len(universe)}종목, 지수 {len(index_prices)}일")
 
         while True:
             try:

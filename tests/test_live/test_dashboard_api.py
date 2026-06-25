@@ -20,6 +20,7 @@ class MockOrchestrator:
         self.controller = TradingController()
         self.risk_manager = RiskManager(RiskConfig())
         self._cycle_count = 5
+        self._current_mode = "swing"
         self._last_regime = None
         
         from unittest.mock import AsyncMock

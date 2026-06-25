@@ -19,7 +19,7 @@ from __future__ import annotations
 from typing import Any
 
 from core.logger import logger
-from telegram.notifier import (
+from messaging.notifier import (
     NotificationMessage,
     build_daily_report_notification,
     build_force_hold_notification,
@@ -77,8 +77,9 @@ class TelegramBot:
             # Use python-telegram-bot if available
             if self._bot is None:
                 try:
-                    from telegram import Bot
-                    self._bot = Bot(token=self._bot_token)
+                    import importlib
+                    telegram_lib = importlib.import_module("telegram")
+                    self._bot = telegram_lib.Bot(token=self._bot_token)
                 except ImportError:
                     logger.warning("python-telegram-bot 미설치")
                     return False

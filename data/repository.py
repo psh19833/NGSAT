@@ -14,6 +14,7 @@ from sqlalchemy.orm import Session
 from core.models import (
     DailyReport,
     MarketDataCache,
+    MinuteDataCache,
     PositionRecord,
     SystemEvent,
     TradeRecord,
@@ -206,3 +207,74 @@ class MarketDataRepository:
             .order_by(MarketDataCache.date)
             .all()
         )
+
+
+class MinuteDataRepository:
+    """분봉 데이터 저장소 — KIS 분봉 수집 및 조회."""
+
+    def __init__(self, session: Session):
+        self._session = session
+
+    def save_minute_bar(self, **kwargs) -> MinuteDataCache:
+        """분봉 1개 저장. 중복(code+date+time) 시 무시."""
+        try:
+            record = MinuteDataCache(**kwargs)
+            self._session.add(record)
+            self._session.flush()
+            return record
+        except Exception:
+            self._session.rollback()
+            # 중복 키면 무시 (정상 — 이미 수집된 분봉)
+            return None
+
+    def save_minute_bars(self, bars: list[dict]) -> int:
+        """여러 분봉을 한 번에 저장. 중복은 건너뜀.
+
+        Returns:
+            실제 저장된 개수 (중복 제외).
+        """
+        saved = 0
+        for bar in bars:
+            try:
+                record = MinuteDataCache(**bar)
+                self._session.add(record)
+                self._session.flush()
+                saved += 1
+            except Exception:
+                self._session.rollback()
+                # 중복 = 정상, 다음으로
+        if saved > 0:
+            self._session.commit()
+        return saved
+
+    def get_minute_bars(
+        self, code: str, date: str,
+    ) -> list[MinuteDataCache]:
+        """특정 종목·특정일의 분봉 데이터를 시간순 조회."""
+        return (
+            self._session.query(MinuteDataCache)
+            .filter(
+                MinuteDataCache.code == code,
+                MinuteDataCache.date == date,
+            )
+            .order_by(MinuteDataCache.time)
+            .all()
+        )
+
+    def get_distinct_dates(self, code: str | None = None) -> list[str]:
+        """수집된 분봉 날짜 목록."""
+        q = self._session.query(MinuteDataCache.date).distinct()
+        if code:
+            q = q.filter(MinuteDataCache.code == code)
+        rows = q.order_by(MinuteDataCache.date).all()
+        return [r[0] for r in rows]
+
+    def get_collected_codes(self) -> list[str]:
+        """분봉이 수집된 종목코드 목록."""
+        rows = (
+            self._session.query(MinuteDataCache.code)
+            .distinct()
+            .order_by(MinuteDataCache.code)
+            .all()
+        )
+        return [r[0] for r in rows]

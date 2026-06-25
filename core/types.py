@@ -40,6 +40,18 @@ class TradingMode(str, Enum):
     BACKTEST = "backtest"
 
 
+class StrategyMode(str, Enum):
+    """매매 전략 모드 (하이브리드 2단계).
+
+    SWING: 며칠~몇 주 보유 (일봉 ML)
+    SHORT_TERM: 당일 진입/청산 (분봉 ML)
+    HOLD: 신규 진입 금지, 기존 포지션만 청산
+    """
+    SWING = "swing"
+    SHORT_TERM = "short_term"
+    HOLD = "hold"
+
+
 @dataclass
 class DecisionReason:
     """Mandatory reason for every trading decision.

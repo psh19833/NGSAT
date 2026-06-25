@@ -372,5 +372,45 @@ def train_from_price_data(
     
     model = PriceRiseModel(model_type, forward_days, forward_threshold)
     result = model.train(X, y)
-    
+
+    return model, result
+
+
+def train_from_minute_data(
+    all_minute_prices: list[list],
+    codes: list[str],
+    model_type: str = "random_forest",
+    forward_minutes: int = 10,
+    forward_threshold: float = 0.01,
+) -> tuple[PriceRiseModel, TrainingResult]:
+    """분봉 데이터로 단타 모델 학습 (convenience function).
+
+    Args:
+        all_minute_prices: 종목별 분봉 가격 리스트.
+        codes: 종목코드.
+        model_type: 모델 타입.
+        forward_minutes: 타겟 예측 분.
+        forward_threshold: 양성 판정 임계 수익률.
+
+    Returns:
+        (trained model, training result).
+    """
+    from ml.features.minute_builder import (
+        MINUTE_FEATURE_NAMES,
+        build_minute_training_dataset,
+    )
+
+    X, y, prices_at, feature_names = build_minute_training_dataset(
+        all_minute_prices, codes, forward_minutes, forward_threshold
+    )
+
+    logger.info(f"분봉 학습 데이터셋 구축: {X.shape[0]} 샘플, {X.shape[1]} 피처 (단타)")
+
+    model = PriceRiseModel(
+        model_type,
+        forward_days=forward_minutes,  # 실제 값은 분 단위지만 필드 재사용
+        forward_threshold=forward_threshold,
+    )
+    result = model.train(X, y)
+
     return model, result

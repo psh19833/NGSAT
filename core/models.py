@@ -18,6 +18,7 @@ from sqlalchemy import (
     String,
     Text,
     JSON,
+    UniqueConstraint,
 )
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
 
@@ -127,6 +128,31 @@ class MarketDataCache(Base):
     change_pct: Mapped[float] = mapped_column(Float, default=0.0)
     
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.now)
+
+
+class MinuteDataCache(Base):
+    """분봉 데이터 캐시 — KIS 당일 분봉 저장.
+
+    분봉 데이터는 대량이므로 code + date + time에 unique index를 건다.
+    하루에 종목당 최대 390개(6.5시간×60분)까지 저장된다.
+    """
+    __tablename__ = "minute_data_cache"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    code: Mapped[str] = mapped_column(String(6), index=True)
+    date: Mapped[str] = mapped_column(String(10))           # YYYY-MM-DD
+    time: Mapped[str] = mapped_column(String(8))             # HH:MM:SS
+    open: Mapped[float] = mapped_column(Float)
+    high: Mapped[float] = mapped_column(Float)
+    low: Mapped[float] = mapped_column(Float)
+    close: Mapped[float] = mapped_column(Float)
+    volume: Mapped[int] = mapped_column(Integer)
+
+    accumulated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.now)
+
+    __table_args__ = (
+        UniqueConstraint("code", "date", "time", name="uq_minute_code_date_time"),
+    )
 
 
 class SystemEvent(Base):

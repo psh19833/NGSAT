@@ -29,7 +29,7 @@ from live.orchestrator import TradingOrchestrator
 from ml.training.trainer import PriceRiseModel, train_from_price_data
 from strategy.regime import evaluate_regime
 from strategy.screener import screen_stocks
-from telegram.bot import TelegramBot
+from messaging.bot import TelegramBot
 
 
 # ── Test fixtures ──

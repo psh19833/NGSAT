@@ -8,7 +8,7 @@ from unittest.mock import AsyncMock, MagicMock
 import pytest
 
 from core.types import AccountSummary, Market, Position
-from telegram.bot import TelegramBot
+from messaging.bot import TelegramBot
 
 
 class MockOrchestrator:
@@ -139,7 +139,7 @@ class TestTelegramBot:
     @pytest.mark.asyncio
     async def test_send_notification_not_configured(self):
         """Send should silently fail when not configured."""
-        from telegram.notifier import NotificationMessage
+        from messaging.notifier import NotificationMessage
         bot = TelegramBot("", "")
         result = await bot.send_notification(NotificationMessage(text="test"))
         assert result is False

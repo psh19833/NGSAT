@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import pytest
 
-from telegram.notifier import (
+from messaging.notifier import (
     NotificationMessage,
     build_daily_report_notification,
     build_force_hold_notification,

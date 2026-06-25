@@ -24,6 +24,7 @@ from typing import Any
 
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import FileResponse, JSONResponse
 from pydantic import BaseModel
 
 from core.logger import logger
@@ -65,6 +66,34 @@ def create_app(orchestrator=None) -> FastAPI:
         allow_methods=["*"],
         allow_headers=["*"],
     )
+
+    # Serve React frontend static files (built by npm run build)
+    # Catch-all: non-API paths serve index.html (SPA support)
+    from pathlib import Path
+    frontend_dist = Path(__file__).resolve().parent.parent / "frontend" / "dist"
+    if frontend_dist.exists():
+        import mimetypes
+        mimetypes.init()
+
+        @app.exception_handler(404)
+        async def serve_frontend(request, exc):
+            # API routes return 404 as usual — only catch non-/api paths
+            if request.url.path.startswith("/api/"):
+                return JSONResponse({"detail": "Not Found"}, status_code=404)
+
+            file_path = frontend_dist / request.url.path.lstrip("/")
+            if file_path.exists() and file_path.is_file():
+                return FileResponse(str(file_path))
+
+            # SPA: all other paths serve index.html
+            index = frontend_dist / "index.html"
+            if index.exists():
+                return FileResponse(str(index))
+            return JSONResponse({"detail": "Not Found"}, status_code=404)
+
+        logger.info(f"대시보드 프론트엔드 마운트: {frontend_dist}")
+    else:
+        logger.warning(f"프론트엔드 빌드 파일 없음: {frontend_dist} — npm run build 필요")
     
     # Store orchestrator reference
     app.state.orchestrator = orchestrator
@@ -92,6 +121,9 @@ def create_app(orchestrator=None) -> FastAPI:
             "risk_halted": risk.is_halted,
             "risk_reason": risk.halt_reason,
             "cycle_count": orch._cycle_count,
+            "current_mode": orch._current_mode,
+            "mode_stop_loss_pct": risk.effective_stop_loss_pct,
+            "mode_daily_loss_limit": risk.effective_daily_loss_limit,
         }
     
     # ── Account ──

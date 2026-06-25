@@ -297,3 +297,47 @@ def _infer_market(code: str) -> Market:
     if first_digit in ("2", "3", "4", "5", "6", "8", "9"):
         return Market.KOSDAQ
     return Market.KOSPI
+
+
+def parse_index_history(raw: dict[str, Any], code: str = "KOSPI") -> list[PriceData]:
+    """KIS 지수 일봉 응답 → PriceData 리스트.
+
+    KIS inquire-daily-indexchartprice (FHPUP02110000) 응답 파싱.
+    지수 데이터는 종목과 필드명이 다름:
+      - stck_bsop_date → date
+      - bstp_nmix_prpr → close
+      - bstp_nmix_oprc → open
+      - bstp_nmix_hgpr → high
+      - bstp_nmix_lwpr → low
+      - acml_vol → volume
+    """
+    items = raw.get("output2") or raw.get("output") or []
+    if not isinstance(items, list):
+        items = [items] if items else []
+
+    result: list[PriceData] = []
+    for item in items:
+        if not isinstance(item, dict):
+            continue
+
+        date_str = str(item.get("stck_bsop_date") or item.get("date") or "")
+        try:
+            ts = datetime.strptime(date_str, "%Y%m%d") if len(date_str) == 8 else datetime.now()
+        except ValueError:
+            ts = datetime.now()
+
+        close = _float(item.get("bstp_nmix_prpr"))
+        if close == 0.0:
+            continue  # 데이터 없는 row 스킵
+
+        result.append(PriceData(
+            code=code,
+            timestamp=ts,
+            open=_float(item.get("bstp_nmix_oprc")),
+            high=_float(item.get("bstp_nmix_hgpr")),
+            low=_float(item.get("bstp_nmix_lwpr")),
+            close=close,
+            volume=_int(item.get("acml_vol")),
+        ))
+
+    return result

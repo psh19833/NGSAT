@@ -40,6 +40,7 @@ from core.types import (
     Position,
     PriceData,
     StockInfo,
+    StrategyMode,
 )
 from ml.features.builder import build_features, build_training_dataset, FEATURE_NAMES
 from ml.inference import MLInference, MLPrediction
@@ -48,6 +49,7 @@ from strategy.regime import evaluate_regime, RegimeResult
 from strategy.screener import ScreenCandidate, ScreenResult, screen_stocks
 from strategy.entry_timing import refine_entry
 from strategy.exit_timing import refine_exit, ExitUrgency
+from strategy.mode_selector import ModeDecision, select_mode, estimate_volatility_from_prices
 
 
 @dataclass
@@ -113,6 +115,9 @@ class BacktestResult:
     win_rate: float
     max_drawdown: float
     entries_deferred: int = 0
+    mode_swing_days: int = 0
+    mode_short_term_days: int = 0
+    mode_hold_days: int = 0
     trades: list[BacktestTrade] = field(default_factory=list)
     daily_capital: list[float] = field(default_factory=list)
     reason: str = ""
@@ -136,9 +141,11 @@ class BacktestEngine:
         risk_config: RiskConfig | None = None,
         buy_threshold: float = 0.65,
         sell_threshold: float = 0.35,
+        minute_model: PriceRiseModel | None = None,
     ):
         self._model = model
-        self._inference = MLInference(model, buy_threshold, sell_threshold)
+        self._minute_model = minute_model  # 단타 모드용 분봉 모델 (옵션)
+        self._inference = MLInference(model, buy_threshold, sell_threshold, minute_model=minute_model)
         self._initial_capital = initial_capital
         self._cash = initial_capital
         self._risk = risk_config or RiskConfig()
@@ -149,6 +156,10 @@ class BacktestEngine:
         self._is_halted: bool = False
         self._peak_capital: float = initial_capital
         self._entries_deferred: int = 0
+        self._current_mode: str = "swing"
+        self._swing_days: int = 0
+        self._short_term_days: int = 0
+        self._hold_days: int = 0
     
     def run(
         self,
@@ -177,44 +188,76 @@ class BacktestEngine:
         
         for day_idx in range(start_day, n_days):
             date_str = str(index_prices[day_idx].timestamp.date()) if day_idx < len(index_prices) else f"day_{day_idx}"
-            
+
             # Check if halted
             if self._is_halted:
                 self._daily_capital.append(self._total_capital(universe, day_idx))
                 continue
-            
+
             # 1. Regime evaluation
             regime_index = index_prices[:day_idx + 1]
             regime_result = evaluate_regime(
                 [p.close for p in regime_index],
                 [p.volume for p in regime_index],
             )
-            
+
+            # 1b. Mode selection (하이브리드 2단계)
+            vol = estimate_volatility_from_prices(
+                [p.close for p in regime_index],
+                [p.high for p in regime_index],
+                [p.low for p in regime_index],
+            )
+            mode_decision = select_mode(regime_result, atr_pct=vol)
+            self._current_mode = mode_decision.mode.value
+            is_short_term = self._current_mode == "short_term"
+
+            # 모드별 통계
+            if self._current_mode == "swing":
+                self._swing_days += 1
+            elif self._current_mode == "short_term":
+                self._short_term_days += 1
+            else:
+                self._hold_days += 1
+
             # 2. Screen stocks
             stocks_for_screening: list[tuple[StockInfo, list[PriceData]]] = []
             for info, prices in universe:
                 if len(prices) > day_idx:
                     stocks_for_screening.append((info, prices[:day_idx + 1]))
-            
+
             screen_result = screen_stocks(stocks_for_screening, regime_result)
-            
-            # 3. ML predictions for top candidates
+
+            # 3. ML predictions for top candidates (모드별 라우팅)
             for candidate in screen_result.candidates:
                 if candidate.code in self._positions:
                     continue  # Already holding
-                
+
+                # HOLD 모드: 신규 진입 금지
+                if self._current_mode == "hold":
+                    continue
+
                 # Find price data for this candidate
                 prices = None
                 for info, p in universe:
                     if info.code == candidate.code and len(p) > day_idx:
                         prices = p[:day_idx + 1]
                         break
-                
+
                 if prices is None or len(prices) < 60:
                     continue
-                
-                pred = self._inference.predict_entry(candidate, prices)
-                
+
+                # 모드별 ML 진입 예측
+                if is_short_term and self._minute_model is not None:
+                    # 단타 모드: 분봉 ML로 진입 예측
+                    minute_bars = minute_provider(candidate.code, day_idx) if minute_provider else None
+                    if minute_bars and len(minute_bars) >= 60:
+                        pred = self._inference.predict_minute_entry(candidate, minute_bars)
+                    else:
+                        pred = self._inference.predict_entry(candidate, prices)
+                else:
+                    # 스윙 모드: 일봉 ML로 진입 예측 (기존)
+                    pred = self._inference.predict_entry(candidate, prices)
+
                 if pred and pred.action == DecisionAction.BUY:
                     entry_price = prices[-1].close
                     if minute_provider is not None:
@@ -226,26 +269,26 @@ class BacktestEngine:
                                 continue
                             if entry.limit_price:
                                 entry_price = entry.limit_price
-                    self._execute_buy(pred, entry_price, date_str)
+                    self._execute_buy(pred, entry_price, date_str, is_short_term)
             
-            # 4. Check exits for existing positions
+            # 4. Check exits for existing positions (모드별 청산)
             positions_to_check = list(self._positions.items())
             for code, pos in positions_to_check:
                 if pos.is_force_hold:
                     continue
-                
+
                 prices = None
                 for info, p in universe:
                     if info.code == code and len(p) > day_idx:
                         prices = p[:day_idx + 1]
                         break
-                
+
                 if prices is None:
                     continue
-                
+
                 current_price = prices[-1].close
                 profit_pct = (current_price - pos.buy_price) / pos.buy_price * 100
-                
+
                 # 청산 정밀화: 분봉 제공 시 매도 긴급도/가격 반영 (하이브리드)
                 sell_price = current_price
                 exit_ref = None
@@ -256,23 +299,32 @@ class BacktestEngine:
                         if exit_ref.urgency != ExitUrgency.IMMEDIATE and exit_ref.limit_price:
                             sell_price = exit_ref.limit_price
 
-                # Stop loss check
+                # Stop loss check (모드별 손절선 반영)
+                mode_stop = 1.5 if is_short_term else pos.stop_loss_pct
                 loss_pct = abs(min(profit_pct, 0))
-                if loss_pct >= pos.stop_loss_pct:
+                if loss_pct >= mode_stop:
                     self._execute_sell(
                         pos, sell_price, date_str,
                         DecisionAction.STOP_LOSS,
-                        f"손절: {pos.name}({pos.code}) 손실 {loss_pct:.1f}% >= 손절선 {pos.stop_loss_pct:.1f}%",
+                        f"손절: {pos.name}({pos.code}) 손실 {loss_pct:.1f}% >= 손절선 {mode_stop:.1f}%",
                     )
                     continue
-                
+
                 # 분봉 선제 청산 (급락/과열익절)
                 if exit_ref is not None and exit_ref.should_exit:
                     self._execute_sell(pos, sell_price, date_str, DecisionAction.SELL, f"분봉 청산: {exit_ref.reason}")
                     continue
 
-                # ML exit prediction
-                exit_pred = self._inference.predict_exit(code, pos.name, prices, profit_pct)
+                # ML 청산 예측 (모드별 라우팅)
+                if is_short_term and self._minute_model is not None:
+                    minute_bars = minute_provider(code, day_idx) if minute_provider else None
+                    if minute_bars and len(minute_bars) >= 60:
+                        exit_pred = self._inference.predict_minute_exit(code, pos.name, minute_bars, profit_pct)
+                    else:
+                        exit_pred = self._inference.predict_exit(code, pos.name, prices, profit_pct)
+                else:
+                    exit_pred = self._inference.predict_exit(code, pos.name, prices, profit_pct)
+
                 if exit_pred and exit_pred.action == DecisionAction.SELL:
                     self._execute_sell(pos, sell_price, date_str, DecisionAction.SELL, exit_pred.reason)
             
@@ -307,10 +359,12 @@ class BacktestEngine:
         pred: MLPrediction,
         price: float,
         date_str: str,
+        is_short_term: bool = False,
     ) -> None:
-        """Execute a simulated buy."""
-        # Position sizing: use 10% of cash per position
-        budget = self._cash * 0.10
+        """Execute a simulated buy with mode-aware position sizing."""
+        # 모드별 포지션 크기: 스윙=10%, 단타=5%
+        size_pct = 0.05 if is_short_term else 0.10
+        budget = self._cash * size_pct
         quantity = int(budget / price)
         
         if quantity <= 0:
@@ -435,7 +489,8 @@ class BacktestEngine:
             f"수익률 {total_return:+.1f}%, "
             f"거래 {len(self._trades)}회 (매수 {buy_count}/매도 {sell_count}), "
             f"승률 {win_rate:.1f}%, 최대 낙폭 {max_dd:.1f}%, "
-            f"진입보류 {self._entries_deferred}건"
+            f"진입보류 {self._entries_deferred}건, "
+            f"모드: 스윙{self._swing_days}일/단타{self._short_term_days}일/관망{self._hold_days}일"
         )
         
         logger.info(reason)

@@ -29,17 +29,79 @@ class RiskCheckResult:
 class RiskManager:
     """Risk management for live trading.
 
+    Supports mode-aware risk (하이브리드 2단계):
+    - SWING mode: 기본 손절 -3%, 일일 -5% (기존)
+    - SHORT_TERM mode: 더 타이트한 손절 -1.5%, 일일 -3%
+    - HOLD mode: 신규 진입 금지, 기존 포지션만 청산
+
     Rules:
-    1. Daily total loss ≥ 5% → halt all trading
-    2. Per-position loss ≥ 3% → trigger stop loss
+    1. Daily total loss ≥ limit → halt all trading
+    2. Per-position loss ≥ stop loss → trigger stop loss
     3. Stop loss can be extended to max 5% IF there is a justified reason
     4. No reason = no extension
     """
+
+    # 모드별 리스크 기본값
+    # SWING (기본): 기존 설정 유지
+    # SHORT_TERM: 더 보수적
+    _MODE_STOP_LOSS: dict[str, float] = {
+        "swing": 3.0,        # -3%
+        "short_term": 1.5,   # -1.5% (단타는 더 타이트)
+        "hold": 3.0,         # -3% (청산만)
+    }
+    _MODE_DAILY_LOSS: dict[str, float] = {
+        "swing": 5.0,        # -5%
+        "short_term": 3.0,   # -3% (단타는 일일 손실 제한 더 엄격)
+        "hold": 5.0,         # -5%
+    }
+    _MODE_POSITION_SIZE: dict[str, float] = {
+        "swing": 0.10,       # 현금의 10% (기존)
+        "short_term": 0.05,  # 현금의 5% (단타는 더 작게)
+        "hold": 0.0,         # 0% (신규 진입 금지)
+    }
 
     def __init__(self, config: RiskConfig):
         self._config = config
         self._halted = False
         self._halt_reason: Optional[str] = None
+        self._mode: str = "swing"  # 기본 스윙 모드
+
+    @property
+    def mode(self) -> str:
+        """현재 리스크 모드."""
+        return self._mode
+
+    def set_mode(self, mode: str) -> None:
+        """매매 모드 변경 → 리스크 파라미터 자동 조정.
+
+        Args:
+            mode: "swing", "short_term", "hold"
+        """
+        if mode not in self._MODE_STOP_LOSS:
+            logger.warning(f"알 수 없는 모드: {mode}, 기본(swing) 유지")
+            return
+        self._mode = mode
+        logger.info(
+            f"리스크 모드 변경: {mode} "
+            f"(손절 {self._MODE_STOP_LOSS[mode]:.1f}%, "
+            f"일일한도 {self._MODE_DAILY_LOSS[mode]:.1f}%, "
+            f"포지션크기 {self._MODE_POSITION_SIZE[mode]:.0%})"
+        )
+
+    @property
+    def position_size_pct(self) -> float:
+        """현재 모드의 포지션 크기 비율."""
+        return self._MODE_POSITION_SIZE.get(self._mode, 0.10)
+
+    @property
+    def effective_stop_loss_pct(self) -> float:
+        """현재 모드의 기본 손절선."""
+        return self._MODE_STOP_LOSS.get(self._mode, self._config.default_stop_loss_pct)
+
+    @property
+    def effective_daily_loss_limit(self) -> float:
+        """현재 모드의 일일 손실 한도."""
+        return self._MODE_DAILY_LOSS.get(self._mode, self._config.daily_loss_limit_pct)
 
     @property
     def is_halted(self) -> bool:
@@ -53,11 +115,10 @@ class RiskManager:
 
     def check_daily_loss(self, account: AccountSummary) -> RiskCheckResult:
         """Check if daily loss limit has been reached.
-        
-        Returns:
-            RiskCheckResult indicating whether trading should continue.
+
+        Uses mode-aware daily loss limit.
         """
-        limit_pct = self._config.daily_loss_limit_pct
+        limit_pct = self.effective_daily_loss_limit
 
         if account.daily_loss_pct >= limit_pct:
             reason = (
@@ -81,14 +142,17 @@ class RiskManager:
 
     def check_stop_loss(self, position: Position) -> RiskCheckResult:
         """Check if a position should be stop-lossed.
-        
-        Uses the position's current stop_loss_pct (which may have been
-        dynamically adjusted with a reason).
+
+        Uses mode-aware stop loss.
         """
         current_loss_pct = abs(min(position.profit_loss_pct, 0))
 
-        # Use position's dynamic stop loss or default
-        effective_stop = position.stop_loss_pct or self._config.default_stop_loss_pct
+        # Use position's dynamic stop loss, mode-aware default, or config default
+        effective_stop = (
+            position.stop_loss_pct
+            or self.effective_stop_loss_pct
+            or self._config.default_stop_loss_pct
+        )
 
         if current_loss_pct >= effective_stop:
             reason = (

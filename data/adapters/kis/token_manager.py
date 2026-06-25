@@ -10,6 +10,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta, timezone
+from pathlib import Path
 from typing import Any
 
 from core.exceptions import BrokerError
@@ -50,12 +51,16 @@ class KisToken:
 
 class KisTokenManager:
     """Manages KIS OAuth token lifecycle.
-    
+
     - Issues new tokens via password-grant flow
-    - Caches token in memory
+    - Caches token in memory AND on disk
     - Auto-refreshes when expired
     - Never logs token plaintext
+    - File cache: ~/.ngsat/kis_token_cache.json (survives process restarts)
     """
+
+    _CACHE_DIR = Path.home() / ".ngsat"
+    _CACHE_FILE = _CACHE_DIR / "kis_token_cache.json"
 
     def __init__(
         self,
@@ -66,7 +71,40 @@ class KisTokenManager:
         self._app_key = app_key
         self._app_secret = app_secret
         self._base_url = base_url.rstrip("/")
-        self._cached_token: KisToken | None = None
+        self._cached_token: KisToken | None = self._load_cache()
+
+    def _load_cache(self) -> KisToken | None:
+        """Load token from disk cache."""
+        import json
+        try:
+            if self._CACHE_FILE.exists():
+                data = json.loads(self._CACHE_FILE.read_text())
+                token = KisToken(
+                    access_token=data["access_token"],
+                    token_type=data.get("token_type", "Bearer"),
+                    expires_in=int(data["expires_in"]),
+                    issued_at=datetime.fromisoformat(data["issued_at"]),
+                )
+                if not token.is_expired:
+                    return token
+        except Exception:
+            pass
+        return None
+
+    def _save_cache(self, token: KisToken) -> None:
+        """Save token to disk cache."""
+        import json
+        try:
+            self._CACHE_DIR.mkdir(parents=True, exist_ok=True)
+            data = {
+                "access_token": token.access_token,
+                "token_type": token.token_type,
+                "expires_in": token.expires_in,
+                "issued_at": token.issued_at.isoformat(),
+            }
+            self._CACHE_FILE.write_text(json.dumps(data, indent=2))
+        except Exception:
+            pass  # 캐시 실패는 치명적이지 않음
 
     @property
     def is_configured(self) -> bool:
@@ -132,10 +170,16 @@ class KisTokenManager:
         )
 
         self._cached_token = token
+        self._save_cache(token)
         logger.info(f"KIS 토큰 발급 성공 (유효 {token.expires_in}초)")
         return token
 
     def clear_cache(self) -> None:
         """Clear cached token (force re-issue on next call)."""
         self._cached_token = None
+        try:
+            if self._CACHE_FILE.exists():
+                self._CACHE_FILE.unlink()
+        except Exception:
+            pass
         logger.info("KIS 토큰 캐시 삭제")

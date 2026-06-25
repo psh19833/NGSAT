@@ -31,6 +31,7 @@ from core.types import (
     MarketRegime,
     Position,
     PriceData,
+    StrategyMode,
 )
 from data.adapters.base import BrokerAdapter
 from live.controller import TradingController, TradingState
@@ -41,15 +42,17 @@ from strategy.regime import RegimeResult, evaluate_regime
 from strategy.screener import ScreenCandidate, ScreenResult, screen_stocks
 from strategy.entry_timing import EntryDecision, EntryTiming, refine_entry
 from strategy.exit_timing import ExitDecision, ExitUrgency, refine_exit
+from strategy.mode_selector import ModeDecision, select_mode, estimate_volatility_from_prices
 
 
 @dataclass
 class CycleResult:
     """Result of a single trading cycle.
-    
+
     Attributes:
         timestamp: When the cycle ran.
         regime: Market regime evaluation.
+        mode: Selected trading strategy mode (하이브리드 2단계).
         candidates_found: Number of screened candidates.
         buys_executed: Number of buy orders executed.
         sells_executed: Number of sell orders executed.
@@ -58,6 +61,7 @@ class CycleResult:
     """
     timestamp: datetime = field(default_factory=datetime.now)
     regime: MarketRegime = MarketRegime.NEUTRAL
+    mode: str = "swing"
     candidates_found: int = 0
     buys_executed: int = 0
     entries_deferred: int = 0
@@ -93,16 +97,18 @@ class TradingOrchestrator:
         buy_threshold: float = 0.65,
         sell_threshold: float = 0.35,
         position_budget_pct: float = 0.10,
+        minute_model=None,
     ):
         self._broker = broker
         self._risk = RiskManager(risk_config or RiskConfig())
         self._controller = TradingController()
         self._executor = OrderExecutor(broker, self._risk, self._controller)
-        self._inference = MLInference(model, buy_threshold, sell_threshold)
+        self._inference = MLInference(model, buy_threshold, sell_threshold, minute_model=minute_model)
         self._position_budget_pct = position_budget_pct
-        
+
         # State
         self._last_regime: RegimeResult | None = None
+        self._current_mode: str = "swing"
         self._cycle_count: int = 0
     
     @property
@@ -173,31 +179,62 @@ class TradingOrchestrator:
         result.regime = regime_result.regime
         
         logger.info(f"레짐 평가: {regime_result.regime.value} ({regime_result.score:.1f}점)")
-        
-        # ── Step 4: Screen stocks ──
+
+        # ── Step 4A: Mode selection (하이브리드 2단계) ──
+        vol = estimate_volatility_from_prices(
+            [p.close for p in index_prices],
+            [p.high for p in index_prices],
+            [p.low for p in index_prices],
+        )
+        mode_decision = select_mode(regime_result, atr_pct=vol)
+        self._current_mode = mode_decision.mode.value
+        self._risk.set_mode(self._current_mode)
+        result.mode = self._current_mode
+
+        logger.info(f"모드 선택: {mode_decision.mode.value} (신뢰도 {mode_decision.confidence:.0%}) — {mode_decision.reason}")
+
+        # HOLD 모드: 신규 진입 금지, 청산만 실행
+        if mode_decision.mode == StrategyMode.HOLD:
+            logger.info("HOLD 모드 — 신규 진입 없이 기존 포지션 청산만 실행")
+
+        # ── Step 5: Screen stocks ──
         screen_result = screen_stocks(stock_universe, regime_result)
         result.candidates_found = len(screen_result.candidates)
         
         logger.info(f"스크리닝: {screen_result.total_scanned}개 → {result.candidates_found}개 후보")
         
-        # ── Step 5: ML predictions & buy execution ──
+        # ── Step 6: ML predictions & buy execution (모드별 라우팅) ──
         current_positions = await self._fetch_positions()
         held_codes = {p.code for p in current_positions}
-        
+        is_short_term = self._current_mode == "short_term"
+
         for candidate in screen_result.candidates:
             if candidate.code in held_codes:
                 continue  # Already holding
-            
+
+            # HOLD 모드: 신규 진입 금지
+            if self._current_mode == "hold":
+                continue
+
             # Find price data for this candidate
             prices = self._find_prices(stock_universe, candidate.code)
             if prices is None or len(prices) < 60:
                 continue
-            
-            pred = self._inference.predict_entry(candidate, prices)
-            
+
+            if is_short_term:
+                # 단타 모드: 분봉 ML로 진입 예측
+                minute_prices = await self._fetch_minute_prices(candidate.code)
+                if minute_prices and len(minute_prices) >= 60:
+                    pred = self._inference.predict_minute_entry(candidate, minute_prices)
+                else:
+                    pred = self._inference.predict_entry(candidate, prices)
+            else:
+                # 스윙 모드: 일봉 ML로 진입 예측 (기존)
+                pred = self._inference.predict_entry(candidate, prices)
+
             if pred and pred.action == DecisionAction.BUY:
-                # 진입 정밀화: 분봉으로 타이밍/가격 판단 (하이브리드 1단계)
-                entry = await self._refine_entry(pred.code)
+                # 진입 정밀화: 분봉으로 타이밍/가격 판단 (하이브리드 1단계, 양 모드 공통)
+                entry = await self._refine_entry(pred.code, use_minute=is_short_term)
                 if not entry.should_enter:
                     result.entries_deferred += 1
                     logger.info(f"진입 보류: {pred.name}({pred.code}) — {entry.reason}")
@@ -219,22 +256,22 @@ class TradingOrchestrator:
                     action=pred.action,
                     reason=buy_reason,
                 )
-                
+
                 if exec_result.success:
                     result.buys_executed += 1
                     held_codes.add(pred.code)
                 else:
                     result.errors.append(f"매수 실패 {pred.code}: {exec_result.error}")
-        
-        # ── Step 6: Exit check for existing positions ──
+
+        # ── Step 7: Exit check for existing positions (모드별 라우팅) ──
         for position in current_positions:
             if self._controller.is_force_hold(position.code):
                 continue
-            
+
             prices = self._find_prices(stock_universe, position.code)
             if prices is None or len(prices) < 60:
                 continue
-            
+
             # 청산 정밀화: 분봉으로 매도 긴급도/가격 판단 (하이브리드 1단계)
             exit_ref = await self._refine_exit(position.code, position.profit_loss_pct)
             sell_price = None if exit_ref.urgency == ExitUrgency.IMMEDIATE else exit_ref.limit_price
@@ -259,8 +296,8 @@ class TradingOrchestrator:
                 else:
                     result.errors.append(f"손절 실패 {position.code}: {exec_result.error}")
                 continue
-            
-            # 2) 분봉 선제 청산 (일봉 ML보다 빠른 급락/과열익절 신호)
+
+            # 2) 분봉 선제 청산 (일봉 ML보다 빠른 급락/과열익절 신호) — 양 모드 공통
             if exit_ref.should_exit:
                 exec_result = await self._executor.execute_sell(
                     code=position.code,
@@ -276,11 +313,24 @@ class TradingOrchestrator:
                     result.errors.append(f"매도 실패 {position.code}: {exec_result.error}")
                 continue
 
-            # 3) 일봉 ML 청산 → 분봉 현재가 지정가로 매도가 정밀화
-            exit_pred = self._inference.predict_exit(
-                position.code, position.name, prices, position.profit_loss_pct
-            )
-            
+            # 3) ML 청산 예측 (모드별 라우팅)
+            if is_short_term:
+                # 단타 모드: 분봉 ML로 청산 예측
+                minute_prices = await self._fetch_minute_prices(position.code)
+                if minute_prices and len(minute_prices) >= 60:
+                    exit_pred = self._inference.predict_minute_exit(
+                        position.code, position.name, minute_prices, position.profit_loss_pct
+                    )
+                else:
+                    exit_pred = self._inference.predict_exit(
+                        position.code, position.name, prices, position.profit_loss_pct
+                    )
+            else:
+                # 스윙 모드: 일봉 ML로 청산 예측 (기존)
+                exit_pred = self._inference.predict_exit(
+                    position.code, position.name, prices, position.profit_loss_pct
+                )
+
             if exit_pred and exit_pred.action == DecisionAction.SELL:
                 exec_result = await self._executor.execute_sell(
                     code=position.code,
@@ -298,6 +348,7 @@ class TradingOrchestrator:
         # ── Build summary ──
         result.reason = (
             f"사이클 #{self._cycle_count} 완료: "
+            f"모드={self._current_mode}, "
             f"레짐={regime_result.regime.value}({regime_result.score:.0f}점), "
             f"후보={result.candidates_found}개, "
             f"매수={result.buys_executed}건(보류 {result.entries_deferred}건), "
@@ -318,7 +369,18 @@ class TradingOrchestrator:
             logger.error(f"포지션 조회 실패: {e}")
             return []
 
-    async def _refine_entry(self, code: str) -> EntryDecision:
+    async def _fetch_minute_prices(self, code: str) -> list[PriceData] | None:
+        """Fetch minute-candle data for a stock.
+
+        Returns None if adapter doesn't support minute data.
+        """
+        try:
+            return await self._broker.get_minute_history(code)
+        except (NotImplementedError, Exception) as e:
+            logger.debug(f"분봉 조회 실패({code}): {type(e).__name__}")
+            return None
+
+    async def _refine_entry(self, code: str, use_minute: bool = True) -> EntryDecision:
         """분봉으로 진입 타이밍/가격을 정밀화. 분봉 미가용 시 시장가 진입 폴백."""
         try:
             minute_prices = await self._broker.get_minute_history(code)
