@@ -6,6 +6,7 @@ const TABS = [
   { id: 'positions', label: '포지션', icon: '⊞' },
   { id: 'trades', label: '거래 내역', icon: '≡' },
   { id: 'control', label: '운영 제어', icon: '⊙' },
+  { id: 'diagnosis', label: '진단 현황', icon: '🔍' },
   { id: 'strategy', label: '전략 설정', icon: '⚙' },
 ]
 

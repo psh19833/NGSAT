@@ -68,6 +68,11 @@ class CycleResult:
     sells_executed: int = 0
     errors: list[str] = field(default_factory=list)
     reason: str = ""
+    # Diagnosis data for dashboard (진단 현황)
+    screened: list = field(default_factory=list)       # 스크리너 통과 종목
+    predictions: list = field(default_factory=list)    # ML 예측 결과
+    deferred_entries: list = field(default_factory=list) # 진입 보류
+    mode_decision: dict | None = None                  # 모드 선택 정보
 
 
 class TradingOrchestrator:
@@ -110,6 +115,7 @@ class TradingOrchestrator:
         # State
         self._last_regime: RegimeResult | None = None
         self._current_mode: str = "swing"
+        self._last_diagnosis: dict | None = None  # 진단 현황
         self._cycle_count: int = 0
     
     @property
@@ -189,6 +195,12 @@ class TradingOrchestrator:
         )
         mode_decision = select_mode(regime_result, atr_pct=vol)
         self._current_mode = mode_decision.mode.value
+        result.mode_decision = {
+            "mode": mode_decision.mode.value,
+            "confidence": mode_decision.confidence,
+            "reason": mode_decision.reason,
+            "forward_days": mode_decision.forward_days,
+        }
         self._risk.set_mode(self._current_mode)
         result.mode = self._current_mode
 
@@ -201,7 +213,11 @@ class TradingOrchestrator:
         # ── Step 5: Screen stocks ──
         screen_result = screen_stocks(stock_universe, regime_result)
         result.candidates_found = len(screen_result.candidates)
-        
+        result.screened = [
+            {"code": c.code, "name": c.name, "score": round(c.score, 1),
+             "reason": c.reason}
+            for c in screen_result.candidates
+        ]
         logger.info(f"스크리닝: {screen_result.total_scanned}개 → {result.candidates_found}개 후보")
         
         # ── Step 6: ML predictions & buy execution (모드별 라우팅) ──
@@ -233,11 +249,24 @@ class TradingOrchestrator:
                 # 스윙 모드: 일봉 ML로 진입 예측 (기존)
                 pred = self._inference.predict_entry(candidate, prices)
 
+            # Record prediction for diagnosis
+            if pred:
+                result.predictions.append({
+                    "code": pred.code, "name": pred.name,
+                    "action": pred.action.value,
+                    "probability": round(pred.rise_probability, 3),
+                    "reason": pred.reason,
+                })
+            
             if pred and pred.action == DecisionAction.BUY:
                 # 진입 정밀화: 분봉으로 타이밍/가격 판단 (하이브리드 1단계, 양 모드 공통)
                 entry = await self._refine_entry(pred.code, use_minute=is_short_term)
                 if not entry.should_enter:
                     result.entries_deferred += 1
+                    result.deferred_entries.append(
+                        {"code": pred.code, "name": pred.name,
+                         "reason": entry.reason, "probability": round(pred.rise_probability, 3)}
+                    )
                     logger.info(f"진입 보류: {pred.name}({pred.code}) — {entry.reason}")
                     continue
 
@@ -359,7 +388,24 @@ class TradingOrchestrator:
         if result.errors:
             result.reason += f", 오류={len(result.errors)}건"
         
-        logger.info(result.reason)
+        # Save diagnosis for dashboard
+        self._last_diagnosis = {
+            "timestamp": result.timestamp.isoformat(),
+            "cycle": self._cycle_count,
+            "regime": result.regime.value,
+            "regime_score": getattr(self._last_regime, 'score', 0),
+            "mode": result.mode,
+            "mode_decision": result.mode_decision,
+            "candidates_found": result.candidates_found,
+            "buys": result.buys_executed,
+            "sells": result.sells_executed,
+            "deferred": result.entries_deferred,
+            "screened": result.screened,
+            "predictions": result.predictions,
+            "deferred_entries": result.deferred_entries,
+            "summary": result.reason,
+        }
+        return result
         return result
     
     async def _fetch_positions(self) -> list[Position]:

@@ -327,7 +327,7 @@ def main():
     args = parse_args()
     config = load_config()
 
-    setup_logger("ngsat", level=20)  # INFO
+    setup_logger("ngsat", level=20, log_file="logs/ngsat.log")  # INFO + file
 
     logger.info("NGSAT — New Generation Stock Auto Trader")
     logger.info(f"환경: {config.env.value}")

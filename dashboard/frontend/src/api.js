@@ -35,6 +35,7 @@ export const api = {
     body: JSON.stringify({ code }),
   }),
 
+  getDiagnosis: () => fetchJSON('/diagnosis'),
   getStrategyConfig: () => fetchJSON('/strategy/config'),
   updateStrategyConfig: (data) => fetchJSON('/strategy/config', {
     method: 'PUT',

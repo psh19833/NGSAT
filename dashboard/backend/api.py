@@ -416,6 +416,17 @@ def create_app(orchestrator=None, config=None) -> FastAPI:
         
         return {"connected": True, "message": f"{updated}개 설정 저장 완료", "config": asdict(cfg), "restart_required": updated > 0}
     
+    # ── Diagnosis ──
+    @app.get("/api/diagnosis")
+    async def get_diagnosis():
+        orch = _get_orchestrator()
+        if orch is None:
+            return _not_connected()
+        diag = orch._last_diagnosis
+        if diag is None:
+            return {"connected": True, "message": "아직 진단 데이터가 없습니다"}
+        return {"connected": True, **diag}
+    
     # ── Health ──
     @app.get("/api/health")
     async def health():
