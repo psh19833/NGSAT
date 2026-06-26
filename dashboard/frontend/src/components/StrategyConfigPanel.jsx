@@ -313,6 +313,13 @@ export default function StrategyConfigPanel({ api }) {
     const resp = await api.getStrategyConfig()
     if (resp?.config) {
       setConfig(resp.config)
+      // Match preset
+      for (const [name, p] of Object.entries(PRESETS)) {
+        if (Object.entries(p.values).every(([k, v]) => Math.abs(v - (resp.config[k] ?? 0)) < 0.001)) {
+          setActivePreset(name)
+          break
+        }
+      }
     }
     setLoading(false)
   }

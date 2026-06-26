@@ -271,12 +271,22 @@ def create_app(orchestrator=None, config=None) -> FastAPI:
         if orch is None:
             return _not_connected()
         
-        # TODO: Query from database when DB is connected
-        return {
-            "connected": True,
-            "trades": [],
-            "message": "거래 내역은 데이터베이스 연결 후 조회 가능합니다",
-        }
+        try:
+            records = orch._trade_repo.get_recent_trades(limit)
+            trades = [
+                {
+                    "date": r.created_at.strftime("%Y-%m-%d %H:%M") if r.created_at else "",
+                    "code": r.code, "name": r.name,
+                    "side": r.side, "quantity": r.quantity,
+                    "price": r.price, "amount": r.amount,
+                    "action": r.action, "reason": r.reason,
+                    "mode": r.mode,
+                }
+                for r in records
+            ]
+            return {"connected": True, "trades": trades}
+        except Exception as e:
+            return {"connected": True, "trades": [], "message": f"거래 내역 조회 오류: {e}"}
     
     # ── Regime ──
     @app.get("/api/regime")

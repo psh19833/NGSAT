@@ -86,6 +86,22 @@ class TradeRepository:
             .all()
         )
 
+    def get_recent_trades(self, limit: int = 50) -> list[TradeRecord]:
+        """Get most recent trades across all stocks."""
+        return (
+            self._session.query(TradeRecord)
+            .order_by(TradeRecord.created_at.desc())
+            .limit(limit)
+            .all()
+        )
+        return (
+            self._session.query(TradeRecord)
+            .filter(TradeRecord.code == code)
+            .order_by(TradeRecord.created_at.desc())
+            .limit(limit)
+            .all()
+        )
+
 
 class PositionRepository:
     """Position storage and retrieval."""

@@ -24,11 +24,13 @@ from typing import Any
 
 from core.config import RiskConfig
 from core.logger import logger
+from pathlib import Path
 from core.types import (
     AccountSummary,
     DecisionAction,
     DecisionReason,
     MarketRegime,
+    OrderSide,
     Position,
     PriceData,
     StrategyMode,
@@ -111,6 +113,15 @@ class TradingOrchestrator:
         self._executor = OrderExecutor(broker, self._risk, self._controller)
         self._inference = MLInference(model, buy_threshold, sell_threshold, minute_model=minute_model)
         self._position_budget_pct = position_budget_pct
+        
+        # Database for trade records
+        from sqlalchemy import create_engine
+        from sqlalchemy.orm import Session
+        from data.repository import TradeRepository
+        db_path = str(Path(__file__).resolve().parent.parent / "data" / "ngsat.db")
+        self._db_engine = create_engine(f"sqlite:///{db_path}", echo=False)
+        self._db_session = Session(self._db_engine)
+        self._trade_repo = TradeRepository(self._db_session)
 
         # State
         self._last_regime: RegimeResult | None = None
@@ -289,6 +300,18 @@ class TradingOrchestrator:
 
                 if exec_result.success:
                     result.buys_executed += 1
+                    # Record to database
+                    try:
+                        self._trade_repo.save_trade(
+                            code=pred.code, name=pred.name,
+                            side=OrderSide.BUY, quantity=quantity,
+                            price=exec_result.price or ref_price,
+                            amount=exec_result.amount or (quantity * (exec_result.price or ref_price)),
+                            action=pred.action, reason=buy_reason,
+                        )
+                        self._db_session.commit()
+                    except Exception as e:
+                        logger.error(f"거래 기록 저장 실패: {e}")
                     held_codes.add(pred.code)
                 else:
                     result.errors.append(f"매수 실패 {pred.code}: {exec_result.error}")
