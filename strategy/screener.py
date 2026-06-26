@@ -263,7 +263,7 @@ def _evaluate_single_stock(
     
     # Pattern scoring (weighted by regime)
     detected_count = len(patterns)
-    score += detected_count * 10 * pattern_weight
+    score += detected_count * 4 * pattern_weight
     
     # KOSPI bonus (기획서: 코스피 비중 더 높게)
     kospi_bonus = False
