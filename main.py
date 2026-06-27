@@ -183,6 +183,13 @@ async def run_live(config, args):
     )
     logger.info("오케스트레이터 초기화 완료")
 
+    # Inject strategy config into module-level globals (screener, mode_selector)
+    from strategy.screener import init_screener_config
+    from strategy.mode_selector import init_mode_selector_config
+    init_screener_config(config.strategy)
+    init_mode_selector_config(config.strategy)
+    logger.info("전략 설정 주입 완료 (스크리너 + 모드선택기)")
+
     # ── 4. Telegram bot (optional) ──
     telegram_bot = None
     if not args.no_telegram and config.telegram.is_configured:

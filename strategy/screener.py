@@ -145,8 +145,8 @@ def screen_stocks(
     candidates: list[ScreenCandidate] = []
     
     for stock_info, price_history in stocks:
-        if len(price_history) < 30:
-            continue  # 데이터 부족
+        if len(price_history) < 60:
+            continue  # 데이터 부족 (ML 예측도 60일 필요)
         
         candidate = _evaluate_single_stock(stock_info, price_history, thresholds)
         
