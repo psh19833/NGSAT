@@ -26,15 +26,39 @@ from core.types import Market, PriceData, StockInfo
 
 KST = timezone(timedelta(hours=9))
 
-# 기본 수집 종목 (KOSPI 30)
-DEFAULT_UNIVERSE_CODES: list[str] = [
-    "005930", "000660", "373220", "207940", "005380",
-    "000270", "068270", "105560", "055550", "035420",
-    "000810", "012330", "006400", "028260", "032830",
-    "086790", "003550", "066570", "015760", "017670",
-    "329180", "138040", "096770", "018260", "034730",
-    "323410", "259960", "352820", "247540", "196170",
+# ── KOSPI / KOSDAQ 종목코드 (명시적 매핑) ──
+# 설계: KOSPI 70% · KOSDAQ 30%
+# KOSPI 28 + KOSDAQ 12 = 40종목 (28/40 = 70%)
+
+KOSPI_CODES: list[str] = [
+    "005930", "000660", "373220", "207940", "005380",  # 삼전, 하이닉스, LG엔솔, 삼바, 현대차
+    "000270", "068270", "105560", "055550", "035420",  # 기아, 셀트리온, KB금융, 신한지주, NAVER
+    "000810", "012330", "006400", "028260", "032830",  # 삼성화재, 현대모비스, 삼성SDI, 삼성물산, 삼성생명
+    "086790", "003550", "066570", "015760", "017670",  # 하나금융, LG, LG전자, 한국전력, SKT
+    "329180", "138040", "096770", "018260", "034730",  # HD현대중공업, 메리츠금융, SK이노, SDS, SK
+    "323410", "259960", "352820",                       # 카카오뱅크, 크래프톤, 하이브
 ]
+
+KOSDAQ_CODES: list[str] = [
+    "247540", "196170",  # 에코프로비엠, 알테오젠 (기존 유지)
+    "028300", "086520", "058470", "214150", "035900",  # HLB, 에코프로, 리노공업, 클래시스, JYP
+    "403870", "068760", "263750", "257720", "240810",  # HPSP, 셀트리온제약, 펄어비스, 실리콘투, 원익IPS
+]
+
+DEFAULT_UNIVERSE_CODES: list[str] = KOSPI_CODES + KOSDAQ_CODES
+
+
+def _infer_market(code: str) -> Market:
+    """종목코드로 KOSPI/KOSDAQ 구분 (명시적 리스트 기반)."""
+    code = code.strip()
+    if code in KOSPI_CODES:
+        return Market.KOSPI
+    if code in KOSDAQ_CODES:
+        return Market.KOSDAQ
+    # 미등록 코드 → 첫자리 휴리스틱 (mapper.py _infer_market 동일 로직)
+    if code and len(code) >= 6 and code[0] in ("0", "1"):
+        return Market.KOSPI
+    return Market.KOSDAQ
 
 
 class RealDataProvider:
@@ -87,7 +111,7 @@ class RealDataProvider:
             try:
                 prices = await adapter.get_price_history(code, start, end)
                 if prices:
-                    market = Market.KOSPI  # 기본값
+                    market = _infer_market(code)
                     info = StockInfo(code=code, name=_code_to_name(code), market=market)
                     universe.append((info, prices))
             except Exception as e:
@@ -238,6 +262,12 @@ def _code_to_name(code: str) -> str:
         "015760": "한국전력", "017670": "SK텔레콤", "329180": "HD현대중공업",
         "138040": "메리츠금융지주", "096770": "SK이노베이션", "018260": "삼성에스디에스",
         "034730": "SK", "323410": "카카오뱅크", "259960": "크래프톤",
-        "352820": "하이브", "247540": "에코프로비엠", "196170": "알테오젠",
+        "352820": "하이브",
+        # KOSDAQ
+        "247540": "에코프로비엠", "196170": "알테오젠",
+        "028300": "HLB", "086520": "에코프로", "058470": "리노공업",
+        "214150": "클래시스", "035900": "JYP Ent.", "403870": "HPSP",
+        "068760": "셀트리온제약", "263750": "펄어비스", "257720": "실리콘투",
+        "240810": "원익IPS",
     }
     return names.get(code, f"종목{code}")
