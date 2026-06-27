@@ -20,6 +20,7 @@ Endpoints:
 from __future__ import annotations
 from dataclasses import asdict
 from datetime import datetime
+import os
 
 from fastapi import FastAPI
 from typing import Any
@@ -60,10 +61,12 @@ def create_app(orchestrator=None, config=None) -> FastAPI:
         version="0.1.0",
     )
     
-    # CORS for frontend
+    # CORS for frontend — production: set NGSAT_CORS_ORIGINS env (comma-separated)
+    origins_env = os.getenv("NGSAT_CORS_ORIGINS", "*")
+    allow_origins = [o.strip() for o in origins_env.split(",") if o.strip()] if origins_env != "*" else ["*"]
     app.add_middleware(
         CORSMiddleware,
-        allow_origins=["*"],  # Dev: allow all. Production: restrict.
+        allow_origins=allow_origins,
         allow_credentials=True,
         allow_methods=["*"],
         allow_headers=["*"],

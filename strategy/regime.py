@@ -96,8 +96,18 @@ def evaluate_regime(
     
     scores: dict[str, float] = {}
     reasons: list[str] = []
-    
-    # ── 1. MA Alignment (35점) ──
+
+    # ── Use dynamic config if injected ──
+    cfg = _get_regime_config()
+    w_ma = cfg.regime_weight_ma
+    w_rsi = cfg.regime_weight_rsi
+    w_bb = cfg.regime_weight_bollinger
+    w_cr = cfg.regime_weight_change_rate
+    w_vol = cfg.regime_weight_volume
+    bull_t = cfg.regime_bull_threshold
+    bear_t = cfg.regime_bear_threshold
+
+    # ── 1. MA Alignment ──
     ma_score, ma_reason = _score_ma_alignment(c)
     scores["ma_alignment"] = ma_score
     reasons.append(ma_reason)
@@ -124,18 +134,18 @@ def evaluate_regime(
     
     # ── Weighted total ──
     total = (
-        scores["ma_alignment"] * _WEIGHT_MA_ALIGNMENT / 100
-        + scores["rsi"] * _WEIGHT_RSI / 100
-        + scores["bollinger"] * _WEIGHT_BOLLINGER / 100
-        + scores["change_rate"] * _WEIGHT_CHANGE_RATE / 100
-        + scores["volume_trend"] * _WEIGHT_VOLUME_TREND / 100
+        scores["ma_alignment"] * w_ma / 100
+        + scores["rsi"] * w_rsi / 100
+        + scores["bollinger"] * w_bb / 100
+        + scores["change_rate"] * w_cr / 100
+        + scores["volume_trend"] * w_vol / 100
     )
     
     # Determine regime
-    if total >= BULL_THRESHOLD:
+    if total >= bull_t:
         regime = MarketRegime.BULL
         regime_kr = "강세장"
-    elif total <= BEAR_THRESHOLD:
+    elif total <= bear_t:
         regime = MarketRegime.BEAR
         regime_kr = "약세장"
     else:
@@ -146,8 +156,8 @@ def evaluate_regime(
     
     evidence = {k: v for k, v in scores.items()}
     evidence["total_score"] = total
-    evidence["bull_threshold"] = BULL_THRESHOLD
-    evidence["bear_threshold"] = BEAR_THRESHOLD
+    evidence["bull_threshold"] = bull_t
+    evidence["bear_threshold"] = bear_t
     
     return RegimeResult(
         regime=regime,

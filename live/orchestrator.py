@@ -136,8 +136,9 @@ class TradingOrchestrator:
             self._db_engine = create_engine(f"sqlite:///{db_path}", echo=False)
 
         Session = sessionmaker(bind=self._db_engine)
-        self._db_session = Session()
-        self._trade_repo = TradeRepository(self._db_session)
+        self._Session = Session  # sessionmaker factory (thread-safe)
+        # Session created per-cycle in run_cycle() for isolation
+        self._trade_repo = TradeRepository  # Keep class ref; instantiated with session per cycle
 
         # State
         self._last_regime: RegimeResult | None = None
@@ -331,18 +332,19 @@ class TradingOrchestrator:
 
                 if exec_result.success:
                     result.buys_executed += 1
-                    # Record to database
+                    # Record to database (per-cycle session for isolation)
                     try:
-                        self._trade_repo.save_trade(
-                            code=pred.code, name=pred.name,
-                            side=OrderSide.BUY, quantity=quantity,
-                            price=exec_result.price or ref_price,
-                            amount=exec_result.amount or (quantity * (exec_result.price or ref_price)),
-                            action=pred.action, reason=buy_reason,
-                        )
-                        self._db_session.commit()
+                        with self._Session() as session:
+                            trade_repo = self._trade_repo(session)
+                            trade_repo.save_trade(
+                                code=pred.code, name=pred.name,
+                                side=OrderSide.BUY, quantity=quantity,
+                                price=exec_result.price or ref_price,
+                                amount=exec_result.amount or (quantity * (exec_result.price or ref_price)),
+                                action=pred.action, reason=buy_reason,
+                            )
+                            session.commit()
                     except Exception as e:
-                        self._db_session.rollback()
                         logger.error(f"거래 기록 저장 실패: {e}")
                     held_codes.add(pred.code)
                 else:
@@ -553,9 +555,9 @@ class TradingOrchestrator:
         )
 
     async def close(self):
-        """Clean up database session and resources."""
-        if self._db_session:
+        """Clean up database engine and resources."""
+        if hasattr(self, '_db_engine') and self._db_engine:
             try:
-                self._db_session.close()
+                self._db_engine.dispose()
             except Exception as e:
-                logger.warning(f"DB 세션 종료 중 오류: {e}")
+                logger.warning(f"DB 엔진 종료 중 오류: {e}")

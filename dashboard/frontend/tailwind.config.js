@@ -1,6 +1,18 @@
 /** @type {import('tailwindcss').Config} */
 export default {
   content: ['./index.html', './src/**/*.{js,jsx}'],
+  safelist: [
+    'bg-ngsat-green/10', 'text-ngsat-green', 'border-ngsat-green/20',
+    'bg-ngsat-green/20',
+    'bg-ngsat-red/10', 'text-ngsat-red', 'border-ngsat-red/20',
+    'bg-ngsat-red/20',
+    'bg-ngsat-yellow/10', 'text-ngsat-yellow', 'border-ngsat-yellow/20',
+    'bg-ngsat-yellow/20',
+    'bg-ngsat-blue/10', 'text-ngsat-blue', 'border-ngsat-blue/20',
+    'bg-ngsat-blue/20',
+    'bg-ngsat-purple/10', 'text-ngsat-purple', 'border-ngsat-purple/20',
+    'bg-ngsat-purple/20',
+  ],
   theme: {
     extend: {
       colors: {

@@ -133,6 +133,15 @@ const SECTIONS = [
       return null
     },
   },
+  {
+    id: 'portfolio',
+    title: '⑨ 포트폴리오 제한',
+    desc: '한 번에 보유할 종목 수 등을 제한합니다.',
+    fields: [
+      { key: 'max_holdings', label: '최대 보유 종목', unit: '개', min: 1, max: 20, step: 1,
+        hint: '동시에 보유할 수 있는 최대 종목 수입니다. 10이면 최대 10개 종목까지 동시 보유 가능. 0=무제한.' },
+    ],
+  },
 ]
 
 // ── Presets ──

@@ -157,6 +157,8 @@ class BacktestEngine:
         self._daily_loss: float = 0.0
         self._is_halted: bool = False
         self._peak_capital: float = initial_capital
+        # FIFO queue of buy trades per stock code (for correct win/loss matching)
+        self._buy_queue: dict[str, list[BacktestTrade]] = {}
         self._entries_deferred: int = 0
         self._current_mode: str = "swing"
         self._swing_days: int = 0
@@ -347,15 +349,18 @@ class BacktestEngine:
                 if exit_pred and exit_pred.action == DecisionAction.SELL:
                     self._execute_sell(pos, sell_price, date_str, DecisionAction.SELL, exit_pred.reason)
             
-            # 5. Daily loss check
+            # 5. Daily loss check (day-over-day, not max drawdown)
             current_capital = self._total_capital(universe, day_idx)
             self._daily_capital.append(current_capital)
-            
+
             if current_capital > self._peak_capital:
                 self._peak_capital = current_capital
-            
-            daily_loss_pct = ((current_capital - self._peak_capital) / self._peak_capital * 100) if self._peak_capital > 0 else 0
-            
+
+            daily_loss_pct = 0.0
+            if len(self._daily_capital) > 1:
+                prev = self._daily_capital[-2]
+                daily_loss_pct = ((current_capital - prev) / prev * 100) if prev > 0 else 0
+
             if abs(daily_loss_pct) >= self._risk.daily_loss_limit_pct:
                 self._is_halted = True
                 logger.warning(f"백테스트 일일 손실 한도 도달: {daily_loss_pct:.1f}% → 매매 중단")
@@ -422,6 +427,9 @@ class BacktestEngine:
         )
         self._trades.append(trade)
         
+        # Track buy in FIFO queue for correct win/loss matching
+        self._buy_queue.setdefault(pred.code, []).append(trade)
+        
         logger.debug(f"백테스트 매수: {pred.name}({pred.code}) {quantity}주 @ {price:,.0f}")
     
     def _execute_sell(
@@ -482,8 +490,9 @@ class BacktestEngine:
         losing = 0
         for t in self._trades:
             if t.side == "sell":
-                # Find corresponding buy
-                buy_trade = next((b for b in self._trades if b.code == t.code and b.side == "buy"), None)
+                # Find corresponding buy (FIFO queue)
+                buy_queue = self._buy_queue.get(t.code, [])
+                buy_trade = buy_queue.pop(0) if buy_queue else None
                 if buy_trade and t.price > buy_trade.price:
                     winning += 1
                 elif buy_trade:
