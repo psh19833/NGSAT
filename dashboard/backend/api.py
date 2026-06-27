@@ -117,7 +117,10 @@ def create_app(orchestrator=None, config=None) -> FastAPI:
         """Write StrategyConfig values to .env file with file locking."""
         from pathlib import Path
         from core.config import PROJECT_ROOT
-        import fcntl
+        try:
+            import fcntl
+        except ImportError:
+            fcntl = None  # Windows: 파일 잠금 없이 동작 (단일 사용자 UI)
 
         env_path = Path(PROJECT_ROOT) / ".env"
 
@@ -149,6 +152,7 @@ def create_app(orchestrator=None, config=None) -> FastAPI:
             "NGSAT_MODE_SHORT_STOP_LOSS": "mode_short_stop_loss_pct",
             "NGSAT_MODE_SHORT_DAILY_LOSS": "mode_short_daily_loss_pct",
             "NGSAT_MODE_SHORT_POSITION_SIZE": "mode_short_position_size",
+            "NGSAT_MAX_HOLDINGS": "max_holdings",
             "NGSAT_MODE_HOLD_STOP_LOSS": "mode_hold_stop_loss_pct",
             "NGSAT_MODE_HOLD_DAILY_LOSS": "mode_hold_daily_loss_pct",
             "NGSAT_MODE_HOLD_POSITION_SIZE": "mode_hold_position_size",
@@ -156,7 +160,8 @@ def create_app(orchestrator=None, config=None) -> FastAPI:
 
         # Read + write with exclusive file lock (동시 대시보드 요청 안전)
         with open(env_path, "r+") as f:
-            fcntl.flock(f, fcntl.LOCK_EX)
+            if fcntl:
+                fcntl.flock(f, fcntl.LOCK_EX)
             try:
                 lines = f.readlines()
 
@@ -190,7 +195,8 @@ def create_app(orchestrator=None, config=None) -> FastAPI:
                 f.writelines(new_lines)
                 f.truncate()
             finally:
-                fcntl.flock(f, fcntl.LOCK_UN)
+                if fcntl:
+                    fcntl.flock(f, fcntl.LOCK_UN)
     
     # ── Status ──
     @app.get("/api/status")

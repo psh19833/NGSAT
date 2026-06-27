@@ -355,7 +355,8 @@ class TradingOrchestrator:
 
             # 1) 일봉 손절선 도달 → 손절 (분봉 급락이면 시장가 즉시)
             loss_pct = abs(min(position.profit_loss_pct, 0))
-            if loss_pct >= position.stop_loss_pct:
+            effective_stop = self._risk.effective_stop_loss_pct or position.stop_loss_pct
+            if loss_pct >= effective_stop:
                 exec_result = await self._executor.execute_sell(
                     code=position.code,
                     name=position.name,
@@ -364,7 +365,7 @@ class TradingOrchestrator:
                     action=DecisionAction.STOP_LOSS,
                     reason=(
                         f"손절: {position.name}({position.code}) "
-                        f"손실 {loss_pct:.1f}% >= 손절선 {position.stop_loss_pct:.1f}% "
+                        f"손실 {loss_pct:.1f}% >= 손절선 {effective_stop:.1f}% "
                         f"|| 청산정밀화: {exit_ref.reason}"
                     ),
                 )
@@ -542,3 +543,11 @@ class TradingOrchestrator:
             name=name or pos.name,
             quantity=pos.quantity,
         )
+
+    async def close(self):
+        """Clean up database session and resources."""
+        if self._db_session:
+            try:
+                self._db_session.close()
+            except Exception as e:
+                logger.warning(f"DB 세션 종료 중 오류: {e}")

@@ -29,7 +29,7 @@ from typing import Any
 
 import numpy as np
 
-from core.config import RiskConfig
+from core.config import RiskConfig, StrategyConfig
 from core.logger import logger
 from core.types import (
     DecisionAction,
@@ -139,16 +139,18 @@ class BacktestEngine:
         model: PriceRiseModel,
         initial_capital: float = 10_000_000,
         risk_config: RiskConfig | None = None,
+        strategy_config: StrategyConfig | None = None,
         buy_threshold: float = 0.65,
         sell_threshold: float = 0.35,
         minute_model: PriceRiseModel | None = None,
     ):
         self._model = model
-        self._minute_model = minute_model  # 단타 모드용 분봉 모델 (옵션)
+        self._minute_model = minute_model
         self._inference = MLInference(model, buy_threshold, sell_threshold, minute_model=minute_model)
         self._initial_capital = initial_capital
         self._cash = initial_capital
         self._risk = risk_config or RiskConfig()
+        self._strategy = strategy_config or StrategyConfig()
         self._positions: dict[str, BacktestPosition] = {}
         self._trades: list[BacktestTrade] = []
         self._daily_capital: list[float] = []
@@ -160,6 +162,11 @@ class BacktestEngine:
         self._swing_days: int = 0
         self._short_term_days: int = 0
         self._hold_days: int = 0
+
+    # ── Fee constants (한국 주식 시장 기준) ──
+    BUY_FEE_RATE = 0.00015    # 매수 수수료 0.015%
+    SELL_FEE_RATE = 0.00015   # 매도 수수료 0.015%
+    SELL_TAX_RATE = 0.0023    # 농특세 0.20% + 거래소/청산소 0.03%
     
     def run(
         self,
@@ -232,6 +239,13 @@ class BacktestEngine:
                 if candidate.code in self._positions:
                     continue  # Already holding
 
+                # 포지션 리스크: 최대 보유 종목 수 체크 (break = 루프 종료)
+                if self._strategy.max_holdings > 0 and len(self._positions) >= self._strategy.max_holdings:
+                    logger.info(
+                        f"백테스트 최대 보유({self._strategy.max_holdings}개) 도달 — 신규 진입 생략"
+                    )
+                    break
+
                 # HOLD 모드: 신규 진입 금지
                 if self._current_mode == "hold":
                     continue
@@ -300,7 +314,12 @@ class BacktestEngine:
                             sell_price = exit_ref.limit_price
 
                 # Stop loss check (모드별 손절선 반영)
-                mode_stop = 1.5 if is_short_term else pos.stop_loss_pct
+                mode_stop_loss = {
+                    "swing": self._strategy.mode_swing_stop_loss_pct,
+                    "short_term": self._strategy.mode_short_stop_loss_pct,
+                    "hold": self._strategy.mode_hold_stop_loss_pct,
+                }
+                mode_stop = mode_stop_loss.get(self._current_mode, pos.stop_loss_pct)
                 loss_pct = abs(min(profit_pct, 0))
                 if loss_pct >= mode_stop:
                     self._execute_sell(
@@ -371,11 +390,13 @@ class BacktestEngine:
             return
         
         amount = price * quantity
-        
-        if amount > self._cash:
+        fee = amount * self.BUY_FEE_RATE
+        total_cost = amount + fee
+
+        if total_cost > self._cash:
             return
-        
-        self._cash -= amount
+
+        self._cash -= total_cost
         
         self._positions[pred.code] = BacktestPosition(
             code=pred.code,
@@ -413,7 +434,10 @@ class BacktestEngine:
     ) -> None:
         """Execute a simulated sell."""
         amount = price * pos.quantity
-        self._cash += amount
+        fee = amount * self.SELL_FEE_RATE
+        tax = amount * self.SELL_TAX_RATE
+        net_amount = amount - fee - tax
+        self._cash += net_amount
         
         self._trades.append(BacktestTrade(
             code=pos.code,

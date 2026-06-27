@@ -452,6 +452,7 @@ class PriceRiseModel:
 
         best_model.fit(X, y)
         self._model = best_model
+        self._scaler = None  # auto_tune은 unscaled X로 학습 → predict_proba에서 scale 생략
         self._is_trained = True
 
         logger.info(
