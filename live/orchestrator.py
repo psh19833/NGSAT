@@ -136,9 +136,11 @@ class TradingOrchestrator:
             self._db_engine = create_engine(f"sqlite:///{db_path}", echo=False)
 
         Session = sessionmaker(bind=self._db_engine)
-        self._Session = Session  # sessionmaker factory (thread-safe)
-        # Session created per-cycle in run_cycle() for isolation
-        self._trade_repo = TradeRepository  # Keep class ref; instantiated with session per cycle
+        self._Session = Session  # sessionmaker factory (thread-safe, for per-cycle writes)
+        # Separate read-only session + repo for dashboard queries
+        self._db_session = Session()
+        self._TradeRepo = TradeRepository  # class ref for per-cycle instantiation
+        self._trade_repo = TradeRepository(self._db_session)
 
         # State
         self._last_regime: RegimeResult | None = None
@@ -335,7 +337,7 @@ class TradingOrchestrator:
                     # Record to database (per-cycle session for isolation)
                     try:
                         with self._Session() as session:
-                            trade_repo = self._trade_repo(session)
+                            trade_repo = self._TradeRepo(session)
                             trade_repo.save_trade(
                                 code=pred.code, name=pred.name,
                                 side=OrderSide.BUY, quantity=quantity,
