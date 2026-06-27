@@ -177,6 +177,9 @@ async def run_live(config, args):
         strategy_config=config.strategy,
         buy_threshold=config.strategy.buy_threshold,
         sell_threshold=config.strategy.sell_threshold,
+        db_url=config.database.url,
+        db_pool_size=config.database.pool_size,
+        db_max_overflow=config.database.max_overflow,
     )
     logger.info("오케스트레이터 초기화 완료")
 

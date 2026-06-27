@@ -137,6 +137,9 @@ class StrategyConfig:
     mode_hold_daily_loss_pct: float = 5.0
     mode_hold_position_size: float = 0.0
 
+    # ── 포트폴리오 리스크 ──
+    max_holdings: int = 10                # 최대 보유 종목 수 (0=제한 없음)
+
 
 @dataclass
 class TelegramConfig:
@@ -238,6 +241,9 @@ def load_config(env_file: str | None = None) -> Config:
     s.mode_hold_stop_loss_pct = float(os.getenv("NGSAT_MODE_HOLD_STOP_LOSS", "3.0"))
     s.mode_hold_daily_loss_pct = float(os.getenv("NGSAT_MODE_HOLD_DAILY_LOSS", "5.0"))
     s.mode_hold_position_size = float(os.getenv("NGSAT_MODE_HOLD_POSITION_SIZE", "0.0"))
+
+    # Portfolio risk
+    s.max_holdings = int(os.getenv("NGSAT_MAX_HOLDINGS", "10"))
 
     # Telegram
     config.telegram.bot_token = os.getenv("TELEGRAM_BOT_TOKEN", "")

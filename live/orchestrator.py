@@ -22,7 +22,7 @@ from dataclasses import dataclass, field
 from datetime import datetime
 from typing import Any
 
-from core.config import RiskConfig
+from core.config import RiskConfig, StrategyConfig
 from core.logger import logger
 from pathlib import Path
 from core.types import (
@@ -106,9 +106,13 @@ class TradingOrchestrator:
         position_budget_pct: float = 0.10,
         minute_model=None,
         strategy_config=None,
+        db_url: str | None = None,
+        db_pool_size: int = 10,
+        db_max_overflow: int = 20,
     ):
         self._broker = broker
         self._risk = RiskManager(risk_config or RiskConfig(), strategy_config=strategy_config)
+        self._strategy = strategy_config or StrategyConfig()
         self._controller = TradingController()
         self._executor = OrderExecutor(broker, self._risk, self._controller)
         self._inference = MLInference(model, buy_threshold, sell_threshold, minute_model=minute_model)
@@ -116,11 +120,23 @@ class TradingOrchestrator:
         
         # Database for trade records
         from sqlalchemy import create_engine
-        from sqlalchemy.orm import Session
+        from sqlalchemy.orm import sessionmaker
         from data.repository import TradeRepository
-        db_path = str(Path(__file__).resolve().parent.parent / "data" / "ngsat.db")
-        self._db_engine = create_engine(f"sqlite:///{db_path}", echo=False)
-        self._db_session = Session(self._db_engine)
+
+        if db_url:
+            self._db_engine = create_engine(
+                db_url,
+                pool_size=db_pool_size,
+                max_overflow=db_max_overflow,
+                echo=False,
+            )
+        else:
+            # Fallback: SQLite (localhost / dev)
+            db_path = str(Path(__file__).resolve().parent.parent / "data" / "ngsat.db")
+            self._db_engine = create_engine(f"sqlite:///{db_path}", echo=False)
+
+        Session = sessionmaker(bind=self._db_engine)
+        self._db_session = Session()
         self._trade_repo = TradeRepository(self._db_session)
 
         # State
@@ -240,6 +256,13 @@ class TradingOrchestrator:
             if candidate.code in held_codes:
                 continue  # Already holding
 
+            # 포지션 리스크: 최대 보유 종목 수 체크 (break = 루프 종료, 청산 루프는 별도)
+            if self._strategy.max_holdings > 0 and len(held_codes) >= self._strategy.max_holdings:
+                logger.info(
+                    f"최대 보유 종목({self._strategy.max_holdings}개) 도달 — 신규 진입 생략"
+                )
+                break
+
             # HOLD 모드: 신규 진입 금지
             if self._current_mode == "hold":
                 continue
@@ -311,6 +334,7 @@ class TradingOrchestrator:
                         )
                         self._db_session.commit()
                     except Exception as e:
+                        self._db_session.rollback()
                         logger.error(f"거래 기록 저장 실패: {e}")
                     held_codes.add(pred.code)
                 else:
@@ -445,8 +469,8 @@ class TradingOrchestrator:
         """
         try:
             return await self._broker.get_minute_history(code)
-        except (NotImplementedError, Exception) as e:
-            logger.debug(f"분봉 조회 실패({code}): {type(e).__name__}")
+        except Exception as e:
+            logger.warning(f"분봉 조회 실패({code}): {type(e).__name__}")
             return None
 
     async def _refine_entry(self, code: str, use_minute: bool = True) -> EntryDecision:

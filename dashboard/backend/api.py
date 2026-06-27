@@ -114,18 +114,16 @@ def create_app(orchestrator=None, config=None) -> FastAPI:
         return app.state.config.strategy
     
     def _update_env_from_config(cfg):
-        """Write StrategyConfig values to .env file."""
+        """Write StrategyConfig values to .env file with file locking."""
         from pathlib import Path
         from core.config import PROJECT_ROOT
+        import fcntl
+
         env_path = Path(PROJECT_ROOT) / ".env"
-        
+
         if not env_path.exists():
             return
-        
-        # Read existing .env lines
-        with open(env_path, "r") as f:
-            lines = f.readlines()
-        
+
         # Build lookup of NGSAT_* env var names → config attribute
         field_map = {
             "NGSAT_BUY_THRESHOLD": "buy_threshold",
@@ -155,36 +153,44 @@ def create_app(orchestrator=None, config=None) -> FastAPI:
             "NGSAT_MODE_HOLD_DAILY_LOSS": "mode_hold_daily_loss_pct",
             "NGSAT_MODE_HOLD_POSITION_SIZE": "mode_hold_position_size",
         }
-        
-        # Update matching lines or append new ones
-        seen = set()
-        new_lines = []
-        for line in lines:
-            updated = False
-            for env_key, attr in field_map.items():
-                if line.startswith(env_key + "=") or line.startswith(env_key + " ="):
-                    val = getattr(cfg, attr, None)
-                    if val is not None:
-                        new_lines.append(f"{env_key}={val}\n")
-                    else:
+
+        # Read + write with exclusive file lock (동시 대시보드 요청 안전)
+        with open(env_path, "r+") as f:
+            fcntl.flock(f, fcntl.LOCK_EX)
+            try:
+                lines = f.readlines()
+
+                seen = set()
+                new_lines = []
+                for line in lines:
+                    updated = False
+                    for env_key, attr in field_map.items():
+                        if line.startswith(env_key + "=") or line.startswith(env_key + " ="):
+                            val = getattr(cfg, attr, None)
+                            if val is not None:
+                                new_lines.append(f"{env_key}={val}\n")
+                            else:
+                                new_lines.append(line)
+                            seen.add(env_key)
+                            updated = True
+                            break
+                    if not updated:
                         new_lines.append(line)
-                    seen.add(env_key)
-                    updated = True
-                    break
-            if not updated:
-                new_lines.append(line)
-        
-        # Append strategy keys that weren't in the file
-        for env_key in field_map:
-            if env_key not in seen:
-                attr = field_map[env_key]
-                val = getattr(cfg, attr, None)
-                if val is not None:
-                    new_lines.append(f"{env_key}={val}\n")
-        
-        # Write back
-        with open(env_path, "w") as f:
-            f.writelines(new_lines)
+
+                # Append strategy keys that weren't in the file
+                for env_key in field_map:
+                    if env_key not in seen:
+                        attr = field_map[env_key]
+                        val = getattr(cfg, attr, None)
+                        if val is not None:
+                            new_lines.append(f"{env_key}={val}\n")
+
+                # Write back (seek + truncate to replace content in-place)
+                f.seek(0)
+                f.writelines(new_lines)
+                f.truncate()
+            finally:
+                fcntl.flock(f, fcntl.LOCK_UN)
     
     # ── Status ──
     @app.get("/api/status")
