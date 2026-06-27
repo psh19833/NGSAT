@@ -6,11 +6,13 @@ Keeps data access logic separate from business logic.
 
 from __future__ import annotations
 
+import re
 from datetime import datetime
 from typing import Optional
 
 from sqlalchemy.orm import Session
 
+from core.logger import logger
 from core.models import (
     DailyReport,
     MarketDataCache,
@@ -20,6 +22,8 @@ from core.models import (
     TradeRecord,
 )
 from core.types import DecisionAction, OrderSide
+
+_SYNTHETIC_NAME_RE = re.compile(r"^synthetic_\d+$")
 
 
 class TradeRepository:
@@ -43,12 +47,17 @@ class TradeRepository:
         position_id: int | None = None,
     ) -> TradeRecord:
         """Save a trade record with mandatory decision reason.
-        
+
         Raises:
-            ValueError: If reason is empty.
+            ValueError: If reason is empty, or if synthetic data detected.
         """
         if not reason or not reason.strip():
             raise ValueError("Trade reason is mandatory — no decision without a reason")
+
+        # ── Synthetic data guard ──
+        if _SYNTHETIC_NAME_RE.match(name):
+            logger.error(f"합성 데이터 차단: {name}({code}) — 실거래만 저장 가능")
+            raise ValueError(f"Synthetic data blocked: {name}({code})")
 
         record = TradeRecord(
             code=code,
@@ -90,13 +99,6 @@ class TradeRepository:
         """Get most recent trades across all stocks."""
         return (
             self._session.query(TradeRecord)
-            .order_by(TradeRecord.created_at.desc())
-            .limit(limit)
-            .all()
-        )
-        return (
-            self._session.query(TradeRecord)
-            .filter(TradeRecord.code == code)
             .order_by(TradeRecord.created_at.desc())
             .limit(limit)
             .all()

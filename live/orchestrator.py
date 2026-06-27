@@ -183,6 +183,14 @@ class TradingOrchestrator:
         
         logger.info(f"=== 매매 사이클 #{self._cycle_count} 시작 ===")
         
+        # ── Step 0: Universe sanity check (synthetic data guard) ──
+        for info, _ in stock_universe:
+            name = getattr(info, 'name', str(info))
+            if name.startswith("synthetic_"):
+                logger.error(f"합성 유니버스 감지 — 사이클 스킵: {name}({getattr(info, 'code', '?')})")
+                result.reason = f"합성 데이터 차단: {name}"
+                return result
+        
         # ── Step 1: Fetch account ──
         try:
             account = await self._broker.get_account_summary()
