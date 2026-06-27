@@ -436,17 +436,31 @@ class PriceRiseModel:
         study = optuna.create_study(direction="maximize")
         study.optimize(objective, n_trials=n_trials, timeout=timeout)
 
-        # Train with best params
-        self._model = study.best_params
+        # Train with best params — construct and fit the best model
+        best_params = study.best_params
+        if self.model_type == "random_forest":
+            best_model = RandomForestClassifier(**best_params)
+        elif self.model_type == "xgboost" and XGBClassifier is not None:
+            best_model = XGBClassifier(**best_params)
+        elif self.model_type == "lightgbm" and LGBMClassifier is not None:
+            best_model = LGBMClassifier(**best_params)
+        elif self.model_type == "gradient_boosting":
+            best_model = HistGradientBoostingClassifier(**best_params)
+        else:
+            logger.error(f"auto_tune: 알 수 없는 모델 타입 {self.model_type}")
+            return {"best_params": best_params, "best_auc": study.best_value}
+
+        best_model.fit(X, y)
+        self._model = best_model
         self._is_trained = True
 
         logger.info(
             f"Optuna 튜닝 완료: {self.model_type}, "
             f"best AUC={study.best_value:.4f}, "
             f"trials={len(study.trials)}, "
-            f"params={study.best_params}"
+            f"params={best_params}"
         )
-        return {"best_params": study.best_params, "best_auc": study.best_value}
+        return {"best_params": best_params, "best_auc": study.best_value}
 
     def auto_retrain(self, all_prices, codes):
         """FreqAI-style 자동 재학습: 새 데이터로 학습 후 기존보다 좋으면 교체.

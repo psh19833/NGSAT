@@ -160,6 +160,58 @@ class RealDataProvider:
         if self._adapter:
             await self._adapter.close()
 
+    async def refresh_prices(self):
+        """실시간 시세 갱신 — 최근 5일치만 조회해 캐시된 데이터 업데이트.
+
+        load()로 전체 데이터를 로드한 후, 매 사이클마다 이 메서드를 호출하면
+        최신 일봉 데이터로 캐시가 갱신된다.
+
+        Returns:
+            Updated (universe, index_prices).
+        """
+        if self._universe_cache is None:
+            return await self.load()
+
+        adapter = await self._get_adapter()
+        now = datetime.now(KST)
+        start = now - timedelta(days=5)  # 주말/공휴일 커버
+
+        # Refresh each stock's latest bar
+        import asyncio
+
+        for i, (info, prices) in enumerate(self._universe_cache):
+            try:
+                new_bars = await adapter.get_price_history(info.code, start, now)
+                if new_bars:
+                    latest = new_bars[-1]
+                    if prices and prices[-1].timestamp.date() == latest.timestamp.date():
+                        # 같은 거래일 — 마지막 bar 업데이트
+                        prices[-1] = latest
+                    elif not prices or latest.timestamp > prices[-1].timestamp:
+                        # 새 거래일 — 추가
+                        prices.append(latest)
+            except Exception as e:
+                logger.debug(f"[{info.code}] 시세 갱신 실패: {type(e).__name__}")
+
+            await asyncio.sleep(0.05)
+            if (i + 1) % 10 == 0:
+                logger.debug(f"  시세 갱신 진행: {i + 1}/{len(self._universe_cache)}")
+
+        # Refresh index
+        new_index = await self._fetch_index(adapter)
+        if new_index:
+            # Update last bar or append
+            if self._index_cache and self._index_cache[-1].timestamp.date() == new_index[-1].timestamp.date():
+                self._index_cache[-1] = new_index[-1]
+            else:
+                if self._index_cache is None:
+                    self._index_cache = list(new_index)
+                elif new_index[-1].timestamp > self._index_cache[-1].timestamp:
+                    self._index_cache.append(new_index[-1])
+
+        logger.debug(f"시세 갱신 완료: {len(self._universe_cache)}종목")
+        return self._universe_cache, self._index_cache
+
     @property
     async def is_available(self) -> bool:
         """KIS API 연결 가능 여부."""

@@ -54,9 +54,6 @@ def init_mode_selector_config(cfg: _StrategyConfig) -> None:
 def _get_mode_config() -> _StrategyConfig:
     return _strategy_config or _StrategyConfig()
 
-# Compatibility aliases (for tests that import these directly)
-HIGH_VOLATILITY_ATR_PCT = _get_mode_config().mode_high_volatility_atr_pct
-LOW_VOLATILITY_ATR_PCT = _get_mode_config().mode_low_volatility_atr_pct
 STRONG_TREND_SCORE = 60.0        # 레짐 점수 ≥ 60 → 강한 추세 (스윙 유리)
 
 

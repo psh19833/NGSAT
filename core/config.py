@@ -120,7 +120,7 @@ class StrategyConfig:
     ml_model_type: str = "random_forest"  # logistic/random_forest/gradient_boosting/xgboost/lightgbm
     ml_auto_retrain: bool = False          # True: 매일 장 마감 후 자동 재학습
     ml_swing_forward_days: int = 3        # 스윙: N일 뒤 +2% 예측
-    ml_short_forward_minutes: int = 60    # 단타: N분 뒤 +0.5% 예측
+    ml_short_forward_minutes: int = 60    # 단타: N분 뒤 +1.0% 예측 (분봉 ML threshold=0.01)
 
     # ── 모드 전환 ──
     mode_high_volatility_atr_pct: float = 1.5   # ATR ≥ 1.5% → 고변동성(단타)
@@ -130,7 +130,7 @@ class StrategyConfig:
     mode_swing_stop_loss_pct: float = 3.0
     mode_swing_daily_loss_pct: float = 5.0
     mode_swing_position_size: float = 0.10
-    mode_short_stop_loss_pct: float = 1.5
+    mode_short_stop_loss_pct: float = 1.0
     mode_short_daily_loss_pct: float = 3.0
     mode_short_position_size: float = 0.05
     mode_hold_stop_loss_pct: float = 3.0
@@ -232,7 +232,7 @@ def load_config(env_file: str | None = None) -> Config:
     s.mode_swing_stop_loss_pct = float(os.getenv("NGSAT_MODE_SWING_STOP_LOSS", "3.0"))
     s.mode_swing_daily_loss_pct = float(os.getenv("NGSAT_MODE_SWING_DAILY_LOSS", "5.0"))
     s.mode_swing_position_size = float(os.getenv("NGSAT_MODE_SWING_POSITION_SIZE", "0.10"))
-    s.mode_short_stop_loss_pct = float(os.getenv("NGSAT_MODE_SHORT_STOP_LOSS", "1.5"))
+    s.mode_short_stop_loss_pct = float(os.getenv("NGSAT_MODE_SHORT_STOP_LOSS", "1.0"))
     s.mode_short_daily_loss_pct = float(os.getenv("NGSAT_MODE_SHORT_DAILY_LOSS", "3.0"))
     s.mode_short_position_size = float(os.getenv("NGSAT_MODE_SHORT_POSITION_SIZE", "0.05"))
     s.mode_hold_stop_loss_pct = float(os.getenv("NGSAT_MODE_HOLD_STOP_LOSS", "3.0"))

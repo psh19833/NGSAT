@@ -7,8 +7,6 @@ import pytest
 
 from core.types import MarketRegime
 from strategy.mode_selector import (
-    HIGH_VOLATILITY_ATR_PCT,
-    LOW_VOLATILITY_ATR_PCT,
     STRONG_TREND_SCORE,
     ModeDecision,
     StrategyMode,
@@ -77,13 +75,13 @@ class TestSelectMode:
                 assert 0.0 <= result.confidence <= 1.0, f"{regime} vol={vol}: {result.confidence}"
 
     def test_boundary_high_vol(self):
-        """경계값: 정확히 HIGH_VOLATILITY_ATR_PCT."""
-        result = select_mode(_regime(MarketRegime.NEUTRAL), atr_pct=HIGH_VOLATILITY_ATR_PCT)
+        """경계값: 정확히 mode_high_volatility_atr_pct (기본 1.5)."""
+        result = select_mode(_regime(MarketRegime.NEUTRAL), atr_pct=1.5)
         assert result.mode == StrategyMode.SHORT_TERM
 
     def test_boundary_low_vol(self):
-        """경계값: 정확히 LOW_VOLATILITY_ATR_PCT."""
-        result = select_mode(_regime(MarketRegime.NEUTRAL), atr_pct=LOW_VOLATILITY_ATR_PCT)
+        """경계값: 정확히 mode_low_volatility_atr_pct (기본 0.5)."""
+        result = select_mode(_regime(MarketRegime.NEUTRAL), atr_pct=0.5)
         assert result.mode == StrategyMode.HOLD
 
     def test_strong_trend_overrides_volatility(self):

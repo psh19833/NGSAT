@@ -429,8 +429,7 @@ class TradingOrchestrator:
             "summary": result.reason,
         }
         return result
-        return result
-    
+
     async def _fetch_positions(self) -> list[Position]:
         """Fetch current positions from broker."""
         try:

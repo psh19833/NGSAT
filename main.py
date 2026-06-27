@@ -220,6 +220,9 @@ async def run_live(config, args):
 
         while True:
             try:
+                # Refresh latest price data each cycle
+                universe, index_prices = await data_provider.refresh_prices()
+
                 if orchestrator.controller.is_running:
                     result = await orchestrator.run_cycle(index_prices, universe)
 
