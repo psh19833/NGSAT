@@ -22,6 +22,12 @@ export default function App() {
   const [regime, setRegime] = useState(null)
   const [trades, setTrades] = useState(null)
   const [activeTab, setActiveTab] = useState('overview')
+  const [toast, setToast] = useState(null)
+
+  const showToast = (message, type = 'info') => {
+    setToast({ message, type })
+    setTimeout(() => setToast(null), 3000)
+  }
 
   const refreshAll = useCallback(async () => {
     // Use allSettled so one failure doesn't block all; keep stale data on error
@@ -85,8 +91,10 @@ export default function App() {
   }
 
   const handleRestart = async () => {
+    showToast('서버 재시작 중...', 'info')
     await api.restart()
     refreshAll()
+    showToast('서버 재시작 완료', 'success')
   }
 
   const connected = status?.connected !== false
@@ -200,5 +208,11 @@ export default function App() {
         </main>
       </div>
     </div>
-  )
-}
+    {toast && (
+      <div className={`fixed bottom-6 right-6 px-4 py-3 rounded-lg shadow-lg text-sm font-medium z-50 transition-all
+        ${toast.type === 'success' ? 'bg-ngsat-green/90 text-white' : 'bg-ngsat-accent/90 text-white'}`}>
+        {toast.message}
+      </div>
+    )}
+  </div>
+)
