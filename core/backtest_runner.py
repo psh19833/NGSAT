@@ -10,7 +10,7 @@ import asyncio
 from datetime import datetime
 from typing import Any
 
-from core.config import NGSATConfig
+from core.config import Config as NGSATConfig
 from core.logger import logger
 
 # ── Global state for dashboard progress tracking ──
