@@ -328,14 +328,23 @@ async def run_live(config, args):
     finally:
         # Cleanup
         logger.info("NGSAT 종료 중...")
+
+        # Send Telegram notification before shutdown
+        if telegram_bot:
+            try:
+                await telegram_bot.send_system_event("stop", "NGSAT 시스템 종료")
+            except Exception:
+                pass
+
+        # Cancel all running tasks
         for task in tasks:
             task.cancel()
         await asyncio.gather(*tasks, return_exceptions=True)
 
-        if telegram_bot:
-            await telegram_bot.send_system_event("stop", "NGSAT 시스템 종료")
-
+        # Cleanup resources
         await broker.close()
+        if orchestrator:
+            await orchestrator.close()
         logger.info("NGSAT 종료 완료")
 
 

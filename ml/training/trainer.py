@@ -351,22 +351,55 @@ class PriceRiseModel:
             save_path,
         )
 
-        logger.info(f"ML 모델 저장: {save_path}")
+        # Compute integrity hash after save
+        import hashlib
+        with open(save_path, "rb") as f:
+            file_hash = hashlib.sha256(f.read()).hexdigest()
+        # Store hash alongside model (re-save with hash)
+        data = joblib.load(save_path)
+        data["_integrity_hash"] = file_hash
+        joblib.dump(data, save_path)
+
+        logger.info(f"ML 모델 저장: {save_path} (SHA-256: {file_hash[:16]}...)")
         return save_path
 
     @classmethod
     def load(cls, path: str | Path | None = None) -> "PriceRiseModel":
-        """Load a trained model from disk.
+        """Load a trained model from disk with integrity verification.
 
         Args:
             path: File path. Defaults to models/trained/price_rise_model.pkl.
 
         Returns:
             Loaded PriceRiseModel instance.
+
+        Raises:
+            RuntimeError: If integrity check fails.
         """
         load_path = Path(path) if path else _MODEL_DIR / "price_rise_model.pkl"
 
+        # Verify integrity hash before loading
+        import hashlib
+        with open(load_path, "rb") as f:
+            file_bytes = f.read()
+
         data = joblib.load(load_path)
+        stored_hash = data.pop("_integrity_hash", None)
+
+        if stored_hash is not None:
+            computed = hashlib.sha256(file_bytes).hexdigest()
+            if computed != stored_hash:
+                logger.error(
+                    f"모델 파일 변조 감지: {load_path}\n"
+                    f"  저장된 해시: {stored_hash[:16]}...\n"
+                    f"  실제 해시:   {computed[:16]}..."
+                )
+                raise RuntimeError(
+                    f"모델 파일 무결성 검증 실패 — 파일이 변경되었습니다: {load_path}"
+                )
+            logger.info(f"모델 무결성 확인 완료 (SHA-256: {computed[:16]}...)")
+        else:
+            logger.warning(f"모델에 무결성 해시 없음 (이전 버전) — 검증 생략: {load_path}")
 
         instance = cls(
             model_type=data["model_type"],

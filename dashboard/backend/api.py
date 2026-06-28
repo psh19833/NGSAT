@@ -29,6 +29,7 @@ from pydantic import BaseModel
 
 from core.logger import logger
 from core.config_service import ConfigService
+from pydantic import BaseModel, Field
 
 # ── ConfigService field map (DB key → StrategyConfig attr) ──
 CONFIG_FIELD_MAP: dict[str, str] = {
@@ -65,6 +66,40 @@ class ForceSellRequest(BaseModel):
 
 class ForceHoldRequest(BaseModel):
     code: str
+
+
+class StrategyUpdateRequest(BaseModel):
+    """전략 설정 업데이트 요청 — 값 범위 검증."""
+    buy_threshold: float | None = None
+    sell_threshold: float | None = None
+    regime_bull_threshold: float | None = Field(None, ge=10, le=100)
+    regime_bear_threshold: float | None = Field(None, ge=0, le=90)
+    regime_weight_ma: float | None = Field(None, ge=0, le=100)
+    regime_weight_rsi: float | None = Field(None, ge=0, le=100)
+    regime_weight_bollinger: float | None = Field(None, ge=0, le=100)
+    regime_weight_change_rate: float | None = Field(None, ge=0, le=100)
+    regime_weight_volume: float | None = Field(None, ge=0, le=100)
+    screener_bull_min_score: float | None = Field(None, ge=0, le=100)
+    screener_bull_max_candidates: int | None = Field(None, ge=1, le=100)
+    screener_neutral_min_score: float | None = Field(None, ge=0, le=100)
+    screener_neutral_max_candidates: int | None = Field(None, ge=1, le=50)
+    screener_bear_min_score: float | None = Field(None, ge=0, le=100)
+    screener_bear_max_candidates: int | None = Field(None, ge=1, le=30)
+    mode_swing_stop_loss_pct: float | None = Field(None, ge=0.5, le=10)
+    mode_swing_daily_loss_pct: float | None = Field(None, ge=0.5, le=20)
+    mode_swing_position_size: float | None = Field(None, ge=0.01, le=0.5)
+    mode_short_stop_loss_pct: float | None = Field(None, ge=0.3, le=5)
+    mode_short_daily_loss_pct: float | None = Field(None, ge=0.3, le=10)
+    mode_short_position_size: float | None = Field(None, ge=0.01, le=0.3)
+    mode_hold_stop_loss_pct: float | None = Field(None, ge=0.5, le=10)
+    mode_hold_daily_loss_pct: float | None = Field(None, ge=0.5, le=20)
+    mode_hold_position_size: float | None = Field(None, ge=0.0, le=0.2)
+    max_holdings: int | None = Field(None, ge=1, le=100)
+    ml_model_type: str | None = None
+    ml_auto_retrain: bool | None = None
+    mode_high_volatility_atr_pct: float | None = Field(None, ge=0.1, le=10)
+    mode_low_volatility_atr_pct: float | None = Field(None, ge=0.1, le=5)
+    reset: bool = False
 
 
 # ── App factory ──
@@ -373,11 +408,9 @@ def create_app(orchestrator=None, config=None) -> FastAPI:
         return {"connected": True, "config": asdict(cfg)}
 
     @app.put("/api/strategy/config")
-    async def update_strategy_config(data: dict):
+    async def update_strategy_config(data: StrategyUpdateRequest):
         """전략·정책 설정값 업데이트 → DB (ConfigService) 반영.
-
-        Body: { "buy_threshold": 0.70, ... } (부분 업데이트 가능)
-        "reset": true → DB 설정 삭제, 기본값으로 복원
+        Pydantic으로 값 범위 검증됨 (buy_threshold=0.0~1.0 등).
         """
         cfg = _get_app_config()
         if cfg is None:
@@ -385,7 +418,7 @@ def create_app(orchestrator=None, config=None) -> FastAPI:
 
         cs: ConfigService | None = getattr(app.state, 'config_service', None)
 
-        if data.get("reset"):
+        if data.reset:
             from core.config import StrategyConfig
             restored = StrategyConfig()
             if cs:
@@ -393,10 +426,10 @@ def create_app(orchestrator=None, config=None) -> FastAPI:
                     cs.delete(key)
             return {"connected": True, "config": asdict(restored), "restart_required": True}
 
-        # 부분 업데이트
+        # 부분 업데이트 (Pydantic 모델의 None이 아닌 필드만 적용)
         updated = 0
-        for key, value in data.items():
-            if key in ("connected", "reset", "restart_required", "keys"):
+        for key, value in data.model_dump(exclude_none=True).items():
+            if key == "reset":
                 continue
             if hasattr(cfg, key):
                 setattr(cfg, key, value)
