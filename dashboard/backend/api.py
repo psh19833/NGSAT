@@ -165,18 +165,11 @@ def create_app(orchestrator=None, config=None) -> FastAPI:
 
     # ConfigService: DB-backed runtime config persistence
     if config is not None:
-        from sqlalchemy import create_engine
+        from data.db import get_engine
         from sqlalchemy.orm import sessionmaker
         from core.models import Base
 
-        db_url = getattr(config.database, 'url', None)
-        if db_url and 'sqlite' in db_url:
-            engine = create_engine(db_url)
-        else:
-            from pathlib import Path
-            db_path = str(Path(__file__).resolve().parent.parent / "data" / "ngsat.db")
-            engine = create_engine(f"sqlite:///{db_path}")
-
+        engine = get_engine(config.database)
         Base.metadata.create_all(engine)
         sess = sessionmaker(bind=engine)()
         config_service = ConfigService(sess)

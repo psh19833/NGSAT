@@ -16,6 +16,7 @@ import DiagnosisPanel from './components/DiagnosisPanel.jsx'
 import StrategyConfigPanel from './components/StrategyConfigPanel.jsx'
 import Toast from './components/Toast.jsx'
 import ErrorBoundary from './components/ErrorBoundary.jsx'
+import ConfirmModal from './components/ConfirmModal.jsx'
 
 export default function App() {
   const [status, setStatus] = useState(null)
@@ -25,6 +26,7 @@ export default function App() {
   const [trades, setTrades] = useState(null)
   const [activeTab, setActiveTab] = useState('overview')
   const [toast, setToast] = useState(null)
+  const [confirmAction, setConfirmAction] = useState(null)
 
   const showToast = (message, type = 'info') => {
     setToast({ message, type })
@@ -84,10 +86,13 @@ export default function App() {
   }, [refreshAll])
 
   const handleControl = async (action, code) => {
+    // Confirm for dangerous actions
+    if (action === 'shutdown' || action === 'forcesell') {
+      setConfirmAction({ action, code })
+      return
+    }
     if (action === 'start') await api.start()
     else if (action === 'stop') await api.stop()
-    else if (action === 'shutdown') await api.shutdown()
-    else if (action === 'forcesell') await api.forceSell(code)
     else if (action === 'forcehold') await api.forceHold(code)
     refreshAll()
   }
@@ -97,6 +102,15 @@ export default function App() {
     await api.restart()
     refreshAll()
     showToast('서버 재시작 완료', 'success')
+  }
+
+  const handleConfirm = async () => {
+    if (!confirmAction) return
+    const { action, code } = confirmAction
+    setConfirmAction(null)
+    if (action === 'shutdown') await api.shutdown()
+    else if (action === 'forcesell') await api.forceSell(code)
+    refreshAll()
   }
 
   const connected = status?.connected !== false
@@ -209,6 +223,16 @@ export default function App() {
           )}
         </main>
         <Toast toast={toast} onClose={() => setToast(null)} />
+    <ConfirmModal
+      open={confirmAction !== null}
+      title={confirmAction?.action === 'shutdown' ? '시스템 종료' : '강제 매도'}
+      message={confirmAction?.action === 'shutdown'
+        ? '진행 중인 매매가 모두 중단됩니다. 포지션이 정리되지 않은 상태로 종료됩니다.'
+        : '해당 종목을 시장가로 즉시 매도합니다.'}
+      confirmLabel={confirmAction?.action === 'shutdown' ? '종료' : '매도'}
+      onConfirm={handleConfirm}
+      onCancel={() => setConfirmAction(null)}
+    />
       </div>
     </div>
     </ErrorBoundary>
