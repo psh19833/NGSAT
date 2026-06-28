@@ -164,3 +164,14 @@ class SystemEvent(Base):
     message: Mapped[str] = mapped_column(Text)
     details: Mapped[Optional[dict]] = mapped_column(JSON, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.now)
+
+
+class SystemConfig(Base):
+    """런타임 설정 저장소 (ConfigService). key-value 스토어."""
+    __tablename__ = "system_config"
+
+    key: Mapped[str] = mapped_column(String(100), primary_key=True)
+    value: Mapped[str] = mapped_column(Text, default="")
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime, default=datetime.now, onupdate=datetime.now,
+    )

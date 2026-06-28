@@ -22,15 +22,39 @@ from dataclasses import asdict
 from datetime import datetime
 import os
 
-from fastapi import FastAPI
-from typing import Any
-
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, JSONResponse
 from pydantic import BaseModel
 
 from core.logger import logger
+from core.config_service import ConfigService
+
+# ── ConfigService field map (DB key → StrategyConfig attr) ──
+CONFIG_FIELD_MAP: dict[str, str] = {
+    "NGSAT_BUY_THRESHOLD": "buy_threshold",
+    "NGSAT_SELL_THRESHOLD": "sell_threshold",
+    "NGSAT_REGIME_BULL_THRESHOLD": "regime_bull_threshold",
+    "NGSAT_REGIME_BEAR_THRESHOLD": "regime_bear_threshold",
+    "NGSAT_REGIME_WEIGHT_MA": "regime_weight_ma",
+    "NGSAT_REGIME_WEIGHT_RSI": "regime_weight_rsi",
+    "NGSAT_REGIME_WEIGHT_BOLLINGER": "regime_weight_bollinger",
+    "NGSAT_REGIME_WEIGHT_CHANGE_RATE": "regime_weight_change_rate",
+    "NGSAT_REGIME_WEIGHT_VOLUME": "regime_weight_volume",
+    "NGSAT_SCREENER_BULL_MIN_SCORE": "screener_bull_min_score",
+    "NGSAT_SCREENER_BULL_MAX_CANDIDATES": "screener_bull_max_candidates",
+    "NGSAT_SCREENER_NEUTRAL_MIN_SCORE": "screener_neutral_min_score",
+    "NGSAT_SCREENER_NEUTRAL_MAX_CANDIDATES": "screener_neutral_max_candidates",
+    "NGSAT_SCREENER_BEAR_MIN_SCORE": "screener_bear_min_score",
+    "NGSAT_SCREENER_BEAR_MAX_CANDIDATES": "screener_bear_max_candidates",
+    "NGSAT_MODE_SWING_STOP_LOSS": "mode_swing_stop_loss_pct",
+    "NGSAT_MODE_SWING_DAILY_LOSS": "mode_swing_daily_loss_pct",
+    "NGSAT_MODE_SWING_POSITION_SIZE": "mode_swing_position_size",
+    "NGSAT_MODE_SHORT_STOP_LOSS": "mode_short_stop_loss_pct",
+    "NGSAT_MODE_SHORT_DAILY_LOSS": "mode_short_daily_loss_pct",
+    "NGSAT_MODE_SHORT_POSITION_SIZE": "mode_short_position_size",
+    "NGSAT_MAX_HOLDINGS": "max_holdings",
+}
 
 
 # ── Request models ──
@@ -103,6 +127,29 @@ def create_app(orchestrator=None, config=None) -> FastAPI:
     # Store orchestrator reference
     app.state.orchestrator = orchestrator
     app.state.config = config
+
+    # ConfigService: DB-backed runtime config persistence
+    if config is not None:
+        from sqlalchemy import create_engine
+        from sqlalchemy.orm import sessionmaker
+        from core.models import Base
+
+        db_url = getattr(config.database, 'url', None)
+        if db_url and 'sqlite' in db_url:
+            engine = create_engine(db_url)
+        else:
+            from pathlib import Path
+            db_path = str(Path(__file__).resolve().parent.parent / "data" / "ngsat.db")
+            engine = create_engine(f"sqlite:///{db_path}")
+
+        Base.metadata.create_all(engine)
+        sess = sessionmaker(bind=engine)()
+        config_service = ConfigService(sess)
+        app.state.config_service = config_service
+
+        applied = config_service.apply_to(config.strategy, CONFIG_FIELD_MAP)
+        if applied > 0:
+            logger.info(f"ConfigService: {applied}개 DB 설정 적용됨")
 
     def _get_orchestrator():
         return app.state.orchestrator
@@ -327,35 +374,42 @@ def create_app(orchestrator=None, config=None) -> FastAPI:
 
     @app.put("/api/strategy/config")
     async def update_strategy_config(data: dict):
-        """전략·정책 설정값 업데이트 → .env 반영.
+        """전략·정책 설정값 업데이트 → DB (ConfigService) 반영.
 
         Body: { "buy_threshold": 0.70, ... } (부분 업데이트 가능)
-        "reset": true → 기본값으로 복원
+        "reset": true → DB 설정 삭제, 기본값으로 복원
         """
         cfg = _get_app_config()
         if cfg is None:
             return {"connected": False}
 
+        cs: ConfigService | None = getattr(app.state, 'config_service', None)
+
         if data.get("reset"):
-            # 기본값으로 복원: 복원된 config 반환
             from core.config import StrategyConfig
             restored = StrategyConfig()
-            logger.info("전략 설정 기본값 복원 — .env 파일은 변경되지 않음 (재시작 시 .env 값으로 복구됨)")
-            return {"connected": True, "message": "기본값으로 복원 완료 (재시작 시 .env 설정으로 원복됨)", "config": asdict(restored), "restart_required": True}
+            if cs:
+                for key in list(CONFIG_FIELD_MAP.keys()):
+                    cs.delete(key)
+            return {"connected": True, "config": asdict(restored), "restart_required": True}
 
         # 부분 업데이트
         updated = 0
         for key, value in data.items():
-            if key in ("connected", "reset", "restart_required"):
+            if key in ("connected", "reset", "restart_required", "keys"):
                 continue
             if hasattr(cfg, key):
                 setattr(cfg, key, value)
+                if cs:
+                    db_key = next((k for k, v in CONFIG_FIELD_MAP.items() if v == key), None)
+                    if db_key:
+                        cs.set(db_key, value)
                 updated += 1
 
         if updated > 0:
-            logger.info(f"전략 설정 {updated}개 변경 — .env 파일은 변경되지 않음 (재시작 시 .env 값으로 복구됨)")
+            logger.info(f"전략 설정 {updated}개 변경 — DB 저장 (재시작 후 유지)")
 
-        return {"connected": True, "message": f"{updated}개 설정 저장 완료 (재시작 시 .env 설정으로 원복됨)", "config": asdict(cfg), "restart_required": True}
+        return {"connected": True, "message": f"{updated}개 저장 완료", "config": asdict(cfg), "restart_required": True}
 
     # ── Diagnosis ──
     @app.get("/api/diagnosis")
