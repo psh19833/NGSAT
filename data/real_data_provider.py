@@ -16,6 +16,7 @@ main.py의 합성 데이터를 대체하여 실제 KIS 데이터를
 
 from __future__ import annotations
 
+import asyncio
 from datetime import datetime, timedelta, timezone
 from typing import Any
 
@@ -75,6 +76,9 @@ class RealDataProvider:
         self._universe_cache: list[tuple[StockInfo, list[PriceData]]] | None = None
         self._index_cache: list[PriceData] | None = None
         self._cache_date: str = ""
+        # WebSocket 실시간 시세
+        self._ws: Any = None
+        self._ws_task: Any = None
 
     async def _get_adapter(self):
         """Lazy-create KIS adapter with .env loaded."""
@@ -135,6 +139,11 @@ class RealDataProvider:
         self._cache_date = today
 
         logger.info(f"KIS 실데이터 로드 완료: {len(universe)}종목, 지수 {len(index_prices)}일")
+
+        # Start WebSocket real-time price feed (non-blocking)
+        if universe:
+            self._ws_task = asyncio.create_task(self._start_websocket(universe))
+
         return universe, index_prices
 
     async def _fetch_index(self, adapter) -> list[PriceData]:
@@ -178,9 +187,56 @@ class RealDataProvider:
         return generate_synthetic_index(n_days=250, start_value=2600, seed=100)
 
     async def close(self):
-        """리소스 정리."""
+        """Clean up adapter + WebSocket."""
+        if self._ws:
+            await self._ws.disconnect()
         if self._adapter:
             await self._adapter.close()
+
+    async def _start_websocket(self, universe):
+        """Start WebSocket real-time price feed (best-effort, non-critical)."""
+        try:
+            config = load_config()
+            from data.adapters.kis.websocket_client import KisWebSocketClient
+
+            ws = KisWebSocketClient(
+                app_key=config.kis.app_key,
+                app_secret=config.kis.app_secret,
+                base_url=config.kis.base_url,
+            )
+
+            # Map WebSocket prices back to cache
+            def on_price(code: str, price: float, volume: int, ts: str):
+                for i, (info, prices) in enumerate(self._universe_cache or []):
+                    if info.code == code and prices:
+                        updated = PriceData(
+                            timestamp=prices[-1].timestamp,
+                            open=prices[-1].open,
+                            high=max(prices[-1].high, price),
+                            low=min(prices[-1].low, price),
+                            close=price,
+                            volume=volume,
+                        )
+                        self._universe_cache[i] = (info, [updated])
+                        break
+
+            ws.on_price = on_price
+
+            connected = await ws.connect()
+            if not connected:
+                logger.warning("WebSocket 실시간 시세 사용 불가 — REST polling 유지")
+                return
+
+            # Subscribe to all universe stock codes
+            for info, _ in universe:
+                await ws.subscribe(info.code)
+
+            logger.info(f"WebSocket 실시간 시세 시작: {len(universe)}종목")
+            self._ws = ws
+            await ws.listen()  # runs until disconnect
+
+        except Exception as e:
+            logger.warning(f"WebSocket 실시간 시세 중단: {e} — REST polling fallback")
 
     async def refresh_prices(self):
         """실시간 시세 갱신 — 최근 5일치만 조회해 캐시된 데이터 업데이트.
