@@ -107,6 +107,7 @@ class PriceRiseModel:
         self._model: Any = None
         self._scaler: StandardScaler | None = None
         self._is_trained = False
+        self._last_auc = 0.0
 
     @property
     def is_trained(self) -> bool:
@@ -452,7 +453,10 @@ class PriceRiseModel:
 
         best_model.fit(X, y)
         self._model = best_model
-        self._scaler = None  # auto_tune은 unscaled X로 학습 → predict_proba에서 scale 생략
+        # StandardScaler 일관성 유지 (train()과 동일 파이프라인)
+        from sklearn.preprocessing import StandardScaler
+        self._scaler = StandardScaler()
+        self._scaler.fit(X)
         self._is_trained = True
 
         logger.info(

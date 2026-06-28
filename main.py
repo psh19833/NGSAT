@@ -228,10 +228,16 @@ async def run_live(config, args):
 
         logger.info(f"KIS 실데이터 연결 완료: {len(universe)}종목, 지수 {len(index_prices)}일")
 
+        _refresh_counter = 0
+
         while True:
             try:
-                # Refresh latest price data each cycle
-                universe, index_prices = await data_provider.refresh_prices()
+                # Rate-limit friendly: full refresh every 30 cycles (5min @ 10s tick)
+                # Between full refreshes, cached data is used (much better than hitting
+                # KIS rate limit and getting no data at all)
+                _refresh_counter += 1
+                if _refresh_counter % 30 == 0:
+                    universe, index_prices = await data_provider.refresh_prices()
 
                 if orchestrator.controller.is_running:
                     result = await orchestrator.run_cycle(index_prices, universe)

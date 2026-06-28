@@ -116,91 +116,6 @@ def create_app(orchestrator=None, config=None) -> FastAPI:
             return None
         return app.state.config.strategy
 
-    def _update_env_from_config(cfg):
-        """Write StrategyConfig values to .env file with file locking."""
-        from pathlib import Path
-        from core.config import PROJECT_ROOT
-        try:
-            import fcntl
-        except ImportError:
-            fcntl = None  # Windows: 파일 잠금 없이 동작 (단일 사용자 UI)
-
-        env_path = Path(PROJECT_ROOT) / ".env"
-
-        if not env_path.exists():
-            return
-
-        # Build lookup of NGSAT_* env var names → config attribute
-        field_map = {
-            "NGSAT_BUY_THRESHOLD": "buy_threshold",
-            "NGSAT_SELL_THRESHOLD": "sell_threshold",
-            "NGSAT_REGIME_BULL_THRESHOLD": "regime_bull_threshold",
-            "NGSAT_REGIME_BEAR_THRESHOLD": "regime_bear_threshold",
-            "NGSAT_REGIME_WEIGHT_MA": "regime_weight_ma",
-            "NGSAT_REGIME_WEIGHT_RSI": "regime_weight_rsi",
-            "NGSAT_REGIME_WEIGHT_BOLLINGER": "regime_weight_bollinger",
-            "NGSAT_REGIME_WEIGHT_CHANGE_RATE": "regime_weight_change_rate",
-            "NGSAT_REGIME_WEIGHT_VOLUME": "regime_weight_volume",
-            "NGSAT_SCREENER_BULL_MIN_SCORE": "screener_bull_min_score",
-            "NGSAT_SCREENER_BULL_MAX_CANDIDATES": "screener_bull_max_candidates",
-            "NGSAT_SCREENER_NEUTRAL_MIN_SCORE": "screener_neutral_min_score",
-            "NGSAT_SCREENER_NEUTRAL_MAX_CANDIDATES": "screener_neutral_max_candidates",
-            "NGSAT_SCREENER_BEAR_MIN_SCORE": "screener_bear_min_score",
-            "NGSAT_SCREENER_BEAR_MAX_CANDIDATES": "screener_bear_max_candidates",
-            "NGSAT_MODE_HIGH_VOL_ATR_PCT": "mode_high_volatility_atr_pct",
-            "NGSAT_MODE_LOW_VOL_ATR_PCT": "mode_low_volatility_atr_pct",
-            "NGSAT_MODE_SWING_STOP_LOSS": "mode_swing_stop_loss_pct",
-            "NGSAT_MODE_SWING_DAILY_LOSS": "mode_swing_daily_loss_pct",
-            "NGSAT_MODE_SWING_POSITION_SIZE": "mode_swing_position_size",
-            "NGSAT_MODE_SHORT_STOP_LOSS": "mode_short_stop_loss_pct",
-            "NGSAT_MODE_SHORT_DAILY_LOSS": "mode_short_daily_loss_pct",
-            "NGSAT_MODE_SHORT_POSITION_SIZE": "mode_short_position_size",
-            "NGSAT_MAX_HOLDINGS": "max_holdings",
-            "NGSAT_MODE_HOLD_STOP_LOSS": "mode_hold_stop_loss_pct",
-            "NGSAT_MODE_HOLD_DAILY_LOSS": "mode_hold_daily_loss_pct",
-            "NGSAT_MODE_HOLD_POSITION_SIZE": "mode_hold_position_size",
-        }
-
-        # Read + write with exclusive file lock (동시 대시보드 요청 안전)
-        with open(env_path, "r+") as f:
-            if fcntl:
-                fcntl.flock(f, fcntl.LOCK_EX)
-            try:
-                lines = f.readlines()
-
-                seen = set()
-                new_lines = []
-                for line in lines:
-                    updated = False
-                    for env_key, attr in field_map.items():
-                        if line.startswith(env_key + "=") or line.startswith(env_key + " ="):
-                            val = getattr(cfg, attr, None)
-                            if val is not None:
-                                new_lines.append(f"{env_key}={val}\n")
-                            else:
-                                new_lines.append(line)
-                            seen.add(env_key)
-                            updated = True
-                            break
-                    if not updated:
-                        new_lines.append(line)
-
-                # Append strategy keys that weren't in the file
-                for env_key in field_map:
-                    if env_key not in seen:
-                        attr = field_map[env_key]
-                        val = getattr(cfg, attr, None)
-                        if val is not None:
-                            new_lines.append(f"{env_key}={val}\n")
-
-                # Write back (seek + truncate to replace content in-place)
-                f.seek(0)
-                f.writelines(new_lines)
-                f.truncate()
-            finally:
-                if fcntl:
-                    fcntl.flock(f, fcntl.LOCK_UN)
-
     # ── Status ──
     @app.get("/api/status")
     async def get_status():
@@ -424,8 +339,8 @@ def create_app(orchestrator=None, config=None) -> FastAPI:
             # 기본값으로 복원: 복원된 config 반환
             from core.config import StrategyConfig
             restored = StrategyConfig()
-            _update_env_from_config(restored)
-            return {"connected": True, "message": "기본값으로 복원 완료", "config": asdict(restored), "restart_required": True}
+            logger.info("전략 설정 기본값 복원 — .env 파일은 변경되지 않음 (재시작 시 .env 값으로 복구됨)")
+            return {"connected": True, "message": "기본값으로 복원 완료 (재시작 시 .env 설정으로 원복됨)", "config": asdict(restored), "restart_required": True}
 
         # 부분 업데이트
         updated = 0
@@ -437,9 +352,9 @@ def create_app(orchestrator=None, config=None) -> FastAPI:
                 updated += 1
 
         if updated > 0:
-            _update_env_from_config(cfg)
+            logger.info(f"전략 설정 {updated}개 변경 — .env 파일은 변경되지 않음 (재시작 시 .env 값으로 복구됨)")
 
-        return {"connected": True, "message": f"{updated}개 설정 저장 완료", "config": asdict(cfg), "restart_required": updated > 0}
+        return {"connected": True, "message": f"{updated}개 설정 저장 완료 (재시작 시 .env 설정으로 원복됨)", "config": asdict(cfg), "restart_required": True}
 
     # ── Diagnosis ──
     @app.get("/api/diagnosis")

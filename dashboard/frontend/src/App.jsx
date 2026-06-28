@@ -22,23 +22,19 @@ export default function App() {
   const [regime, setRegime] = useState(null)
   const [trades, setTrades] = useState(null)
   const [activeTab, setActiveTab] = useState('overview')
-  const [loading, setLoading] = useState(false)
 
   const refreshAll = useCallback(async () => {
-    setLoading(true)
-    const [s, a, p, r, t] = await Promise.all([
-      api.getStatus(),
-      api.getAccount(),
-      api.getPositions(),
-      api.getRegime(),
-      api.getTrades(),
+    // Use allSettled so one failure doesn't block all; keep stale data on error
+    const results = await Promise.allSettled([
+      api.getStatus(), api.getAccount(), api.getPositions(),
+      api.getRegime(), api.getTrades(),
     ])
-    setStatus(s)
-    setAccount(a)
-    setPositions(p)
-    setRegime(r)
-    setTrades(t)
-    setLoading(false)
+    // Only update state on success — stale data persists on failure
+    if (results[0].status === 'fulfilled') setStatus(results[0].value)
+    if (results[1].status === 'fulfilled') setAccount(results[1].value)
+    if (results[2].status === 'fulfilled') setPositions(results[2].value)
+    if (results[3].status === 'fulfilled') setRegime(results[3].value)
+    if (results[4].status === 'fulfilled') setTrades(results[4].value)
   }, [])
 
   useEffect(() => {
