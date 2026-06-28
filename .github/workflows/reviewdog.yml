@@ -1,0 +1,45 @@
+name: reviewdog
+on: [pull_request]
+
+jobs:
+  flake8:
+    name: Flake8 (Python lint)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - run: pip install flake8 flake8-pyproject
+      - uses: reviewdog/action-flake8@v5
+        with:
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          flake8_args: --config=pyproject.toml
+          reporter: github-pr-review
+          fail_on_error: false
+
+  bandit:
+    name: Bandit (Security scan)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - run: pip install bandit
+      - run: bandit -r live/ backtest/ strategy/ data/ ml/ -x '*__pycache__'
+        continue-on-error: true
+
+  autoflake:
+    name: Autoflake (Unused imports)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - run: pip install autoflake
+      - run: |
+          autoflake --check --remove-all-unused-imports \
+            live/ backtest/ strategy/ data/ ml/ main.py \
+            2>/dev/null && echo "✅ Clean" || echo "❌ Unused imports found"
