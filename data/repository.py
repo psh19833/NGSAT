@@ -11,6 +11,7 @@ from datetime import datetime
 from typing import Optional
 
 from sqlalchemy.orm import Session
+from sqlalchemy.exc import IntegrityError
 
 from core.logger import logger
 from core.models import (
@@ -240,7 +241,7 @@ class MinuteDataRepository:
             self._session.add(record)
             self._session.flush()
             return record
-        except Exception:
+        except IntegrityError:
             self._session.rollback()
             # 중복 키면 무시 (정상 — 이미 수집된 분봉)
             return None
@@ -258,7 +259,7 @@ class MinuteDataRepository:
                 self._session.add(record)
                 self._session.flush()
                 saved += 1
-            except Exception:
+            except IntegrityError:
                 self._session.rollback()
                 # 중복 = 정상, 다음으로
         if saved > 0:

@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback, useRef } from 'react'
 import { api } from './api.js'
 import {
   formatNumber, formatPercent, formatWon,
@@ -41,6 +41,38 @@ export default function App() {
     refreshAll()
     const interval = setInterval(refreshAll, 5000) // 5초마다 갱신
     return () => clearInterval(interval)
+  }, [refreshAll])
+
+  // WebSocket real-time updates
+  const wsRef = useRef(null)
+  useEffect(() => {
+    const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:'
+    const wsUrl = `${protocol}//${window.location.host}/ws/realtime`
+    const ws = new WebSocket(wsUrl)
+    wsRef.current = ws
+
+    ws.onopen = () => {
+      console.debug('WebSocket 연결됨')
+    }
+    ws.onmessage = (event) => {
+      try {
+        const data = JSON.parse(event.data)
+        if (data.type === 'cycle' || data.type === 'status') {
+          refreshAll()
+        }
+      } catch {
+        // ignore non-JSON messages (e.g. "pong")
+      }
+    }
+    ws.onclose = () => {
+      console.debug('WebSocket 연결 종료')
+      wsRef.current = null
+    }
+
+    return () => {
+      ws.close()
+      wsRef.current = null
+    }
   }, [refreshAll])
 
   const handleControl = async (action, code) => {

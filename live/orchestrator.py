@@ -314,7 +314,16 @@ class TradingOrchestrator:
                     continue
 
                 ref_price = entry.limit_price or prices[-1].close
-                budget = account.deposit * self._position_budget_pct
+                base_budget_pct = self._position_budget_pct
+                # ATR-based dynamic position sizing
+                # High volatility → reduce position, Low volatility → increase (within limits)
+                target_vol_pct = 1.5  # 기준 변동성(%): 이 값에서 base_pct = full position
+                min_pct = base_budget_pct * 0.3
+                max_pct = base_budget_pct * 2.0
+                vol_pct = max(vol * 100, 0.5)  # vol은 0~1 범위, 백분율로 변환
+                adjusted_pct = base_budget_pct * (target_vol_pct / vol_pct)
+                adjusted_pct = max(min_pct, min(adjusted_pct, max_pct))
+                budget = account.deposit * adjusted_pct
                 quantity = int(budget / ref_price) if ref_price > 0 else 0
 
                 if quantity <= 0:

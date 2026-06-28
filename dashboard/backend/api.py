@@ -373,9 +373,24 @@ def create_app(orchestrator=None, config=None) -> FastAPI:
         return {"status": "ok", "service": "NGSAT Dashboard API"}
 
     # ── WebSocket: Realtime ──
+    connected_ws: set[WebSocket] = set()
+
+    async def broadcast(event: dict):
+        """Broadcast event to all connected WebSocket clients."""
+        dead: set[WebSocket] = set()
+        for ws in connected_ws:
+            try:
+                await ws.send_json(event)
+            except Exception:
+                dead.add(ws)
+        connected_ws -= dead
+    # Expose broadcast so main.py can push trade events
+    app.state.broadcast = broadcast
+
     @app.websocket("/ws/realtime")
     async def websocket_realtime(ws: WebSocket):
         await ws.accept()
+        connected_ws.add(ws)
         try:
             # Send initial status
             orch = _get_orchestrator()
@@ -386,9 +401,8 @@ def create_app(orchestrator=None, config=None) -> FastAPI:
                     "is_running": orch.controller.is_running,
                 })
 
-            # Keep connection alive
+            # Listen for messages (ping/pong keepalive)
             while True:
-                # Wait for client messages (ping/pong)
                 data = await ws.receive_text()
                 if data == "ping":
                     await ws.send_text("pong")
@@ -397,5 +411,7 @@ def create_app(orchestrator=None, config=None) -> FastAPI:
             logger.info("대시보드 WebSocket 연결 종료")
         except Exception as e:
             logger.error(f"WebSocket 오류: {e}")
+        finally:
+            connected_ws.discard(ws)
 
     return app

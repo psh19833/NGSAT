@@ -1,13 +1,23 @@
 import { stateColor, stateLabel } from '../utils.js'
+import {
+  LayoutDashboard,
+  Wallet,
+  BarChart3,
+  ListOrdered,
+  Radio,
+  Search,
+  SlidersHorizontal,
+  RotateCcw,
+} from 'lucide-react'
 
 const TABS = [
-  { id: 'overview', label: '운영 요약', icon: '◈' },
-  { id: 'account', label: '계좌', icon: '₩' },
-  { id: 'positions', label: '포지션', icon: '⊞' },
-  { id: 'trades', label: '거래 내역', icon: '≡' },
-  { id: 'control', label: '운영 제어', icon: '⊙' },
-  { id: 'diagnosis', label: '진단 현황', icon: '🔍' },
-  { id: 'strategy', label: '전략 설정', icon: '⚙' },
+  { id: 'overview', label: '운영 요약', icon: LayoutDashboard },
+  { id: 'account', label: '계좌', icon: Wallet },
+  { id: 'positions', label: '포지션', icon: BarChart3 },
+  { id: 'trades', label: '거래 내역', icon: ListOrdered },
+  { id: 'control', label: '운영 제어', icon: Radio },
+  { id: 'diagnosis', label: '진단 현황', icon: Search },
+  { id: 'strategy', label: '전략 설정', icon: SlidersHorizontal },
 ]
 
 export default function Sidebar({ activeTab, onTabChange, onRestart, status }) {
@@ -48,28 +58,32 @@ export default function Sidebar({ activeTab, onTabChange, onRestart, status }) {
             bg-ngsat-border/50 text-ngsat-muted hover:bg-ngsat-border hover:text-ngsat-text
             disabled:opacity-30 disabled:cursor-not-allowed"
         >
+          <RotateCcw className="inline-block w-3 h-3 mr-1.5 -mt-0.5" />
           서버 재시작
         </button>
       </div>
 
       {/* Navigation */}
       <nav className="flex-1 py-4">
-        {TABS.map(tab => (
-          <button
-            key={tab.id}
-            onClick={() => onTabChange(tab.id)}
-            className={`
-              w-full flex items-center gap-3 px-6 py-3 text-sm transition-all
-              ${activeTab === tab.id
-                ? 'text-ngsat-text bg-ngsat-accent/10 border-r-2 border-ngsat-accent'
-                : 'text-ngsat-muted hover:text-ngsat-text hover:bg-ngsat-border/30'
-              }
-            `}
-          >
-            <span className="text-base">{tab.icon}</span>
-            {tab.label}
-          </button>
-        ))}
+        {TABS.map(tab => {
+          const Icon = tab.icon
+          return (
+            <button
+              key={tab.id}
+              onClick={() => onTabChange(tab.id)}
+              className={`
+                w-full flex items-center gap-3 px-6 py-3 text-sm transition-all
+                ${activeTab === tab.id
+                  ? 'text-ngsat-text bg-ngsat-accent/10 border-r-2 border-ngsat-accent'
+                  : 'text-ngsat-muted hover:text-ngsat-text hover:bg-ngsat-border/30'
+                }
+              `}
+            >
+              <Icon className="w-4 h-4" />
+              {tab.label}
+            </button>
+          )
+        })}
       </nav>
 
       {/* Status Indicator */}

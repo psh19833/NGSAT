@@ -1,66 +1,63 @@
+[build-system]
+requires = ["setuptools>=64.0"]
+build-backend = "setuptools.backends._legacy:_Backend"
+
 [project]
 name = "ngsat"
 version = "0.1.0"
-description = "New Generation Stock Auto Trader — Korean stock automated trading system"
-requires-python = ">=3.12"
-readme = "README.md"
-license = { text = "Private" }
+description = "New Generation Stock Auto Trader"
+requires-python = ">=3.11"
 
-dependencies = [
-    # Web framework
-    "fastapi>=0.115.0",
-    "uvicorn[standard]>=0.32.0",
-    # Database
-    "sqlalchemy>=2.0.0",
-    "psycopg2-binary>=2.9.0",
-    "alembic>=1.14.0",
-    # Environment
-    "python-dotenv>=1.0.0",
-    # HTTP client (for broker APIs)
-    "httpx>=0.28.0",
-    # ML
-    "scikit-learn>=1.6.0",
-    "pandas>=2.2.0",
-    "numpy>=2.1.0",
-    # Telegram
-    "python-telegram-bot>=21.0",
-    # Logging
-    "structlog>=24.0.0",
+[tool.flake8]
+max-line-length = 88
+extend-ignore = [
+    "E203",   # whitespace before ':' (Black compat)
+    "W503",   # line break before binary operator (Black compat)
+]
+exclude = [
+    ".venv",
+    "node_modules",
+    "__pycache__",
+    "dashboard/frontend",
 ]
 
-[project.optional-dependencies]
-ml-advanced = [
-    "xgboost>=2.1.0",
-    "lightgbm>=4.5.0",
+[tool.pylint]
+max-line-length = 88
+disable = [
+    "C0114",  # missing module docstring
+    "C0115",  # missing class docstring
+    "C0116",  # missing function docstring
+    "R0903",  # too few public methods
+    "R0913",  # too many arguments
+    "W0511",  # TODO/FIXME warnings
 ]
-dev = [
-    "pytest>=8.0.0",
-    "pytest-asyncio>=0.24.0",
-    "pytest-cov>=6.0.0",
-    "ruff>=0.8.0",
-    "mypy>=1.13.0",
-]
-
-[tool.hatch.build.targets.wheel]
-packages = ["core", "data", "strategy", "ml", "live", "backtest", "telegram"]
-
-[build-system]
-requires = ["hatchling"]
-build-backend = "hatchling.build"
-
-[tool.ruff]
-target-version = "py312"
-line-length = 100
-
-[tool.ruff.lint]
-select = ["E", "F", "I", "N", "W", "UP"]
+jobs = 0
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 python_files = ["test_*.py"]
-asyncio_mode = "auto"
+python_classes = ["Test*"]
+python_functions = ["test_*"]
 
-[tool.mypy]
-python_version = "3.12"
-strict = true
-warn_return_any = true
+[tool.ruff]
+line-length = 88
+target-version = "py311"
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I"]
+ignore = ["E203", "W503"]
+
+[tool.ruff.format]
+quote-style = "double"
+
+[tool.coverage.run]
+source = ["live", "strategy", "data", "ml", "backtest", "core"]
+omit = [".venv/*", "tests/*", "dashboard/frontend/*"]
+
+[tool.coverage.report]
+exclude_lines = [
+    "pragma: no cover",
+    "if __name__ == .__main__.:",
+    "raise AssertionError",
+    "raise NotImplementedError",
+]

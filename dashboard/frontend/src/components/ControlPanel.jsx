@@ -1,3 +1,9 @@
+const COLOR_MAP = {
+  'ngsat-green': 'bg-ngsat-green/10 text-ngsat-green hover:bg-ngsat-green/20 border border-ngsat-green/20',
+  'ngsat-yellow': 'bg-ngsat-yellow/10 text-ngsat-yellow hover:bg-ngsat-yellow/20 border border-ngsat-yellow/20',
+  'ngsat-red': 'bg-ngsat-red/10 text-ngsat-red hover:bg-ngsat-red/20 border border-ngsat-red/20',
+}
+
 export default function ControlPanel({ status, onAction, compact = false }) {
   const state = status?.state || 'idle'
   const isRunning = state === 'running'
@@ -31,13 +37,13 @@ export default function ControlPanel({ status, onAction, compact = false }) {
           key={btn.action}
           onClick={() => onAction(btn.action)}
           disabled={btn.disabled}
-          className={`
-            w-full py-2.5 rounded-lg text-sm font-medium transition-all
+          className={
+            `w-full py-2.5 rounded-lg text-sm font-medium transition-all
             ${btn.disabled
               ? 'bg-ngsat-border text-ngsat-muted cursor-not-allowed'
-              : `bg-${btn.color}/10 text-${btn.color} hover:bg-${btn.color}/20 border border-${btn.color}/20`
-            }
-          `}
+              : COLOR_MAP[btn.color] || ''
+            }`
+          }
         >
           {btn.label}
         </button>

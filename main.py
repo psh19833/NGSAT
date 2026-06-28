@@ -249,6 +249,17 @@ async def run_live(config, args):
                             result.reason,
                         )
 
+                    # Broadcast cycle result to WebSocket dashboard clients
+                    if dashboard_app and hasattr(dashboard_app.state, 'broadcast'):
+                        await dashboard_app.state.broadcast({
+                            "type": "cycle",
+                            "buys": result.buys_executed,
+                            "sells": result.sells_executed,
+                            "candidates": result.candidates_found,
+                            "regime": result.regime.value if result.regime else "unknown",
+                            "mode": result.mode,
+                        })
+
                 await asyncio.sleep(tick_interval)
 
             except asyncio.CancelledError:

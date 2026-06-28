@@ -16,6 +16,7 @@ The executor is the ONLY module that calls broker.submit_order().
 
 from __future__ import annotations
 
+import asyncio
 from dataclasses import dataclass
 from typing import Any
 
@@ -85,6 +86,47 @@ class OrderExecutor:
         self._account_no = account_no
         self._account_product_code = account_product_code
 
+    async def _submit_with_retry(
+        self,
+        code: str,
+        side: OrderSide,
+        quantity: int,
+        price: float | None,
+        max_retries: int = 3,
+    ) -> str:
+        """Submit order with exponential backoff retry.
+
+        Args:
+            code: Stock code.
+            side: Buy or sell.
+            quantity: Number of shares.
+            price: Limit price (None for market).
+            max_retries: Max retry attempts (default 3).
+
+        Returns:
+            Order ID string.
+
+        Raises:
+            BrokerError: If all retries fail.
+        """
+        base_delay = 1.0
+        last_error = None
+        for attempt in range(max_retries):
+            try:
+                return await self._broker.submit_order(
+                    code=code, side=side, quantity=quantity, price=price,
+                )
+            except BrokerError as e:
+                last_error = e
+                if attempt < max_retries - 1:
+                    delay = base_delay * (2 ** attempt)
+                    logger.warning(
+                        f"주문 재시도 {attempt + 1}/{max_retries}: "
+                        f"{code} {side.value} — {e} ({delay:.0f}초 후 재시도)"
+                    )
+                    await asyncio.sleep(delay)
+        raise last_error  # type: ignore[misc]
+
     async def execute_buy(
         self,
         code: str,
@@ -133,11 +175,9 @@ class OrderExecutor:
         logger.info(f"매수 주문: {name}({code}) {quantity}주")
 
         try:
-            order_id = await self._broker.submit_order(
-                code=code,
-                side=OrderSide.BUY,
-                quantity=quantity,
-                price=price,
+            order_id = await self._submit_with_retry(
+                code=code, side=OrderSide.BUY,
+                quantity=quantity, price=price,
             )
 
             amount = (price or 0) * quantity
@@ -206,11 +246,9 @@ class OrderExecutor:
         logger.info(f"매도 주문: {name}({code}) {quantity}주 — {action.value}")
 
         try:
-            order_id = await self._broker.submit_order(
-                code=code,
-                side=OrderSide.SELL,
-                quantity=quantity,
-                price=price,
+            order_id = await self._submit_with_retry(
+                code=code, side=OrderSide.SELL,
+                quantity=quantity, price=price,
             )
 
             amount = (price or 0) * quantity
