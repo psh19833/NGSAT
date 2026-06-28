@@ -43,7 +43,7 @@ class TestDetectBreakout:
         highs.append(max(highs) + 300)
         lows.append(max(highs) - 100)
         volumes.append(500000)  # Volume surge
-        
+
         result = detect_breakout(closes, highs, volumes, lookback=20, volume_threshold=1.5)
         assert result.detected is True
         assert "돌파 감지" in result.reason
@@ -56,7 +56,7 @@ class TestDetectBreakout:
         highs.append(max(highs) + 300)
         lows.append(max(highs) - 100)
         volumes.append(100000)  # No volume surge
-        
+
         result = detect_breakout(closes, highs, volumes, lookback=20, volume_threshold=1.5)
         assert result.detected is False
 
@@ -87,9 +87,9 @@ class TestDetectPullback:
         closes[-3] = closes[-4] + 50  # Small gain
         closes[-2] = closes[-3] - 100  # Small pullback
         closes[-1] = closes[-2] - 50   # Slight pullback
-        
+
         highs = [c + 100 for c in closes]
-        
+
         result = detect_pullback(closes, highs, ma_period=20, pullback_pct=0.05)
         # May or may not detect depending on exact values
         assert result.pattern_name == "pullback"
@@ -110,7 +110,7 @@ class TestDetectRebound:
         closes += [19000 + i * 200 for i in range(5)]   # Rebound
         lows = [c - 200 for c in closes]
         volumes = [100000] * len(closes)
-        
+
         result = detect_rebound(closes, lows, volumes, rsi_period=14, rsi_oversold=30, rebound_bars=3)
         # Should detect oversold condition + rising bars
         assert result.pattern_name == "rebound"
@@ -128,14 +128,14 @@ class TestDetectBollingerSqueeze:
         """Flat market should produce narrow bands (squeeze)."""
         np.random.seed(42)
         closes = [10000 + np.random.randn() * 10 for _ in range(30)]  # Very narrow range
-        
+
         result = detect_bollinger_squeeze(closes, period=20, std_dev=2.0, squeeze_threshold=0.05)
         assert result.pattern_name == "bollinger_squeeze"
 
     def test_no_squeeze_in_volatile_market(self):
         """Volatile market should produce wide bands (no squeeze)."""
         closes = [10000 * (1 + i * 0.05) for i in range(30)]  # 5% daily moves
-        
+
         result = detect_bollinger_squeeze(closes, period=20, std_dev=2.0, squeeze_threshold=0.05)
         assert result.detected is False
 
@@ -153,7 +153,7 @@ class TestDetectMACross:
         # Create downtrend then sharp reversal
         closes = [20000 - i * 100 for i in range(25)]  # Downtrend
         closes += [17500 + i * 300 for i in range(10)]  # Sharp reversal
-        
+
         result = detect_ma_cross(closes, fast_period=5, slow_period=20)
         # At some point during the reversal, golden cross should occur
         if result.detected:
@@ -178,7 +178,7 @@ class TestPatternResultFormat:
 
     def test_all_patterns_have_korean_names(self):
         closes, highs, lows, volumes = _make_uptrend(30)
-        
+
         for result in [
             detect_breakout(closes, highs, volumes),
             detect_pullback(closes, highs),

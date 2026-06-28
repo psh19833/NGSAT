@@ -188,12 +188,12 @@ class RiskManager:
         reason: str,
     ) -> tuple[bool, str]:
         """Check if a stop loss can be extended.
-        
+
         Rules:
         - New stop loss must be > current stop loss
         - New stop loss must not exceed max_stop_loss_pct (5%)
         - Reason MUST be provided and non-empty
-        
+
         Returns:
             (can_extend, reason_message)
         """

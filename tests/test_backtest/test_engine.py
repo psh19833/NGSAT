@@ -15,7 +15,7 @@ def _train_model_for_backtest():
     universe = generate_synthetic_universe(n_stocks=5, n_days=120, seed=99)
     all_prices = [prices for _, prices in universe]
     codes = [info.code for info, _ in universe]
-    
+
     model, result = train_from_price_data(
         all_prices, codes,
         model_type="logistic",  # Faster than RF
@@ -44,7 +44,7 @@ class TestBacktestEngine:
         """Backtest should run and produce a result."""
         engine = BacktestEngine(trained_model, initial_capital=10_000_000)
         result = engine.run(universe, index_prices, start_day=60)
-        
+
         assert isinstance(result, BacktestResult)
         assert result.initial_capital == 10_000_000
         assert result.start_date != ""
@@ -54,7 +54,7 @@ class TestBacktestEngine:
         """Empty universe should return empty result."""
         engine = BacktestEngine(trained_model)
         result = engine.run([], index_prices)
-        
+
         assert result.total_trades == 0
         assert "데이터 없음" in result.reason
 
@@ -62,14 +62,14 @@ class TestBacktestEngine:
         """Empty index should return empty result."""
         engine = BacktestEngine(trained_model)
         result = engine.run(universe, [])
-        
+
         assert result.total_trades == 0
 
     def test_backtest_produces_trades(self, trained_model, universe, index_prices):
         """Backtest on sufficient data should produce some trades."""
         engine = BacktestEngine(trained_model, initial_capital=10_000_000)
         result = engine.run(universe, index_prices, start_day=60)
-        
+
         # With 5 stocks and 100 days, trades may be sparse
         assert result.buy_count >= 0
         assert result.sell_count >= 0
@@ -79,7 +79,7 @@ class TestBacktestEngine:
         """Every trade should have a non-empty reason."""
         engine = BacktestEngine(trained_model, initial_capital=10_000_000)
         result = engine.run(universe, index_prices, start_day=60)
-        
+
         for trade in result.trades:
             assert len(trade.reason) > 0, f"Trade {trade.code} has empty reason"
             assert trade.action != ""
@@ -88,7 +88,7 @@ class TestBacktestEngine:
         """Result reason should be in Korean."""
         engine = BacktestEngine(trained_model, initial_capital=10_000_000)
         result = engine.run(universe, index_prices, start_day=60)
-        
+
         assert "백테스트 완료" in result.reason
         assert "수익률" in result.reason
 
@@ -96,28 +96,28 @@ class TestBacktestEngine:
         """Max drawdown should be <= 0."""
         engine = BacktestEngine(trained_model, initial_capital=10_000_000)
         result = engine.run(universe, index_prices, start_day=60)
-        
+
         assert result.max_drawdown <= 0
 
     def test_daily_capital_tracked(self, trained_model, universe, index_prices):
         """Daily capital should be tracked."""
         engine = BacktestEngine(trained_model, initial_capital=10_000_000)
         result = engine.run(universe, index_prices, start_day=60)
-        
+
         assert len(result.daily_capital) > 0
 
     def test_initial_final_capital(self, trained_model, universe, index_prices):
         """Final capital should be a valid number."""
         engine = BacktestEngine(trained_model, initial_capital=10_000_000)
         result = engine.run(universe, index_prices, start_day=60)
-        
+
         assert result.initial_capital == 10_000_000
         assert result.final_capital >= 0  # Can't go below 0
 
     def test_halt_on_excessive_loss(self, trained_model):
         """Engine should halt when daily loss exceeds limit."""
         from core.config import RiskConfig
-        
+
         # Very strict risk config: 1% daily loss limit
         risk = RiskConfig(daily_loss_limit_pct=1.0)
         engine = BacktestEngine(
@@ -125,12 +125,12 @@ class TestBacktestEngine:
             initial_capital=10_000_000,
             risk_config=risk,
         )
-        
+
         universe = generate_synthetic_universe(n_stocks=5, n_days=100, seed=42)
         index_prices = generate_synthetic_index(n_days=100, seed=100, trend=-5)
-        
+
         result = engine.run(universe, index_prices, start_day=60)
-        
+
         # With a 1% limit and downtrending market, should halt at some point
         # Just verify it doesn't crash
         assert isinstance(result, BacktestResult)

@@ -20,7 +20,7 @@ from core.logger import logger
 @dataclass(frozen=True)
 class KisToken:
     """KIS API access token.
-    
+
     Attributes:
         access_token: JWT access token (never logged).
         token_type: Always "Bearer".
@@ -113,13 +113,13 @@ class KisTokenManager:
 
     async def get_token(self, http_client: Any) -> KisToken:
         """Get a valid token, issuing or refreshing as needed.
-        
+
         Args:
             http_client: httpx.AsyncClient instance for making HTTP calls.
-        
+
         Returns:
             Valid KisToken.
-        
+
         Raises:
             BrokerError: If token issuance fails.
         """
@@ -130,7 +130,7 @@ class KisTokenManager:
 
     async def _issue_token(self, http_client: Any) -> KisToken:
         """Issue a new access token from KIS OAuth endpoint.
-        
+
         POST /oauth2/tokenP
         Body: { "grant_type": "client_credentials", "appkey": ..., "appsecret": ... }
         """

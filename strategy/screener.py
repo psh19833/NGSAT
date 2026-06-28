@@ -38,7 +38,7 @@ from strategy.regime import RegimeResult
 @dataclass(frozen=True)
 class ScreenCandidate:
     """A stock that passed the screening stage.
-    
+
     Attributes:
         code: Stock code (6-digit).
         name: Stock name.
@@ -62,7 +62,7 @@ class ScreenCandidate:
 @dataclass(frozen=True)
 class ScreenResult:
     """Result of screening all stocks.
-    
+
     Attributes:
         regime: Market regime at screening time.
         candidates: Screened candidates sorted by score (descending).
@@ -120,7 +120,7 @@ def screen_stocks(
     regime_result: RegimeResult,
 ) -> ScreenResult:
     """Screen stocks for trading candidates.
-    
+
     2nd stage of the NGSAT pipeline:
     1. For each stock, calculate technical indicators
     2. Detect chart patterns
@@ -128,11 +128,11 @@ def screen_stocks(
     4. Apply regime-based filtering (BULL=relaxed, BEAR=strict)
     5. Apply KOSPI weighting bonus
     6. Return top candidates sorted by score
-    
+
     Args:
         stocks: List of (StockInfo, price history) tuples.
         regime_result: Market regime evaluation from stage 1.
-    
+
     Returns:
         ScreenResult with ranked candidates.
     """
@@ -141,31 +141,31 @@ def screen_stocks(
     )
     if thresholds is None:
         thresholds = {"min_score": 70.0, "max_candidates": 15, "pattern_weight": 1.0}
-    
+
     candidates: list[ScreenCandidate] = []
-    
+
     for stock_info, price_history in stocks:
         if len(price_history) < 60:
             continue  # 데이터 부족 (ML 예측도 60일 필요)
-        
+
         candidate = _evaluate_single_stock(stock_info, price_history, thresholds)
-        
+
         if candidate and candidate.score >= thresholds["min_score"]:
             candidates.append(candidate)
-    
+
     # Sort by score descending
     candidates.sort(key=lambda c: c.score, reverse=True)
-    
+
     # Limit to max candidates
     max_cands = thresholds["max_candidates"]
     candidates = candidates[:max_cands]
-    
+
     reason = (
         f"스크리닝 완료: {regime_result.regime.value}장, "
         f"{len(stocks)}개 스캔 → {len(candidates)}개 통과 "
         f"(기준: {thresholds['min_score']:.0f}점, 최대: {max_cands}개)"
     )
-    
+
     return ScreenResult(
         regime=regime_result.regime,
         candidates=candidates,
@@ -181,23 +181,23 @@ def _evaluate_single_stock(
     thresholds: dict,
 ) -> ScreenCandidate | None:
     """Evaluate a single stock for screening.
-    
+
     Calculates indicators, detects patterns, and computes a composite score.
     """
     closes = np.array([p.close for p in prices], dtype=float)
     highs = np.array([p.high for p in prices], dtype=float)
     lows = np.array([p.low for p in prices], dtype=float)
     volumes = np.array([p.volume for p in prices], dtype=float)
-    
+
     # ── Technical indicators ──
     rsi_val = current_rsi(closes, 14)
     macd_line, signal_line, hist = current_macd(closes)
-    
+
     ma5 = float(sma(closes, 5)[-1]) if not np.isnan(sma(closes, 5)[-1]) else 0.0
     ma20 = float(sma(closes, 20)[-1]) if not np.isnan(sma(closes, 20)[-1]) else 0.0
-    
+
     vol_ratio = float(volume_ratio(volumes, 20)[-1]) if not np.isnan(volume_ratio(volumes, 20)[-1]) else 1.0
-    
+
     indicators = {
         "rsi": rsi_val,
         "macd_line": macd_line,
@@ -208,11 +208,11 @@ def _evaluate_single_stock(
         "volume_ratio": vol_ratio,
         "current_price": float(closes[-1]),
     }
-    
+
     # ── Pattern detection ──
     patterns: list[PatternResult] = []
     pattern_weight = thresholds.get("pattern_weight", 1.0)
-    
+
     # Detect all applicable patterns
     for detector in [
         lambda: detect_breakout(closes, highs, volumes),
@@ -227,10 +227,10 @@ def _evaluate_single_stock(
                 patterns.append(result)
         except Exception:
             continue  # Skip failed pattern detection, don't crash screening
-    
+
     # ── Scoring ──
     score = 50.0  # Base score
-    
+
     # RSI scoring
     if not np.isnan(rsi_val):
         if 30 < rsi_val < 50:
@@ -241,13 +241,13 @@ def _evaluate_single_stock(
             score -= 5   # Overbought — risky
         elif rsi_val <= 30:
             score += 5   # Oversold — potential rebound
-    
+
     # MACD scoring
     if hist > 0:
         score += 10  # Bullish MACD
     elif hist < 0:
         score -= 10  # Bearish MACD
-    
+
     # MA alignment scoring
     if ma5 > 0 and ma20 > 0:
         if closes[-1] > ma5 > ma20:
@@ -256,23 +256,23 @@ def _evaluate_single_stock(
             score += 5   # Above short-term MA
         elif closes[-1] < ma5 < ma20:
             score -= 15  # Bearish alignment
-    
+
     # Volume confirmation
     if vol_ratio > 1.5:
         score += 5  # Above-average volume
-    
+
     # Pattern scoring (weighted by regime)
     detected_count = len(patterns)
     score += detected_count * 4 * pattern_weight
-    
+
     # KOSPI bonus (기획서: 코스피 비중 더 높게)
     kospi_bonus = False
     if stock.market == Market.KOSPI:
         score += _KOSPI_BONUS
         kospi_bonus = True
-    
+
     score = max(0, min(100, score))
-    
+
     # Build reason
     pattern_names = [p.pattern_name_kr for p in patterns]
     reason_parts = [
@@ -283,7 +283,7 @@ def _evaluate_single_stock(
         f"코스피 가산점" if kospi_bonus else "",
     ]
     reason = " | ".join(r for r in reason_parts if r)
-    
+
     return ScreenCandidate(
         code=stock.code,
         name=stock.name,

@@ -18,7 +18,7 @@ from live.risk import RiskManager
 
 class MockBroker(BrokerAdapter):
     """Mock broker for testing — no real API calls."""
-    
+
     def __init__(self):
         self._submit_order = AsyncMock(return_value="ORDER_12345")
         self._account = AccountSummary(
@@ -27,7 +27,7 @@ class MockBroker(BrokerAdapter):
             total_profit_loss_pct=0,
         )
         self._positions: list[Position] = []
-    
+
     async def get_account_summary(self): return self._account
     async def get_positions(self): return self._positions
     async def get_price(self, code): ...
@@ -67,14 +67,14 @@ class TestExecuteBuy:
     async def test_successful_buy(self, executor, controller):
         """Buy with valid reason and running state should succeed."""
         controller.start()
-        
+
         result = await executor.execute_buy(
             code="005930", name="삼성전자",
             quantity=10, price=70000,
             action=DecisionAction.BUY,
             reason="ML 예측: 매수 (상승 확률 72%)",
         )
-        
+
         assert result.success is True
         assert result.order_id == "ORDER_12345"
         assert result.code == "005930"
@@ -85,14 +85,14 @@ class TestExecuteBuy:
     async def test_buy_without_reason_rejected(self, executor, controller):
         """Buy without reason should be rejected."""
         controller.start()
-        
+
         result = await executor.execute_buy(
             code="005930", name="삼성전자",
             quantity=10, price=70000,
             action=DecisionAction.BUY,
             reason="",
         )
-        
+
         assert result.success is False
         assert "사유 없음" in result.error
 
@@ -105,7 +105,7 @@ class TestExecuteBuy:
             action=DecisionAction.BUY,
             reason="valid reason",
         )
-        
+
         assert result.success is False
         assert "진행 중 아님" in result.error
 
@@ -115,14 +115,14 @@ class TestExecuteBuy:
         controller.start()
         risk_manager._halted = True
         risk_manager._halt_reason = "일일 손실 한도"
-        
+
         result = await executor.execute_buy(
             code="005930", name="삼성전자",
             quantity=10, price=70000,
             action=DecisionAction.BUY,
             reason="valid reason",
         )
-        
+
         assert result.success is False
         assert "리스크" in result.error
 
@@ -134,28 +134,28 @@ class TestExecuteSell:
     async def test_successful_sell(self, executor, controller):
         """Sell with valid reason should succeed."""
         controller.start()
-        
+
         result = await executor.execute_sell(
             code="005930", name="삼성전자",
             quantity=10, price=72000,
             action=DecisionAction.SELL,
             reason="ML 추론(청산): 매도 — 상승 확률 저하 25%",
         )
-        
+
         assert result.success is True
         assert result.side == "sell"
 
     @pytest.mark.asyncio
     async def test_sell_without_reason_rejected(self, executor, controller):
         controller.start()
-        
+
         result = await executor.execute_sell(
             code="005930", name="삼성전자",
             quantity=10, price=72000,
             action=DecisionAction.SELL,
             reason="",
         )
-        
+
         assert result.success is False
         assert "사유 없음" in result.error
 
@@ -164,14 +164,14 @@ class TestExecuteSell:
         """Sell on force-held position should be rejected."""
         controller.start()
         controller.force_hold("005930", "삼성전자")
-        
+
         result = await executor.execute_sell(
             code="005930", name="삼성전자",
             quantity=10, price=72000,
             action=DecisionAction.SELL,
             reason="ML sell signal",
         )
-        
+
         assert result.success is False
         assert "강제 홀드" in result.error
 
@@ -180,12 +180,12 @@ class TestExecuteSell:
         """Force sell should bypass force hold."""
         controller.start()
         controller.force_hold("005930", "삼성전자")
-        
+
         result = await executor.execute_force_sell(
             code="005930", name="삼성전자",
             quantity=10,
         )
-        
+
         assert result.success is True
         assert result.action == "force_sell"
 
@@ -194,12 +194,12 @@ class TestExecuteSell:
         """Force sell during shutdown should be rejected."""
         controller.start()
         controller.shutdown()
-        
+
         result = await executor.execute_force_sell(
             code="005930", name="삼성전자",
             quantity=10,
         )
-        
+
         assert result.success is False
         assert "종료" in result.error
 
@@ -211,13 +211,13 @@ class TestExecutionResultFormat:
     async def test_result_has_reason(self, executor, controller):
         """Successful execution should carry the reason."""
         controller.start()
-        
+
         result = await executor.execute_buy(
             code="005930", name="삼성전자",
             quantity=5, price=70000,
             action=DecisionAction.BUY,
             reason="ML 예측: 상승 확률 75%",
         )
-        
+
         assert "ML" in result.reason
         assert "75%" in result.reason

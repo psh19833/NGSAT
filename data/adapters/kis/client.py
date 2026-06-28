@@ -34,7 +34,7 @@ class KisResponse:
 
 class KisHttpClient:
     """Async HTTP client for KIS API.
-    
+
     All KIS REST calls go through this client.
     Handles auth, headers, response parsing, and error normalization.
     """
@@ -71,7 +71,7 @@ class KisHttpClient:
         extra: dict[str, str] | None = None,
     ) -> dict[str, str]:
         """Build authentication headers for a KIS API call.
-        
+
         Token endpoint doesn't need auth headers.
         """
         headers: dict[str, str] = {
@@ -100,15 +100,15 @@ class KisHttpClient:
         extra_headers: dict[str, str] | None = None,
     ) -> KisResponse:
         """Make a GET request to a KIS API endpoint.
-        
+
         Args:
             endpoint_name: Name from the endpoint catalog.
             params: Query parameters.
             extra_headers: Additional headers.
-        
+
         Returns:
             KisResponse with parsed data.
-        
+
         Raises:
             BrokerError: On HTTP error or KIS API rejection.
             DataError: On data unavailability.
@@ -134,15 +134,15 @@ class KisHttpClient:
         extra_headers: dict[str, str] | None = None,
     ) -> KisResponse:
         """Make a POST request to a KIS API endpoint.
-        
+
         Args:
             endpoint_name: Name from the endpoint catalog.
             json_data: Request body.
             extra_headers: Additional headers (e.g. tr_id for orders).
-        
+
         Returns:
             KisResponse with parsed data.
-        
+
         Raises:
             BrokerError: On HTTP error or KIS API rejection.
         """
@@ -163,7 +163,7 @@ class KisHttpClient:
 
     def _parse_response(self, body: dict[str, Any], endpoint_name: str) -> KisResponse:
         """Parse and validate a KIS API response.
-        
+
         KIS uses rt_cd="0" for success. Any other value is an error.
         """
         rt_cd = str(body.get("rt_cd", ""))

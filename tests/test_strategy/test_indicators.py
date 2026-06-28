@@ -113,7 +113,7 @@ class TestBollingerBands:
         np.random.seed(42)
         values = np.cumsum(np.random.randn(50)) + 100
         upper, middle, lower = bollinger_bands(values, 20, 2.0)
-        
+
         # Most recent price should be within bands
         assert lower[-1] <= values[-1] <= upper[-1]
 

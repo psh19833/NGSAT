@@ -36,7 +36,7 @@ from messaging.bot import TelegramBot
 
 class IntegrationBroker(BrokerAdapter):
     """Full mock broker for integration testing."""
-    
+
     def __init__(self):
         self._account = AccountSummary(
             total_asset=10_000_000, deposit=10_000_000,
@@ -45,41 +45,41 @@ class IntegrationBroker(BrokerAdapter):
         self._positions: list[Position] = []
         self._order_counter = 0
         self._orders: dict[str, tuple] = {}  # order_id → (code, side, qty, price)
-    
+
     async def get_account_summary(self):
         return self._account
-    
+
     async def get_positions(self):
         return self._positions
-    
+
     async def get_price(self, code):
         return PriceData(
             code=code, timestamp=datetime.now(),
             open=70000, high=71000, low=69000, close=70500,
             volume=100000,
         )
-    
+
     async def get_price_history(self, code, start, end):
         return generate_synthetic_data(code, n_days=100, seed=42)
-    
+
     async def get_stock_list(self):
         return []
-    
+
     async def submit_order(self, code, side, quantity, price=None):
         self._order_counter += 1
         order_id = f"INT_ORDER_{self._order_counter}"
         self._orders[order_id] = (code, side, quantity, price or 70500)
         return order_id
-    
+
     async def cancel_order(self, order_id):
         if order_id in self._orders:
             del self._orders[order_id]
             return True
         return False
-    
+
     async def is_market_open(self):
         return True
-    
+
     async def close(self):
         pass
 
@@ -124,25 +124,25 @@ class TestFullPipeline:
         """Full pipeline: regime → screener → ML prediction."""
         from ml.inference import MLInference
         from strategy.screener import screen_stocks
-        
+
         # Step 1: Regime
         regime = evaluate_regime(
             [p.close for p in index_prices],
             [p.volume for p in index_prices],
         )
         assert regime.regime in ["bull", "neutral", "bear"]
-        
+
         # Step 2: Screener
         screen_result = screen_stocks(universe, regime)
         assert screen_result.total_scanned == 10
-        
+
         # Step 3: ML on top candidates
         inference = MLInference(trained_model)
-        
+
         if screen_result.candidates:
             candidate = screen_result.candidates[0]
             prices = next(p for info, p in universe if info.code == candidate.code)
-            
+
             pred = inference.predict_entry(candidate, prices)
             if pred:
                 assert 0 <= pred.rise_probability <= 1
@@ -153,9 +153,9 @@ class TestFullPipeline:
         """Orchestrator runs a complete cycle with all components."""
         orch = TradingOrchestrator(broker, trained_model)
         orch.controller.start()
-        
+
         result = await orch.run_cycle(index_prices, universe)
-        
+
         assert result.regime in ["bull", "neutral", "bear"]
         assert len(result.reason) > 0
         assert "사이클" in result.reason
@@ -164,7 +164,7 @@ class TestFullPipeline:
     async def test_orchestrator_force_sell_flow(self, trained_model, broker):
         """Force sell flow: position → force sell command → execution."""
         from live.controller import TradingState
-        
+
         # Add a mock position
         broker._positions.append(Position(
             code="005930", name="삼성전자", quantity=10,
@@ -172,12 +172,12 @@ class TestFullPipeline:
             market=Market.KOSPI, buy_amount=700000, eval_amount=710000,
             profit_loss=10000, profit_loss_pct=1.43, stop_loss_pct=3.0,
         ))
-        
+
         orch = TradingOrchestrator(broker, trained_model)
         orch.controller.start()
-        
+
         result = await orch.force_sell("005930", "삼성전자")
-        
+
         assert result.success is True
         assert result.action == "force_sell"
         assert result.code == "005930"
@@ -190,12 +190,12 @@ class TestBacktestIntegration:
         """Backtest produces a report with valid metrics."""
         universe = generate_synthetic_universe(n_stocks=10, n_days=100, seed=55)
         index_prices = generate_synthetic_index(n_days=100, seed=200)
-        
+
         engine = BacktestEngine(trained_model, initial_capital=10_000_000)
         result = engine.run(universe, index_prices, start_day=60)
-        
+
         report = generate_report(result)
-        
+
         assert report.metrics.total_trades >= 0
         assert len(report.summary) > 0
         assert "백테스트 결과" in report.summary
@@ -211,28 +211,28 @@ class TestDashboardIntegration:
         orch = TradingOrchestrator(broker, trained_model)
         app = create_app(orch)
         client = TestClient(app)
-        
+
         # Status
         resp = client.get("/api/status")
         assert resp.status_code == 200
         data = resp.json()
         assert data["connected"] is True
         assert data["state"] == "idle"
-        
+
         # Start
         resp = client.post("/api/control/start")
         assert resp.status_code == 200
         assert resp.json()["state"] == "running"
-        
+
         # Status after start
         resp = client.get("/api/status")
         assert resp.json()["is_running"] is True
-        
+
         # Account
         resp = client.get("/api/account")
         assert resp.status_code == 200
         assert resp.json()["total_asset"] == 10_000_000
-        
+
         # Stop
         resp = client.post("/api/control/stop")
         assert resp.json()["state"] == "paused"
@@ -246,12 +246,12 @@ class TestDashboardIntegration:
             market=Market.KOSPI, buy_amount=700000, eval_amount=710000,
             profit_loss=10000, profit_loss_pct=1.43, stop_loss_pct=3.0,
         ))
-        
+
         orch = TradingOrchestrator(broker, trained_model)
         orch.controller.start()
         app = create_app(orch)
         client = TestClient(app)
-        
+
         resp = client.post("/api/control/forcesell", json={"code": "005930"})
         assert resp.status_code == 200
         data = resp.json()
@@ -267,21 +267,21 @@ class TestTelegramIntegration:
         orch = TradingOrchestrator(broker, trained_model)
         bot = TelegramBot(bot_token="test", chat_id="test")
         bot.set_orchestrator(orch)
-        
+
         # Start command
         result = await bot.process_command("start")
         assert "시작" in result
         assert orch.controller.is_running is True
-        
+
         # Status command
         result = await bot.process_command("status")
         assert "NGSAT 상태" in result
         assert "running" in result
-        
+
         # Account command
         result = await bot.process_command("account")
         assert "10,000,000" in result
-        
+
         # Stop command
         result = await bot.process_command("stop")
         assert "정지" in result
@@ -294,13 +294,13 @@ class TestModuleIsolation:
         """live/ modules must not import backtest/."""
         import ast
         from pathlib import Path
-        
+
         live_dir = Path(__file__).resolve().parent.parent / "live"
-        
+
         for py_file in live_dir.glob("*.py"):
             with open(py_file) as f:
                 tree = ast.parse(f.read())
-            
+
             for node in ast.walk(tree):
                 if isinstance(node, (ast.Import, ast.ImportFrom)):
                     module = ""
@@ -309,7 +309,7 @@ class TestModuleIsolation:
                             module = alias.name
                     elif isinstance(node, ast.ImportFrom):
                         module = node.module or ""
-                    
+
                     assert "backtest" not in module, (
                         f"{py_file.name} imports backtest — isolation violated!"
                     )
@@ -318,13 +318,13 @@ class TestModuleIsolation:
         """backtest/ modules must not import live/."""
         import ast
         from pathlib import Path
-        
+
         backtest_dir = Path(__file__).resolve().parent.parent / "backtest"
-        
+
         for py_file in backtest_dir.glob("*.py"):
             with open(py_file) as f:
                 tree = ast.parse(f.read())
-            
+
             for node in ast.walk(tree):
                 if isinstance(node, (ast.Import, ast.ImportFrom)):
                     module = ""
@@ -333,7 +333,7 @@ class TestModuleIsolation:
                             module = alias.name
                     elif isinstance(node, ast.ImportFrom):
                         module = node.module or ""
-                    
+
                     assert "live" not in module or "live." not in module, (
                         f"{py_file.name} imports live — isolation violated!"
                     )
@@ -341,11 +341,11 @@ class TestModuleIsolation:
     def test_core_types_decision_reason_mandatory(self):
         """DecisionReason must always require a reason."""
         from core.types import DecisionAction, DecisionReason
-        
+
         # Empty reason should raise
         with pytest.raises(ValueError):
             DecisionReason(action=DecisionAction.BUY, reason="")
-        
+
         # Valid reason should work
         dr = DecisionReason(
             action=DecisionAction.BUY,
@@ -360,7 +360,7 @@ class TestSystemIntegrity:
     def test_all_core_enums_valid(self):
         """All core enums should have valid values."""
         from core.types import MarketRegime, OrderSide, DecisionAction, Market
-        
+
         assert len(list(MarketRegime)) == 3
         assert len(list(OrderSide)) == 2
         assert len(list(DecisionAction)) >= 6
@@ -382,7 +382,7 @@ class TestSystemIntegrity:
     def test_endpoint_catalog_complete(self):
         """KIS endpoint catalog should have all required endpoints."""
         from data.adapters.kis.endpoints import get_endpoint
-        
+
         required = [
             "token_issue", "inquire_balance", "inquire_daily_ccld",
             "order_cash", "inquire_price", "inquire_daily_chart",

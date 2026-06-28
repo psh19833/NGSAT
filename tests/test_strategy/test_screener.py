@@ -46,14 +46,14 @@ class TestScreenStocks:
             reason="강세장 (테스트)",
             evidence={"total_score": 75.0},
         )
-        
+
         stocks = [
             (_make_stock_info("005930", "삼성전자", Market.KOSPI), _make_price_history(40, trend=200)),
             (_make_stock_info("000660", "SK하이닉스", Market.KOSPI), _make_price_history(40, trend=150)),
         ]
-        
+
         result = screen_stocks(stocks, regime)
-        
+
         assert result.regime == MarketRegime.BULL
         assert result.total_scanned == 2
         assert isinstance(result.candidates, list)
@@ -67,13 +67,13 @@ class TestScreenStocks:
             reason="약세장 (테스트)",
             evidence={"total_score": 25.0},
         )
-        
+
         stocks = [
             (_make_stock_info("005930", "삼성전자"), _make_price_history(40, trend=100)),
         ]
-        
+
         result = screen_stocks(stocks, regime)
-        
+
         # In bear regime, threshold is 80 — most stocks won't pass
         assert result.total_scanned == 1
         # Candidates may be empty due to high threshold
@@ -87,13 +87,13 @@ class TestScreenStocks:
             reason="중립장 (테스트)",
             evidence={"total_score": 50.0},
         )
-        
+
         # Same price data, different markets
         kospi_stock = (_make_stock_info("005930", "삼성전자", Market.KOSPI), _make_price_history(40, trend=150))
         kosdaq_stock = (_make_stock_info("207760", "크래프톤", Market.KOSDAQ), _make_price_history(40, trend=150))
-        
+
         result = screen_stocks([kospi_stock, kosdaq_stock], regime)
-        
+
         # Find candidates and check KOSPI bonus
         for cand in result.candidates:
             if cand.code == "005930":
@@ -109,11 +109,11 @@ class TestScreenStocks:
             reason="강세장",
             evidence={},
         )
-        
+
         stocks = [
             (_make_stock_info("005930", "삼성전자"), _make_price_history(20)),  # Only 20 days
         ]
-        
+
         result = screen_stocks(stocks, regime)
         assert result.total_scanned == 1
         assert len(result.candidates) == 0  # Skipped
@@ -126,15 +126,15 @@ class TestScreenStocks:
             reason="강세장",
             evidence={},
         )
-        
+
         stocks = [
             (_make_stock_info("005930", "삼성전자"), _make_price_history(40, trend=200)),
             (_make_stock_info("000660", "SK하이닉스"), _make_price_history(40, trend=50)),
             (_make_stock_info("035420", "NAVER"), _make_price_history(40, trend=150)),
         ]
-        
+
         result = screen_stocks(stocks, regime)
-        
+
         if len(result.candidates) >= 2:
             scores = [c.score for c in result.candidates]
             assert scores == sorted(scores, reverse=True)
@@ -147,13 +147,13 @@ class TestScreenStocks:
             reason="강세장",
             evidence={},
         )
-        
+
         stocks = [
             (_make_stock_info("005930", "삼성전자"), _make_price_history(40, trend=200)),
         ]
-        
+
         result = screen_stocks(stocks, regime)
-        
+
         for cand in result.candidates:
             assert len(cand.reason) > 0
             assert "rsi" in cand.indicators
@@ -169,7 +169,7 @@ class TestScreenStocks:
             reason="중립장",
             evidence={},
         )
-        
+
         result = screen_stocks([], regime)
         assert result.total_scanned == 0
         assert len(result.candidates) == 0
@@ -182,14 +182,14 @@ class TestScreenStocks:
             reason="강세장",
             evidence={},
         )
-        
+
         # Create many stocks
         stocks = []
         for i in range(50):
             code = f"{i:06d}"
             stocks.append((_make_stock_info(code, f"stock_{i}"), _make_price_history(40, trend=200)))
-        
+
         result = screen_stocks(stocks, regime)
-        
+
         # Bull regime max is 30
         assert len(result.candidates) <= 30

@@ -16,7 +16,6 @@ main.py의 합성 데이터를 대체하여 실제 KIS 데이터를
 
 from __future__ import annotations
 
-import os
 from datetime import datetime, timedelta, timezone
 from typing import Any
 
@@ -148,7 +147,6 @@ class RealDataProvider:
         start = end - timedelta(days=250)
 
         try:
-            from data.adapters.kis.endpoints import get_endpoint
             from data.adapters.kis.mapper import parse_index_history
 
             params = {

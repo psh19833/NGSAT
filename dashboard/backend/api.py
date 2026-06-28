@@ -47,11 +47,11 @@ class ForceHoldRequest(BaseModel):
 
 def create_app(orchestrator=None, config=None) -> FastAPI:
     """Create the FastAPI dashboard app.
-    
+
     Args:
-        orchestrator: TradingOrchestrator instance. If None, 
+        orchestrator: TradingOrchestrator instance. If None,
                       endpoints return "not connected" responses.
-    
+
     Returns:
         FastAPI application.
     """
@@ -60,7 +60,7 @@ def create_app(orchestrator=None, config=None) -> FastAPI:
         description="New Generation Stock Auto Trader — Dashboard",
         version="0.1.0",
     )
-    
+
     # CORS for frontend — production: set NGSAT_CORS_ORIGINS env (comma-separated)
     origins_env = os.getenv("NGSAT_CORS_ORIGINS", "*")
     allow_origins = [o.strip() for o in origins_env.split(",") if o.strip()] if origins_env != "*" else ["*"]
@@ -99,23 +99,23 @@ def create_app(orchestrator=None, config=None) -> FastAPI:
         logger.info(f"대시보드 프론트엔드 마운트: {frontend_dist}")
     else:
         logger.warning(f"프론트엔드 빌드 파일 없음: {frontend_dist} — npm run build 필요")
-    
+
     # Store orchestrator reference
     app.state.orchestrator = orchestrator
     app.state.config = config
-    
+
     def _get_orchestrator():
         return app.state.orchestrator
-    
+
     def _not_connected():
         return {"error": "거래 시스템이 연결되지 않았습니다", "connected": False}
-    
+
     def _get_app_config():
         """Get StrategyConfig from app state."""
         if app.state.config is None:
             return None
         return app.state.config.strategy
-    
+
     def _update_env_from_config(cfg):
         """Write StrategyConfig values to .env file with file locking."""
         from pathlib import Path
@@ -200,17 +200,17 @@ def create_app(orchestrator=None, config=None) -> FastAPI:
             finally:
                 if fcntl:
                     fcntl.flock(f, fcntl.LOCK_UN)
-    
+
     # ── Status ──
     @app.get("/api/status")
     async def get_status():
         orch = _get_orchestrator()
         if orch is None:
             return _not_connected()
-        
+
         controller = orch.controller
         risk = orch.risk_manager
-        
+
         return {
             "connected": True,
             "state": controller.state.value,
@@ -223,14 +223,14 @@ def create_app(orchestrator=None, config=None) -> FastAPI:
             "mode_daily_loss_limit": risk.effective_daily_loss_limit,
             "server_time": datetime.now().isoformat(),
         }
-    
+
     # ── Account ──
     @app.get("/api/account")
     async def get_account():
         orch = _get_orchestrator()
         if orch is None:
             return _not_connected()
-        
+
         try:
             account = await orch._broker.get_account_summary()
             return {
@@ -245,14 +245,14 @@ def create_app(orchestrator=None, config=None) -> FastAPI:
             }
         except Exception as e:
             return {"error": str(e), "connected": True}
-    
+
     # ── Positions ──
     @app.get("/api/positions")
     async def get_positions():
         orch = _get_orchestrator()
         if orch is None:
             return _not_connected()
-        
+
         try:
             positions = await orch._broker.get_positions()
             return {
@@ -278,14 +278,14 @@ def create_app(orchestrator=None, config=None) -> FastAPI:
             }
         except Exception as e:
             return {"error": str(e), "connected": True}
-    
+
     # ── Trades (from database) ──
     @app.get("/api/trades")
     async def get_trades(limit: int = 50):
         orch = _get_orchestrator()
         if orch is None:
             return _not_connected()
-        
+
         try:
             records = orch._trade_repo.get_recent_trades(limit)
             trades = [
@@ -302,14 +302,14 @@ def create_app(orchestrator=None, config=None) -> FastAPI:
             return {"connected": True, "trades": trades}
         except Exception as e:
             return {"connected": True, "trades": [], "message": f"거래 내역 조회 오류: {e}"}
-    
+
     # ── Regime ──
     @app.get("/api/regime")
     async def get_regime():
         orch = _get_orchestrator()
         if orch is None:
             return _not_connected()
-        
+
         if orch._last_regime is None:
             return {
                 "connected": True,
@@ -317,14 +317,14 @@ def create_app(orchestrator=None, config=None) -> FastAPI:
                 "score": 0,
                 "reason": "아직 레짐 평가가 실행되지 않았습니다",
             }
-        
+
         regime = orch._last_regime
         regime_kr = {
             "bull": "강세장",
             "neutral": "중립장",
             "bear": "약세장",
         }.get(regime.regime.value, regime.regime.value)
-        
+
         return {
             "connected": True,
             "regime": regime.regime.value,
@@ -333,34 +333,34 @@ def create_app(orchestrator=None, config=None) -> FastAPI:
             "reason": regime.reason,
             "evidence": regime.evidence,
         }
-    
+
     # ── Control: Start ──
     @app.post("/api/control/start")
     async def control_start():
         orch = _get_orchestrator()
         if orch is None:
             return _not_connected()
-        
+
         msg = orch.controller.start()
         return {"connected": True, "message": msg, "state": orch.controller.state.value}
-    
+
     # ── Control: Stop ──
     @app.post("/api/control/stop")
     async def control_stop():
         orch = _get_orchestrator()
         if orch is None:
             return _not_connected()
-        
+
         msg = orch.controller.stop()
         return {"connected": True, "message": msg, "state": orch.controller.state.value}
-    
+
     # ── Control: Shutdown ──
     @app.post("/api/control/shutdown")
     async def control_shutdown():
         orch = _get_orchestrator()
         if orch is None:
             return _not_connected()
-        
+
         msg = orch.controller.shutdown()
         return {"connected": True, "message": msg, "state": orch.controller.state.value}
 
@@ -370,7 +370,7 @@ def create_app(orchestrator=None, config=None) -> FastAPI:
         orch = _get_orchestrator()
         if orch is None:
             return _not_connected()
-        
+
         msg = orch.controller.restart()
         return {"connected": True, "message": msg, "state": orch.controller.state.value}
 
@@ -380,7 +380,7 @@ def create_app(orchestrator=None, config=None) -> FastAPI:
         orch = _get_orchestrator()
         if orch is None:
             return _not_connected()
-        
+
         result = await orch.force_sell(req.code)
         return {
             "connected": True,
@@ -388,17 +388,17 @@ def create_app(orchestrator=None, config=None) -> FastAPI:
             "message": result.reason if result.success else result.error,
             "order_id": result.order_id,
         }
-    
+
     # ── Control: Force Hold ──
     @app.post("/api/control/forcehold")
     async def control_force_hold(req: ForceHoldRequest):
         orch = _get_orchestrator()
         if orch is None:
             return _not_connected()
-        
+
         orch.controller.force_hold(req.code)
         return {"connected": True, "message": f"강제 홀드 설정: {req.code}"}
-    
+
     # ── Strategy Config ──
     @app.get("/api/strategy/config")
     async def get_strategy_config():
@@ -408,25 +408,25 @@ def create_app(orchestrator=None, config=None) -> FastAPI:
         if cfg is None:
             return {"connected": False}
         return {"connected": True, "config": asdict(cfg)}
-    
+
     @app.put("/api/strategy/config")
     async def update_strategy_config(data: dict):
         """전략·정책 설정값 업데이트 → .env 반영.
-        
+
         Body: { "buy_threshold": 0.70, ... } (부분 업데이트 가능)
         "reset": true → 기본값으로 복원
         """
         cfg = _get_app_config()
         if cfg is None:
             return {"connected": False}
-        
+
         if data.get("reset"):
             # 기본값으로 복원: 복원된 config 반환
             from core.config import StrategyConfig
             restored = StrategyConfig()
             _update_env_from_config(restored)
             return {"connected": True, "message": "기본값으로 복원 완료", "config": asdict(restored), "restart_required": True}
-        
+
         # 부분 업데이트
         updated = 0
         for key, value in data.items():
@@ -435,12 +435,12 @@ def create_app(orchestrator=None, config=None) -> FastAPI:
             if hasattr(cfg, key):
                 setattr(cfg, key, value)
                 updated += 1
-        
+
         if updated > 0:
             _update_env_from_config(cfg)
-        
+
         return {"connected": True, "message": f"{updated}개 설정 저장 완료", "config": asdict(cfg), "restart_required": updated > 0}
-    
+
     # ── Diagnosis ──
     @app.get("/api/diagnosis")
     async def get_diagnosis():
@@ -451,12 +451,12 @@ def create_app(orchestrator=None, config=None) -> FastAPI:
         if diag is None:
             return {"connected": True, "message": "아직 진단 데이터가 없습니다"}
         return {"connected": True, **diag}
-    
+
     # ── Health ──
     @app.get("/api/health")
     async def health():
         return {"status": "ok", "service": "NGSAT Dashboard API"}
-    
+
     # ── WebSocket: Realtime ──
     @app.websocket("/ws/realtime")
     async def websocket_realtime(ws: WebSocket):
@@ -470,17 +470,17 @@ def create_app(orchestrator=None, config=None) -> FastAPI:
                     "state": orch.controller.state.value,
                     "is_running": orch.controller.is_running,
                 })
-            
+
             # Keep connection alive
             while True:
                 # Wait for client messages (ping/pong)
                 data = await ws.receive_text()
                 if data == "ping":
                     await ws.send_text("pong")
-                    
+
         except WebSocketDisconnect:
             logger.info("대시보드 WebSocket 연결 종료")
         except Exception as e:
             logger.error(f"WebSocket 오류: {e}")
-    
+
     return app

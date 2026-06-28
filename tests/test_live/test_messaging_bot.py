@@ -13,7 +13,7 @@ from messaging.bot import TelegramBot
 
 class MockOrchestrator:
     """Mock orchestrator for testing."""
-    
+
     def __init__(self):
         self.controller = MagicMock()
         self.controller.state.value = "idle"
@@ -23,11 +23,11 @@ class MockOrchestrator:
         self.controller.stop = MagicMock(return_value="일시정지")
         self.controller.shutdown = MagicMock(return_value="종료")
         self.controller.force_hold = MagicMock()
-        
+
         self.risk_manager = MagicMock()
         self.risk_manager.is_halted = False
         self.risk_manager.halt_reason = None
-        
+
         self._broker = AsyncMock()
         self._broker.get_account_summary = AsyncMock(return_value=AccountSummary(
             total_asset=10_000_000, deposit=5_000_000,
@@ -35,9 +35,9 @@ class MockOrchestrator:
             total_profit_loss_pct=1.0,
         ))
         self._broker.get_positions = AsyncMock(return_value=[])
-        
+
         self._cycle_count = 0
-    
+
     async def force_sell(self, code):
         from live.executor import ExecutionResult
         return ExecutionResult(

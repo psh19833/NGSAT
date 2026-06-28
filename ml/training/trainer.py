@@ -54,7 +54,7 @@ _MODEL_DIR = _PROJECT_ROOT / "models" / "trained"
 @dataclass
 class TrainingResult:
     """Result of model training.
-    
+
     Attributes:
         success: Whether training completed successfully.
         model_type: Model name (e.g. "random_forest").
@@ -86,15 +86,15 @@ class TrainingResult:
 
 class PriceRiseModel:
     """ML model for predicting stock price rise probability.
-    
+
     Supports model types:
     - "logistic": Logistic Regression (fast baseline)
     - "random_forest": Random Forest (better accuracy)
     - "gradient_boosting": HistGradientBoosting (sklearn 내장 부스팅, 강력)
-    
+
     Future: "xgboost", "lightgbm" when packages installed.
     """
-    
+
     def __init__(
         self,
         model_type: str = "random_forest",
@@ -107,22 +107,22 @@ class PriceRiseModel:
         self._model: Any = None
         self._scaler: StandardScaler | None = None
         self._is_trained = False
-    
+
     @property
     def is_trained(self) -> bool:
         return self._is_trained
-    
+
     def train(
         self,
         X: np.ndarray,
         y: np.ndarray,
     ) -> TrainingResult:
         """Train the model on a feature matrix and labels.
-        
+
         Args:
             X: Feature matrix (n_samples, n_features).
             y: Labels (0 = down, 1 = up).
-        
+
         Returns:
             TrainingResult with metrics.
         """
@@ -131,17 +131,17 @@ class PriceRiseModel:
                 success=False,
                 reason=f"학습 데이터 부족: {len(X)}개 (최소 50개 필요)",
             )
-        
+
         # Time-series split: use last 20% as test set
         split_idx = int(len(X) * 0.8)
         X_train, X_test = X[:split_idx], X[split_idx:]
         y_train, y_test = y[:split_idx], y[split_idx:]
-        
+
         # Scale features
         self._scaler = StandardScaler()
         X_train_scaled = self._scaler.fit_transform(X_train)
         X_test_scaled = self._scaler.transform(X_test)
-        
+
         # Create model
         if self.model_type == "logistic":
             self._model = LogisticRegression(
@@ -190,27 +190,27 @@ class PriceRiseModel:
                 success=False,
                 reason=f"지원하지 않는 모델 타입: {self.model_type}",
             )
-        
+
         # Train
         self._model.fit(X_train_scaled, y_train)
         self._is_trained = True
-        
+
         # Evaluate
         y_pred = self._model.predict(X_test_scaled)
         y_proba = self._model.predict_proba(X_test_scaled)[:, 1]
-        
+
         accuracy = float(accuracy_score(y_test, y_pred))
         precision = float(precision_score(y_test, y_pred, zero_division=0))
         recall = float(recall_score(y_test, y_pred, zero_division=0))
         f1 = float(f1_score(y_test, y_pred, zero_division=0))
-        
+
         try:
             auc = float(roc_auc_score(y_test, y_proba))
             if np.isnan(auc):
                 auc = 0.0  # 검증셋에 한 클래스만 존재
         except ValueError:
             auc = 0.0  # Only one class in test set
-        
+
         # Cross-validation (time-series aware)
         cv = TimeSeriesSplit(n_splits=3)
         cv_scores = []
@@ -222,7 +222,7 @@ class PriceRiseModel:
             cv_scores = [float(s) for s in cv_result]
         except Exception:
             pass  # CV may fail with small datasets
-        
+
         # Feature importance
         feature_importance = {}
         if hasattr(self._model, "feature_importances_"):
@@ -256,7 +256,7 @@ class PriceRiseModel:
                     feature_importance[name] = float(imp)
             except Exception:
                 pass
-        
+
         pos_rate = float(np.mean(y))
         test_pos = int(np.sum(y_test))
         if pos_rate < 0.05:
@@ -276,9 +276,9 @@ class PriceRiseModel:
             f"양성비율 {pos_rate:.1%}, "
             f"샘플 {len(X)}개, 피처 {X.shape[1]}개{imbalance_note}"
         )
-        
+
         logger.info(f"ML 모델 학습: {reason}")
-        
+
         return TrainingResult(
             success=True,
             model_type=self.model_type,
@@ -294,42 +294,42 @@ class PriceRiseModel:
             n_features=X.shape[1],
             reason=reason,
         )
-    
+
     def predict_proba(self, X: np.ndarray) -> np.ndarray:
         """Predict probability of price rise.
-        
+
         Args:
             X: Feature matrix (n_samples, n_features).
-        
+
         Returns:
             Array of probabilities (0-1) for the "up" class.
-        
+
         Raises:
             RuntimeError: If model is not trained.
         """
         if not self._is_trained or self._model is None:
             raise RuntimeError("모델이 학습되지 않았습니다")
-        
+
         if self._scaler is not None:
             X = self._scaler.transform(X)
-        
+
         return self._model.predict_proba(X)[:, 1]
-    
+
     def save(self, path: str | Path | None = None) -> Path:
         """Save model to disk.
-        
+
         Args:
             path: File path. Defaults to models/trained/price_rise_model.pkl.
-        
+
         Returns:
             Path where model was saved.
         """
         if not self._is_trained:
             raise RuntimeError("학습되지 않은 모델은 저장할 수 없습니다")
-        
+
         save_path = Path(path) if path else _MODEL_DIR / "price_rise_model.pkl"
         save_path.parent.mkdir(parents=True, exist_ok=True)
-        
+
         joblib.dump(
             {
                 "model": self._model,
@@ -341,24 +341,24 @@ class PriceRiseModel:
             },
             save_path,
         )
-        
+
         logger.info(f"ML 모델 저장: {save_path}")
         return save_path
-    
+
     @classmethod
     def load(cls, path: str | Path | None = None) -> "PriceRiseModel":
         """Load a trained model from disk.
-        
+
         Args:
             path: File path. Defaults to models/trained/price_rise_model.pkl.
-        
+
         Returns:
             Loaded PriceRiseModel instance.
         """
         load_path = Path(path) if path else _MODEL_DIR / "price_rise_model.pkl"
-        
+
         data = joblib.load(load_path)
-        
+
         instance = cls(
             model_type=data["model_type"],
             forward_days=data["forward_days"],
@@ -367,7 +367,7 @@ class PriceRiseModel:
         instance._model = data["model"]
         instance._scaler = data["scaler"]
         instance._is_trained = True
-        
+
         logger.info(f"ML 모델 로드: {load_path}")
         return instance
 
@@ -514,23 +514,23 @@ def train_from_price_data(
     forward_threshold: float = 0.02,
 ) -> tuple[PriceRiseModel, TrainingResult]:
     """Convenience function: build dataset and train model in one call.
-    
+
     Args:
         all_prices: List of price histories.
         codes: Stock codes.
         model_type: "logistic", "random_forest", or "gradient_boosting".
         forward_days: Days ahead for target.
         forward_threshold: Min return to label as "up".
-    
+
     Returns:
         Tuple of (trained model, training result).
     """
     X, y, feature_names = build_training_dataset(
         all_prices, codes, forward_days, forward_threshold
     )
-    
+
     logger.info(f"학습 데이터셋 구축: {X.shape[0]} 샘플, {X.shape[1]} 피처")
-    
+
     model = PriceRiseModel(model_type, forward_days, forward_threshold)
     result = model.train(X, y)
 

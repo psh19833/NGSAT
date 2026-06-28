@@ -13,7 +13,6 @@ Data sources:
 from __future__ import annotations
 
 from datetime import datetime, timedelta
-from typing import Sequence
 
 import numpy as np
 
@@ -26,12 +25,12 @@ def load_from_cache(
     end_date: str,
 ) -> list[PriceData]:
     """Load price history from the database cache.
-    
+
     Args:
         code: 6-digit stock code.
         start_date: Start date (YYYY-MM-DD).
         end_date: End date (YYYY-MM-DD).
-    
+
     Returns:
         List of PriceData sorted by date ascending.
         Empty list if no data found or DB unavailable.
@@ -39,11 +38,11 @@ def load_from_cache(
     try:
         from data.db import db_session
         from data.repository import MarketDataRepository
-        
+
         with db_session() as session:
             repo = MarketDataRepository(session)
             records = repo.get_price_history(code, start_date, end_date)
-            
+
             return [
                 PriceData(
                     code=r.code,
@@ -68,20 +67,20 @@ async def load_from_kis(
     adapter=None,
 ) -> list[PriceData]:
     """Load price history from KIS API.
-    
+
     Args:
         code: 6-digit stock code.
         start: Start date.
         end: End date.
         adapter: KisAdapter instance. If None, creates from env.
-    
+
     Returns:
         List of PriceData sorted by date ascending.
     """
     if adapter is None:
         from data.adapters.kis.adapter import KisAdapter
         adapter = KisAdapter.from_env()
-    
+
     try:
         history = await adapter.get_price_history(code, start, end)
         return history
@@ -99,10 +98,10 @@ def generate_synthetic_data(
     seed: int = 42,
 ) -> list[PriceData]:
     """Generate synthetic price data for backtesting tests.
-    
+
     Creates realistic-looking price data with controllable trend and volatility.
     Used for testing the backtest engine without real market data.
-    
+
     Args:
         code: Stock code.
         n_days: Number of trading days.
@@ -110,33 +109,34 @@ def generate_synthetic_data(
         trend: Daily price drift (positive = uptrend).
         volatility: Daily volatility as fraction (0.02 = 2%).
         seed: Random seed for reproducibility.
-    
+
     Returns:
         List of PriceData.
     """
     rng = np.random.default_rng(seed)
-    
+
     prices: list[PriceData] = []
     current = start_price
     base_date = datetime(2025, 1, 1)
-    
+
     for i in range(n_days):
         # Geometric brownian motion
         daily_return = rng.normal(trend / start_price, volatility)
         current = current * (1 + daily_return)
-        
+
         # Generate OHLC from close
         intraday_vol = current * volatility * 0.5
         open_price = current + rng.normal(0, intraday_vol * 0.3)
         high = max(open_price, current) + abs(rng.normal(0, intraday_vol))
         low = min(open_price, current) - abs(rng.normal(0, intraday_vol))
-        
+
         volume = int(rng.integers(50000, 200000))
-        
+
         # Previous close for change_pct
         prev_close = prices[-1].close if prices else open_price
-        change_pct = (current - prev_close) / prev_close * 100 if prev_close > 0 else 0.0
-        
+        change_pct = ((current - prev_close) / prev_close * 100
+                      ) if prev_close > 0 else 0.0
+
         prices.append(PriceData(
             code=code,
             timestamp=base_date + timedelta(days=i),
@@ -147,7 +147,7 @@ def generate_synthetic_data(
             volume=volume,
             change_pct=float(change_pct),
         ))
-    
+
     return prices
 
 
@@ -159,14 +159,14 @@ def generate_synthetic_index(
     seed: int = 100,
 ) -> list[PriceData]:
     """Generate synthetic index data for regime evaluation in backtests.
-    
+
     Args:
         n_days: Number of trading days.
         start_value: Initial index value.
         trend: Daily drift.
         volatility: Daily volatility.
         seed: Random seed.
-    
+
     Returns:
         List of PriceData representing index values.
     """
@@ -186,23 +186,23 @@ def generate_synthetic_universe(
     seed: int = 42,
 ) -> list[tuple[StockInfo, list[PriceData]]]:
     """Generate a synthetic stock universe for backtesting.
-    
+
     Creates a mix of uptrending, downtrending, and sideways stocks.
-    
+
     Args:
         n_stocks: Number of stocks to generate.
         n_days: Days of history per stock.
         seed: Base random seed.
-    
+
     Returns:
         List of (StockInfo, price history) tuples.
     """
     universe: list[tuple[StockInfo, list[PriceData]]] = []
-    
+
     for i in range(n_stocks):
         code = f"{i + 1:06d}"
         name = f"synthetic_{i + 1}"
-        
+
         # Mix of trends: 40% up, 30% sideways, 30% down
         if i < n_stocks * 0.4:
             trend = 80 + i * 5
@@ -213,7 +213,7 @@ def generate_synthetic_universe(
         else:
             trend = -60 - i * 3
             market = Market.KOSPI
-        
+
         prices = generate_synthetic_data(
             code=code,
             n_days=n_days,
@@ -222,10 +222,10 @@ def generate_synthetic_universe(
             volatility=0.02 + (i % 3) * 0.005,
             seed=seed + i,
         )
-        
+
         info = StockInfo(code=code, name=name, market=market)
         universe.append((info, prices))
-    
+
     return universe
 
 
@@ -264,8 +264,10 @@ def generate_synthetic_minute_bars(
         price = mid + rng.normal(0, base * intraday_vol)
         price = min(max(price, l), h)  # 일봉 범위 클리핑
         prev = bars[-1].close if bars else o
-        hi = min(max(price, prev) + abs(rng.normal(0, base * intraday_vol * 0.3)), h)
-        lo = max(min(price, prev) - abs(rng.normal(0, base * intraday_vol * 0.3)), l)
+        hi = min(
+            max(price, prev) + abs(rng.normal(0, base * intraday_vol * 0.3)), h)
+        lo = max(
+            min(price, prev) - abs(rng.normal(0, base * intraday_vol * 0.3)), l)
         bars.append(PriceData(
             code=day_bar.code,
             timestamp=base_ts + timedelta(minutes=i),

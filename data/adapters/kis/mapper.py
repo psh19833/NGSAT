@@ -35,7 +35,7 @@ def _float(value: Any, default: float = 0.0) -> float:
 
 def parse_account_summary(raw: dict[str, Any]) -> AccountSummary:
     """Parse KIS balance response → AccountSummary.
-    
+
     KIS balance endpoint returns:
     - output2: account overview (total asset, deposit, etc.)
     - output: list of positions
@@ -67,7 +67,7 @@ def parse_account_summary(raw: dict[str, Any]) -> AccountSummary:
 
 def parse_positions(raw: dict[str, Any]) -> list[Position]:
     """Parse KIS balance response → list of Position.
-    
+
     KIS balance endpoint returns:
     - output: list of held stocks with pdno (code), hldg_qty, pchs_avg_pric, prpr, etc.
     """
@@ -116,7 +116,7 @@ def parse_positions(raw: dict[str, Any]) -> list[Position]:
 
 def parse_price(raw: dict[str, Any], code: str = "") -> PriceData:
     """Parse KIS current-price response → PriceData.
-    
+
     KIS inquire-price endpoint returns output with stck_prpr, stck_oprc, etc.
     """
     now = datetime.now()
@@ -134,7 +134,7 @@ def parse_price(raw: dict[str, Any], code: str = "") -> PriceData:
 
 def parse_price_history(raw: dict[str, Any], code: str = "") -> list[PriceData]:
     """Parse KIS daily-chart response → list of PriceData.
-    
+
     KIS inquire-daily-chart returns output2 as list of daily OHLCV.
     """
     items = raw.get("output2") or raw.get("output") or []
@@ -255,7 +255,7 @@ def build_order_payload(
     price: float | None = None,
 ) -> dict[str, Any]:
     """Build KIS order-cash request payload.
-    
+
     Args:
         code: 6-digit stock code
         side: BUY or SELL
@@ -263,7 +263,7 @@ def build_order_payload(
         account_no: 8-digit account number (CANO)
         account_product_code: 2-digit product code (ACNT_PRDT_CD)
         price: Limit price (None = market order)
-    
+
     Returns:
         KIS order-cash payload dict.
     """
@@ -283,7 +283,7 @@ def build_order_payload(
 
 def _infer_market(code: str) -> Market:
     """Infer market (KOSPI/KOSDAQ) from stock code.
-    
+
     This is a heuristic — KIS may provide explicit market info.
     KOSPI codes are typically 6 digits starting with 0 or 1.
     KOSDAQ codes typically start with 2 or 3.

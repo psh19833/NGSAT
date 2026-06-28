@@ -33,7 +33,7 @@ from data.adapters.kis.token_manager import KisTokenManager
 
 class KisAdapter(BrokerAdapter):
     """KIS (Korea Investment & Securities) broker adapter.
-    
+
     Implements BrokerAdapter for the KIS Open API.
     All secrets are loaded from .env — never logged or hardcoded.
     """
@@ -67,7 +67,7 @@ class KisAdapter(BrokerAdapter):
     @staticmethod
     def _normalize_account_no(account_no: str) -> str:
         """Extract 8-digit CANO from account number.
-        
+
         Accepts formats:
         - "12345678" (8 digits)
         - "12345678-01" (with product code)
@@ -83,7 +83,7 @@ class KisAdapter(BrokerAdapter):
     @classmethod
     def from_env(cls) -> "KisAdapter":
         """Create adapter from environment variables (.env).
-        
+
         Required env vars:
         - KIS_BASE_URL
         - KIS_APP_KEY
@@ -233,7 +233,7 @@ class KisAdapter(BrokerAdapter):
 
     async def get_stock_list(self) -> list[StockInfo]:
         """Fetch all tradeable stocks.
-        
+
         Note: KIS doesn't have a single "list all stocks" endpoint.
         This method would typically use a cached stock list or
         the volume-rank endpoint for active stocks.
@@ -251,16 +251,16 @@ class KisAdapter(BrokerAdapter):
         price: float | None = None,
     ) -> str:
         """Submit a buy or sell order.
-        
+
         Args:
             code: 6-digit stock code
             side: BUY or SELL
             quantity: Number of shares
             price: Limit price (None = market order)
-        
+
         Returns:
             Order ID from KIS.
-        
+
         Raises:
             BrokerError: If order submission fails.
         """
@@ -296,7 +296,7 @@ class KisAdapter(BrokerAdapter):
 
     async def cancel_order(self, order_id: str) -> bool:
         """Cancel a pending order.
-        
+
         Note: KIS cancel-order endpoint requires additional fields
         (ORD_GNO_BRNO, ORGN_ODNO). Will be fully implemented in Phase 6.
         """
@@ -305,7 +305,7 @@ class KisAdapter(BrokerAdapter):
 
     async def is_market_open(self) -> bool:
         """Check if the stock market is currently open.
-        
+
         Uses KIS market-hours endpoint. Falls back to time-based check
         if API is unavailable.
         """

@@ -63,7 +63,7 @@ class DatabaseConfig:
 @dataclass
 class KISConfig:
     """KIS (Korea Investment) API configuration.
-    
+
     All secrets are loaded from .env — never hardcoded.
     """
     base_url: str = ""
@@ -91,7 +91,7 @@ class RiskConfig:
 @dataclass
 class StrategyConfig:
     """전략·정책 설정 — 모든 매매 수치를 한 곳에서 관리.
-    
+
     .env 또는 기본값으로 설정 가능. 값 변경 시 재기동 없이
     설정 파일만 수정하면 반영.
     """
@@ -166,10 +166,10 @@ class Config:
 
 def load_config(env_file: str | None = None) -> Config:
     """Load configuration from environment variables.
-    
+
     Args:
         env_file: Path to .env file. Defaults to PROJECT_ROOT/.env
-    
+
     Returns:
         Config object with all settings populated.
     """
@@ -178,7 +178,7 @@ def load_config(env_file: str | None = None) -> Config:
         load_dotenv(env_path)
 
     config = Config()
-    
+
     # Environment
     env_str = os.getenv("NGSAT_ENV", "development")
     config.env = Environment(env_str)

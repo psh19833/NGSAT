@@ -169,7 +169,7 @@ _ENDPOINTS: dict[str, KisEndpoint] = {
 
 def get_endpoint(name: str) -> KisEndpoint:
     """Look up an endpoint by name.
-    
+
     Raises:
         KeyError: If endpoint name is not found.
     """

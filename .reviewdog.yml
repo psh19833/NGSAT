@@ -1,0 +1,7 @@
+runner:
+  flake8:
+    cmd: .venv/bin/flake8
+    format: flake8
+    level: warning
+    errorformat:
+      - "%f:%l:%c: %m"

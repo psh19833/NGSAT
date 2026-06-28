@@ -17,7 +17,7 @@ from ml.training.trainer import PriceRiseModel, train_from_price_data
 
 class MockBroker(BrokerAdapter):
     """Mock broker for orchestrator testing."""
-    
+
     def __init__(self, account=None, positions=None):
         self._account = account or AccountSummary(
             total_asset=10_000_000, deposit=10_000_000,
@@ -25,32 +25,32 @@ class MockBroker(BrokerAdapter):
         )
         self._positions = positions or []
         self._order_counter = 0
-    
+
     async def get_account_summary(self):
         return self._account
-    
+
     async def get_positions(self):
         return self._positions
-    
+
     async def get_price(self, code):
         return PriceData(code=code, timestamp=datetime.now(), open=70000, high=71000, low=69000, close=70500, volume=100000)
-    
+
     async def get_price_history(self, code, start, end):
         return []
-    
+
     async def get_stock_list(self):
         return []
-    
+
     async def submit_order(self, code, side, quantity, price=None):
         self._order_counter += 1
         return f"MOCK_ORDER_{self._order_counter}"
-    
+
     async def cancel_order(self, order_id):
         return True
-    
+
     async def is_market_open(self):
         return True
-    
+
     async def close(self):
         pass
 
@@ -106,7 +106,7 @@ class TestTradingOrchestrator:
     async def test_cycle_when_not_running(self, orchestrator, index_prices, universe):
         """Cycle should skip when controller is not running."""
         result = await orchestrator.run_cycle(index_prices, universe)
-        
+
         assert result.buys_executed == 0
         assert result.sells_executed == 0
         assert "대기" in result.reason
@@ -115,9 +115,9 @@ class TestTradingOrchestrator:
     async def test_cycle_when_running(self, orchestrator, index_prices, universe):
         """Cycle should run when controller is started."""
         orchestrator.controller.start()
-        
+
         result = await orchestrator.run_cycle(index_prices, universe)
-        
+
         assert isinstance(result, CycleResult)
         assert len(result.reason) > 0
         # May or may not execute trades depending on ML predictions
@@ -127,18 +127,18 @@ class TestTradingOrchestrator:
     async def test_cycle_with_empty_data(self, orchestrator):
         """Cycle with empty data should handle gracefully."""
         orchestrator.controller.start()
-        
+
         result = await orchestrator.run_cycle([], [])
-        
+
         assert result.candidates_found == 0
 
     @pytest.mark.asyncio
     async def test_cycle_records_regime(self, orchestrator, index_prices, universe):
         """Cycle should evaluate and record regime."""
         orchestrator.controller.start()
-        
+
         result = await orchestrator.run_cycle(index_prices, universe)
-        
+
         # Regime should be one of the valid values
         assert result.regime in ["bull", "neutral", "bear"]
 
@@ -146,9 +146,9 @@ class TestTradingOrchestrator:
     async def test_cycle_reason_is_korean(self, orchestrator, index_prices, universe):
         """Cycle reason should be in Korean."""
         orchestrator.controller.start()
-        
+
         result = await orchestrator.run_cycle(index_prices, universe)
-        
+
         assert "사이클" in result.reason or "대기" in result.reason or "리스크" in result.reason
 
     @pytest.mark.asyncio
@@ -167,9 +167,9 @@ class TestTradingOrchestrator:
     async def test_force_sell_no_position(self, orchestrator):
         """Force sell on non-held stock should fail gracefully."""
         orchestrator.controller.start()
-        
+
         result = await orchestrator.force_sell("005930", "삼성전자")
-        
+
         assert result.success is False
         assert "보유하지" in result.error
 
@@ -185,9 +185,9 @@ class TestTradingOrchestrator:
         broker = MockBroker(positions=[position])
         orch = TradingOrchestrator(broker, model)
         orch.controller.start()
-        
+
         result = await orch.force_sell("005930", "삼성전자")
-        
+
         assert result.success is True
         assert result.action == "force_sell"
 
@@ -197,9 +197,9 @@ class TestTradingOrchestrator:
         orchestrator.controller.start()
         orchestrator.risk_manager._halted = True
         orchestrator.risk_manager._halt_reason = "일일 손실 한도 -5%"
-        
+
         result = await orchestrator.run_cycle(index_prices, universe)
-        
+
         assert result.buys_executed == 0
         assert "리스크" in result.reason
 

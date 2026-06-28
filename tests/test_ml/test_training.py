@@ -17,7 +17,7 @@ def _make_mixed_dataset(n_stocks: int = 5, n_days: int = 120) -> tuple[list, lis
     np.random.seed(42)
     all_prices = []
     codes = []
-    
+
     for i in range(n_stocks):
         trend = 200 if i % 2 == 0 else -150  # Alternating up/down
         start = 50000 + i * 10000
@@ -36,7 +36,7 @@ def _make_mixed_dataset(n_stocks: int = 5, n_days: int = 120) -> tuple[list, lis
             ))
         all_prices.append(prices)
         codes.append(f"{i:06d}")
-    
+
     return all_prices, codes
 
 
@@ -47,10 +47,10 @@ class TestPriceRiseModel:
         """Random Forest model should train successfully."""
         all_prices, codes = _make_mixed_dataset(5, 120)
         X, y, _ = build_training_dataset(all_prices, codes, forward_days=5, forward_threshold=0.02)
-        
+
         model = PriceRiseModel("random_forest", forward_days=5, forward_threshold=0.02)
         result = model.train(X, y)
-        
+
         assert result.success is True
         assert result.model_type == "random_forest"
         assert result.n_samples > 0
@@ -61,10 +61,10 @@ class TestPriceRiseModel:
         """Logistic Regression model should train successfully."""
         all_prices, codes = _make_mixed_dataset(5, 120)
         X, y, _ = build_training_dataset(all_prices, codes, forward_days=5, forward_threshold=0.02)
-        
+
         model = PriceRiseModel("logistic", forward_days=5, forward_threshold=0.02)
         result = model.train(X, y)
-        
+
         assert result.success is True
         assert result.model_type == "logistic"
 
@@ -108,10 +108,10 @@ class TestPriceRiseModel:
         """Training with < 50 samples should fail gracefully."""
         X = np.random.randn(30, 20)
         y = np.random.randint(0, 2, 30)
-        
+
         model = PriceRiseModel("random_forest")
         result = model.train(X, y)
-        
+
         assert result.success is False
         assert "부족" in result.reason
 
@@ -119,19 +119,19 @@ class TestPriceRiseModel:
         """predict_proba should return probabilities after training."""
         all_prices, codes = _make_mixed_dataset(5, 120)
         X, y, _ = build_training_dataset(all_prices, codes)
-        
+
         model = PriceRiseModel("random_forest")
         model.train(X, y)
-        
+
         proba = model.predict_proba(X[:5])
-        
+
         assert len(proba) == 5
         assert all(0 <= p <= 1 for p in proba)
 
     def test_predict_before_training_raises(self):
         """predict_proba before training should raise RuntimeError."""
         model = PriceRiseModel("random_forest")
-        
+
         with pytest.raises(RuntimeError, match="학습되지"):
             model.predict_proba(np.array([[1.0] * 20]))
 
@@ -139,10 +139,10 @@ class TestPriceRiseModel:
         """Unsupported model type should fail."""
         X = np.random.randn(100, 20)
         y = np.random.randint(0, 2, 100)
-        
+
         model = PriceRiseModel("nonexistent")
         result = model.train(X, y)
-        
+
         assert result.success is False
         assert "지원하지" in result.reason
 
@@ -150,20 +150,20 @@ class TestPriceRiseModel:
         """Model should be saveable and loadable."""
         all_prices, codes = _make_mixed_dataset(5, 120)
         X, y, _ = build_training_dataset(all_prices, codes)
-        
+
         model = PriceRiseModel("random_forest")
         model.train(X, y)
-        
+
         # Save
         save_path = tmp_path / "test_model.pkl"
         model.save(save_path)
         assert save_path.exists()
-        
+
         # Load
         loaded = PriceRiseModel.load(save_path)
         assert loaded.is_trained is True
         assert loaded.model_type == "random_forest"
-        
+
         # Predictions should match
         proba_orig = model.predict_proba(X[:3])
         proba_loaded = loaded.predict_proba(X[:3])
@@ -173,10 +173,10 @@ class TestPriceRiseModel:
         """Training result should include feature importance."""
         all_prices, codes = _make_mixed_dataset(5, 120)
         X, y, _ = build_training_dataset(all_prices, codes)
-        
+
         model = PriceRiseModel("random_forest")
         result = model.train(X, y)
-        
+
         assert len(result.feature_importance) > 0
         # Top feature should be one of the known feature names
         top_feature = list(result.feature_importance.keys())[0]
@@ -193,23 +193,23 @@ class TestPriceRiseModel:
         """Training result should have a Korean reason."""
         all_prices, codes = _make_mixed_dataset(5, 120)
         X, y, _ = build_training_dataset(all_prices, codes)
-        
+
         model = PriceRiseModel("random_forest")
         result = model.train(X, y)
-        
+
         assert "학습 완료" in result.reason
         assert "정확도" in result.reason
 
     def test_train_from_price_data_convenience(self):
         """train_from_price_data should work end-to-end."""
         all_prices, codes = _make_mixed_dataset(5, 120)
-        
+
         model, result = train_from_price_data(
             all_prices, codes,
             model_type="logistic",
             forward_days=5,
             forward_threshold=0.02,
         )
-        
+
         assert result.success is True
         assert model.is_trained is True

@@ -26,9 +26,7 @@ from core.config import RiskConfig, StrategyConfig
 from core.logger import logger
 from pathlib import Path
 from core.types import (
-    AccountSummary,
     DecisionAction,
-    DecisionReason,
     MarketRegime,
     OrderSide,
     Position,
@@ -36,15 +34,15 @@ from core.types import (
     StrategyMode,
 )
 from data.adapters.base import BrokerAdapter
-from live.controller import TradingController, TradingState
+from live.controller import TradingController
 from live.executor import ExecutionResult, OrderExecutor
-from live.risk import RiskManager, RiskCheckResult
-from ml.inference import ExitPrediction, MLInference, MLPrediction
+from live.risk import RiskManager
+from ml.inference import MLInference
 from strategy.regime import RegimeResult, evaluate_regime
-from strategy.screener import ScreenCandidate, ScreenResult, screen_stocks
+from strategy.screener import screen_stocks
 from strategy.entry_timing import EntryDecision, EntryTiming, refine_entry
 from strategy.exit_timing import ExitDecision, ExitUrgency, refine_exit
-from strategy.mode_selector import ModeDecision, select_mode, estimate_volatility_from_prices
+from strategy.mode_selector import select_mode, estimate_volatility_from_prices
 
 
 @dataclass
@@ -79,23 +77,23 @@ class CycleResult:
 
 class TradingOrchestrator:
     """Orchestrates the full automated trading cycle.
-    
+
     This is the heart of NGSAT's live trading. It runs the 3-stage
     pipeline (regime → screener → ML) and executes real orders.
-    
+
     The orchestrator does NOT make decisions on its own — it follows
     the ML model's predictions. Its job is to wire the pipeline together
     and ensure every order has a reason.
-    
+
     Lifecycle:
         controller.start() → run_cycle() repeatedly → controller.stop()
-    
+
     The orchestrator checks controller state at every step:
     - If not RUNNING → skip cycle
     - If HALTED by risk → skip cycle
     - If SHUTDOWN → clean up and stop
     """
-    
+
     def __init__(
         self,
         broker: BrokerAdapter,
@@ -117,7 +115,7 @@ class TradingOrchestrator:
         self._executor = OrderExecutor(broker, self._risk, self._controller)
         self._inference = MLInference(model, buy_threshold, sell_threshold, minute_model=minute_model)
         self._position_budget_pct = position_budget_pct
-        
+
         # Database for trade records
         from sqlalchemy import create_engine
         from sqlalchemy.orm import sessionmaker
@@ -147,45 +145,45 @@ class TradingOrchestrator:
         self._current_mode: str = "swing"
         self._last_diagnosis: dict | None = None  # 진단 현황
         self._cycle_count: int = 0
-    
+
     @property
     def controller(self) -> TradingController:
         """Access the trading controller for start/stop/force operations."""
         return self._controller
-    
+
     @property
     def risk_manager(self) -> RiskManager:
         """Access the risk manager."""
         return self._risk
-    
+
     async def run_cycle(
         self,
         index_prices: list[PriceData],
         stock_universe: list[tuple[Any, list[PriceData]]],
     ) -> CycleResult:
         """Run one full trading cycle.
-        
+
         Args:
             index_prices: Recent index price history for regime evaluation.
             stock_universe: List of (StockInfo, price history) for screening.
-        
+
         Returns:
             CycleResult with summary of what happened.
         """
         result = CycleResult()
         self._cycle_count += 1
-        
+
         # Check controller state
         if not self._controller.is_running:
             result.reason = f"매매 대기 중 (상태: {self._controller.state.value})"
             return result
-        
+
         if self._risk.is_halted:
             result.reason = f"리스크 중단: {self._risk.halt_reason}"
             return result
-        
+
         logger.info(f"=== 매매 사이클 #{self._cycle_count} 시작 ===")
-        
+
         # ── Step 0: Universe sanity check (synthetic data guard) ──
         for info, _ in stock_universe:
             name = getattr(info, 'name', str(info))
@@ -193,7 +191,7 @@ class TradingOrchestrator:
                 logger.error(f"합성 유니버스 감지 — 사이클 스킵: {name}({getattr(info, 'code', '?')})")
                 result.reason = f"합성 데이터 차단: {name}"
                 return result
-        
+
         # ── Step 1: Fetch account ──
         try:
             account = await self._broker.get_account_summary()
@@ -203,26 +201,26 @@ class TradingOrchestrator:
             result.errors.append(err)
             result.reason = err
             return result
-        
+
         # ── Step 2: Risk check (daily loss) ──
         risk_check = self._risk.check_daily_loss(account)
         if risk_check.halt_trading:
             self._controller.halt_by_risk(risk_check.reason)
             result.reason = f"리스크 자동 중단: {risk_check.reason}"
             return result
-        
+
         # ── Step 3: Regime evaluation ──
         if len(index_prices) < 20:
             result.reason = "인덱스 데이터 부족 — 레짐 평가 불가"
             return result
-        
+
         regime_result = evaluate_regime(
             [p.close for p in index_prices],
             [p.volume for p in index_prices],
         )
         self._last_regime = regime_result
         result.regime = regime_result.regime
-        
+
         logger.info(f"레짐 평가: {regime_result.regime.value} ({regime_result.score:.1f}점)")
 
         # ── Step 4A: Mode selection (하이브리드 2단계) ──
@@ -257,7 +255,7 @@ class TradingOrchestrator:
             for c in screen_result.candidates
         ]
         logger.info(f"스크리닝: {screen_result.total_scanned}개 → {result.candidates_found}개 후보")
-        
+
         # ── Step 6: ML predictions & buy execution (모드별 라우팅) ──
         current_positions = await self._fetch_positions()
         held_codes = {p.code for p in current_positions}
@@ -302,7 +300,7 @@ class TradingOrchestrator:
                     "probability": round(pred.rise_probability, 3),
                     "reason": pred.reason,
                 })
-            
+
             if pred and pred.action == DecisionAction.BUY:
                 # 진입 정밀화: 분봉으로 타이밍/가격 판단 (하이브리드 1단계, 양 모드 공통)
                 entry = await self._refine_entry(pred.code, use_minute=is_short_term)
@@ -434,7 +432,7 @@ class TradingOrchestrator:
                     result.sells_executed += 1
                 else:
                     result.errors.append(f"매도 실패 {position.code}: {exec_result.error}")
-        
+
         # ── Build summary ──
         result.reason = (
             f"사이클 #{self._cycle_count} 완료: "
@@ -444,10 +442,10 @@ class TradingOrchestrator:
             f"매수={result.buys_executed}건(보류 {result.entries_deferred}건), "
             f"매도={result.sells_executed}건"
         )
-        
+
         if result.errors:
             result.reason += f", 오류={len(result.errors)}건"
-        
+
         # Save diagnosis for dashboard
         self._last_diagnosis = {
             "timestamp": result.timestamp.isoformat(),
@@ -519,7 +517,7 @@ class TradingOrchestrator:
                 reason="분봉 조회 실패 — 청산 정밀화 생략", evidence={},
             )
         return refine_exit(minute_prices, profit_pct)
-    
+
     @staticmethod
     def _find_prices(
         universe: list[tuple[Any, list[PriceData]]],
@@ -530,26 +528,26 @@ class TradingOrchestrator:
             if info.code == code:
                 return prices
         return None
-    
+
     async def force_sell(self, code: str, name: str = "") -> ExecutionResult:
         """Force sell a position — operator override.
-        
+
         Args:
             code: Stock code to force sell.
             name: Stock name.
-        
+
         Returns:
             ExecutionResult.
         """
         positions = await self._fetch_positions()
         pos = next((p for p in positions if p.code == code), None)
-        
+
         if pos is None:
             return ExecutionResult(
                 success=False, code=code, name=name,
                 error=f"보유하지 않은 종목: {name}({code})",
             )
-        
+
         return await self._executor.execute_force_sell(
             code=code,
             name=name or pos.name,

@@ -31,16 +31,16 @@ from messaging.notifier import (
 
 class TelegramBot:
     """Telegram bot for NGSAT notifications and remote control.
-    
+
     Handles:
     - Sending notifications (trades, reports, events)
     - Processing commands from the operator
     - Routing commands to the orchestrator/controller
-    
+
     The bot does NOT make trading decisions — it only relays
     operator commands to the trading system.
     """
-    
+
     def __init__(
         self,
         bot_token: str = "",
@@ -50,29 +50,29 @@ class TelegramBot:
         self._chat_id = chat_id
         self._bot = None  # python-telegram-bot Bot instance
         self._orchestrator = None  # Set by set_orchestrator()
-    
+
     @property
     def is_configured(self) -> bool:
         """Check if bot token and chat ID are configured."""
         return bool(self._bot_token and self._chat_id)
-    
+
     def set_orchestrator(self, orchestrator) -> None:
         """Connect the bot to the trading orchestrator."""
         self._orchestrator = orchestrator
-    
+
     async def send_notification(self, message: NotificationMessage) -> bool:
         """Send a notification message to Telegram.
-        
+
         Args:
             message: NotificationMessage to send.
-        
+
         Returns:
             True if sent successfully.
         """
         if not self.is_configured:
             logger.debug("텔레그램 미설정 — 알림 건너뜀")
             return False
-        
+
         try:
             # Use python-telegram-bot if available
             if self._bot is None:
@@ -83,18 +83,18 @@ class TelegramBot:
                 except ImportError:
                     logger.warning("python-telegram-bot 미설치")
                     return False
-            
+
             await self._bot.send_message(
                 chat_id=self._chat_id,
                 text=message.text,
                 parse_mode=None,  # Plain text for maximum compatibility
             )
             return True
-            
+
         except Exception as e:
             logger.error(f"텔레그램 전송 실패: {type(e).__name__}: {e}")
             return False
-    
+
     async def send_trade_notification(
         self,
         side: str,
@@ -107,7 +107,7 @@ class TelegramBot:
         """Send a trade execution notification."""
         msg = build_trade_notification(side, code, name, quantity, price, reason)
         return await self.send_notification(msg)
-    
+
     async def send_daily_report(
         self,
         date: str,
@@ -125,7 +125,7 @@ class TelegramBot:
             total_pnl, win_rate, current_capital, positions_summary,
         )
         return await self.send_notification(msg)
-    
+
     async def send_system_event(
         self,
         event_type: str,
@@ -134,7 +134,7 @@ class TelegramBot:
         """Send a system event notification."""
         msg = build_system_event_notification(event_type, message)
         return await self.send_notification(msg)
-    
+
     def get_command_help(self) -> str:
         """Return command help text."""
         return (
@@ -149,7 +149,7 @@ class TelegramBot:
             "/forcehold <코드> — 강제 홀드\n"
             "/help — 도움말"
         )
-    
+
     async def start_polling(self) -> None:
         """Start polling for Telegram commands (runs forever).
 
@@ -211,39 +211,39 @@ class TelegramBot:
 
     async def process_command(self, command: str, args: str = "") -> str:
         """Process a command from the operator.
-        
+
         Args:
             command: Command name (without /).
             args: Command arguments.
-        
+
         Returns:
             Response text (Korean).
         """
         if self._orchestrator is None:
             return "거래 시스템이 연결되지 않았습니다"
-        
+
         controller = self._orchestrator.controller
-        
+
         if command == "start":
             msg = controller.start()
             await self.send_system_event("start", msg)
             return msg
-        
+
         elif command == "stop":
             msg = controller.stop()
             await self.send_system_event("stop", msg)
             return msg
-        
+
         elif command == "shutdown":
             msg = controller.shutdown()
             await self.send_system_event("shutdown", msg)
             return msg
-        
+
         elif command == "status":
             state = controller.state.value
             risk_halted = self._orchestrator.risk_manager.is_halted
             risk_reason = self._orchestrator.risk_manager.halt_reason or "없음"
-            
+
             return (
                 f"NGSAT 상태\n"
                 f"──────────\n"
@@ -251,7 +251,7 @@ class TelegramBot:
                 f"리스크 중단: {'예' if risk_halted else '아니오'}\n"
                 f"중단 사유: {risk_reason}"
             )
-        
+
         elif command == "account":
             try:
                 import asyncio
@@ -266,13 +266,13 @@ class TelegramBot:
                 )
             except Exception as e:
                 return f"계좌 조회 실패: {e}"
-        
+
         elif command == "positions":
             try:
                 positions = await self._orchestrator._broker.get_positions()
                 if not positions:
                     return "보유 포지션 없음"
-                
+
                 lines = ["보유 포지션", "──────────"]
                 for p in positions:
                     lines.append(
@@ -282,10 +282,10 @@ class TelegramBot:
                         f"  손절선: -{p.stop_loss_pct:.1f}%"
                     )
                 return "\n".join(lines)
-                
+
             except Exception as e:
                 return f"포지션 조회 실패: {e}"
-        
+
         elif command == "forcesell":
             if not args:
                 return "사용법: /forcesell <종목코드>"
@@ -294,15 +294,15 @@ class TelegramBot:
                 return f"강제 매도 완료: {result.name}({result.code}) {result.quantity}주"
             else:
                 return f"강제 매도 실패: {result.error}"
-        
+
         elif command == "forcehold":
             if not args:
                 return "사용법: /forcehold <종목코드>"
             controller.force_hold(args)
             return f"강제 홀드 설정: {args}"
-        
+
         elif command == "help":
             return self.get_command_help()
-        
+
         else:
             return f"알 수 없는 명령어: /{command}\n{self.get_command_help()}"

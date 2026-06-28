@@ -22,7 +22,7 @@ class Market(str, Enum):
 
 class DecisionAction(str, Enum):
     """Trading decision action types.
-    
+
     Every action MUST have a reason — no exceptions.
     """
     BUY = "buy"
@@ -55,7 +55,7 @@ class StrategyMode(str, Enum):
 @dataclass
 class DecisionReason:
     """Mandatory reason for every trading decision.
-    
+
     NGSAT core principle: NO decision without a reason.
     This object is stored in the database and included in notifications.
     """
@@ -63,7 +63,7 @@ class DecisionReason:
     reason: str                        # Human-readable reason (Korean)
     evidence: dict[str, Any] = field(default_factory=dict)  # Quantitative evidence
     timestamp: datetime = field(default_factory=datetime.now)
-    
+
     def __post_init__(self):
         if not self.reason or not self.reason.strip():
             raise ValueError("DecisionReason.reason cannot be empty — every decision needs a reason")

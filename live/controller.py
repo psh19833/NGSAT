@@ -29,14 +29,14 @@ class TradingState(str, Enum):
 
 class TradingController:
     """Controls the automated trading lifecycle.
-    
+
     Human operations:
     - start(): Begin automated trading
     - stop(): Pause trading (can resume)
     - shutdown(): Completely stop and clean up
     - force_sell(code): Force sell a specific position
     - force_hold(code): Prevent auto-sell of a position
-    
+
     Automated:
     - The orchestrator runs the buy/sell cycle autonomously
     - Human never directly triggers individual trades
@@ -57,7 +57,7 @@ class TradingController:
 
     def start(self) -> str:
         """Start automated trading.
-        
+
         Returns:
             Status message.
         """
@@ -75,7 +75,7 @@ class TradingController:
 
     def stop(self) -> str:
         """Pause trading (can resume with start()).
-        
+
         Returns:
             Status message.
         """
@@ -89,7 +89,7 @@ class TradingController:
 
     def shutdown(self) -> str:
         """Completely shut down trading.
-        
+
         Returns:
             Status message.
         """
@@ -101,11 +101,11 @@ class TradingController:
 
     def force_sell(self, code: str, name: str = "") -> str:
         """Force sell a position — 강제 매도.
-        
+
         Args:
             code: Stock code to force sell.
             name: Stock name (for logging).
-        
+
         Returns:
             Status message.
         """
@@ -117,13 +117,13 @@ class TradingController:
 
     def force_hold(self, code: str, name: str = "") -> str:
         """Force hold a position — 강제 홀드.
-        
+
         Prevents the auto-sell logic from selling this position.
-        
+
         Args:
             code: Stock code to force hold.
             name: Stock name (for logging).
-        
+
         Returns:
             Status message.
         """
@@ -135,11 +135,11 @@ class TradingController:
 
     def release_hold(self, code: str, name: str = "") -> str:
         """Release force hold on a position.
-        
+
         Args:
             code: Stock code to release.
             name: Stock name (for logging).
-        
+
         Returns:
             Status message.
         """
@@ -155,7 +155,7 @@ class TradingController:
 
     def halt_by_risk(self, reason: str) -> None:
         """Halt trading due to risk limit (called by RiskManager).
-        
+
         Args:
             reason: Why trading was halted.
         """
@@ -166,7 +166,7 @@ class TradingController:
         """서버 재시작 — 모든 상태를 초기화하고 대기 상태로.
 
         강제홀드 목록도 초기화. HALTED/SHUTDOWN 상태에서도 사용 가능.
-        
+
         Returns:
             Status message.
         """

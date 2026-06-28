@@ -19,10 +19,10 @@ _SessionLocal: sessionmaker | None = None
 
 def get_engine(config: DatabaseConfig | None = None) -> Engine:
     """Get or create the SQLAlchemy engine (singleton).
-    
+
     Args:
         config: Database config. If None, loads from .env.
-    
+
     Returns:
         SQLAlchemy Engine instance.
     """
@@ -42,7 +42,7 @@ def get_engine(config: DatabaseConfig | None = None) -> Engine:
 
 def get_session_factory() -> sessionmaker:
     """Get or create the session factory (singleton).
-    
+
     Returns:
         SQLAlchemy sessionmaker.
     """
@@ -59,12 +59,12 @@ def get_session_factory() -> sessionmaker:
 @contextmanager
 def db_session() -> Generator[Session, None, None]:
     """Context manager for database sessions.
-    
+
     Usage:
         with db_session() as session:
             repo = Repository(session)
             repo.save_trade(record)
-    
+
     Automatically commits on success, rolls back on exception.
     """
     session = get_session_factory()()
@@ -80,7 +80,7 @@ def db_session() -> Generator[Session, None, None]:
 
 def init_database(config: DatabaseConfig | None = None) -> None:
     """Create all tables. Call once on startup.
-    
+
     Args:
         config: Database config. If None, loads from .env.
     """

@@ -20,9 +20,7 @@ from __future__ import annotations
 import asyncio
 import argparse
 import signal
-import sys
 from pathlib import Path
-from typing import Any
 
 from core.config import load_config
 from core.logger import logger, setup_logger
@@ -206,10 +204,10 @@ async def run_live(config, args):
         logger.info("텔레그램 미설정 — 봇 비활성화")
 
     # ── 5. Dashboard API (optional) ──
+    import uvicorn  # imported here for scope; no_dashboard skips config below
     dashboard_app = None
     api_server = None
     if not args.no_dashboard:
-        import uvicorn
         dashboard_app = create_app(orchestrator, config)
         logger.info("대시보드 API 준비 완료 (포트 8000)")
 

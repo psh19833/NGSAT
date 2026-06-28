@@ -21,27 +21,27 @@ def setup_logger(
     log_file: str | None = None,
 ) -> logging.Logger:
     """Set up and return a logger instance.
-    
+
     Args:
         name: Logger name (usually module name).
         level: Logging level (default INFO).
         log_file: Optional file path for log output.
-    
+
     Returns:
         Configured logger instance.
     """
     logger = logging.getLogger(name)
-    
+
     if logger.handlers:
         return logger  # Already configured
-    
+
     logger.setLevel(level)
-    
+
     # Console handler
     console = logging.StreamHandler(sys.stdout)
     console.setFormatter(logging.Formatter(_LOG_FORMAT, _DATE_FORMAT))
     logger.addHandler(console)
-    
+
     # File handler (optional)
     if log_file:
         log_path = PROJECT_ROOT / log_file
@@ -49,7 +49,7 @@ def setup_logger(
         file_handler = logging.FileHandler(log_path, encoding="utf-8")
         file_handler.setFormatter(logging.Formatter(_LOG_FORMAT, _DATE_FORMAT))
         logger.addHandler(file_handler)
-    
+
     return logger
 
 

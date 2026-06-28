@@ -20,7 +20,7 @@ from core.logger import logger
 @dataclass
 class NotificationMessage:
     """A notification message ready to send.
-    
+
     Attributes:
         text: Full message text (Korean).
         level: "info" / "warning" / "error" / "success".
@@ -43,7 +43,7 @@ def build_trade_notification(
     action: str = "",
 ) -> NotificationMessage:
     """Build a trade execution notification.
-    
+
     Format: 📌 매수/매도 | 종목명(코드) | 수량 | 가격 | 근거
     """
     if side == "buy":
@@ -54,7 +54,7 @@ def build_trade_notification(
         emoji = "🔴"
         action_kr = "매도"
         level = "info"
-    
+
     text = (
         f"{emoji} {action_kr} 체결\n"
         f"종목: {name}({code})\n"
@@ -62,7 +62,7 @@ def build_trade_notification(
         f"가격: {price:,.0f}원\n"
         f"근거: {reason}"
     )
-    
+
     return NotificationMessage(text=text, level=level, emoji=emoji)
 
 
@@ -77,11 +77,11 @@ def build_daily_report_notification(
     positions_summary: str = "",
 ) -> NotificationMessage:
     """Build a daily report notification.
-    
+
     Format: 📋 일일 보고 | 날짜 | 거래요약 | 손익 | 보유현황
     """
     pnl_emoji = "📈" if total_pnl >= 0 else "📉"
-    
+
     text = (
         f"📋 일일 보고 ({date})\n"
         f"──────────\n"
@@ -90,10 +90,10 @@ def build_daily_report_notification(
         f"{pnl_emoji} 손익: {total_pnl:+,.0f}원\n"
         f"잔고: {current_capital:,.0f}원"
     )
-    
+
     if positions_summary:
         text += f"\n──────────\n보유:\n{positions_summary}"
-    
+
     return NotificationMessage(text=text, level="info", emoji="📋")
 
 
@@ -102,7 +102,7 @@ def build_system_event_notification(
     message: str,
 ) -> NotificationMessage:
     """Build a system event notification.
-    
+
     Event types: start, stop, shutdown, halt, error, warning
     """
     event_config = {
@@ -113,13 +113,13 @@ def build_system_event_notification(
         "error": ("❌", "error", "오류 발생"),
         "warning": ("⚠️", "warning", "경고"),
     }
-    
+
     emoji, level, default_msg = event_config.get(
         event_type, ("📢", "info", event_type)
     )
-    
+
     text = f"{emoji} {default_msg}\n{message}"
-    
+
     return NotificationMessage(text=text, level=level, emoji=emoji)
 
 
@@ -137,7 +137,7 @@ def build_force_sell_notification(
         f"가격: {price:,.0f}원\n"
         f"근거: 대표님 직접 지시"
     )
-    
+
     return NotificationMessage(text=text, level="warning", emoji="🔴")
 
 
@@ -151,5 +151,5 @@ def build_force_hold_notification(
         f"종목: {name}({code})\n"
         f"자동 매도 일시 중단"
     )
-    
+
     return NotificationMessage(text=text, level="info", emoji="🔒")

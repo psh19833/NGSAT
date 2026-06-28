@@ -10,19 +10,19 @@ from dashboard.backend.api import create_app
 
 class MockOrchestrator:
     """Mock orchestrator for dashboard API tests."""
-    
+
     def __init__(self):
         from core.types import AccountSummary
         from live.controller import TradingController
         from live.risk import RiskManager
         from core.config import RiskConfig
-        
+
         self.controller = TradingController()
         self.risk_manager = RiskManager(RiskConfig())
         self._cycle_count = 5
         self._current_mode = "swing"
         self._last_regime = None
-        
+
         from unittest.mock import AsyncMock
         self._broker = AsyncMock()
         self._broker.get_account_summary = AsyncMock(return_value=AccountSummary(
@@ -31,7 +31,7 @@ class MockOrchestrator:
             total_profit_loss_pct=1.0,
         ))
         self._broker.get_positions = AsyncMock(return_value=[])
-    
+
     async def force_sell(self, code):
         from live.executor import ExecutionResult
         return ExecutionResult(

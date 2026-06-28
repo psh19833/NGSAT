@@ -41,9 +41,9 @@ def _make_mock_result() -> BacktestResult:
             action="stop_loss", reason="손절: 손실 4.2% >= 손절선 3.0%",
         ),
     ]
-    
+
     daily_capital = [10_000_000, 10_050_000, 10_100_000, 10_050_000, 9_900_000]
-    
+
     return BacktestResult(
         start_date="2025-01-01",
         end_date="2025-06-30",
@@ -69,14 +69,14 @@ class TestGenerateReport:
     def test_generate_report_returns_report(self):
         result = _make_mock_result()
         report = generate_report(result)
-        
+
         assert isinstance(report, BacktestReport)
         assert isinstance(report.metrics, PerformanceMetrics)
 
     def test_metrics_calculated(self):
         result = _make_mock_result()
         report = generate_report(result)
-        
+
         m = report.metrics
         assert m.total_return == 2.0
         assert m.total_trades == 4
@@ -87,7 +87,7 @@ class TestGenerateReport:
     def test_avg_win_and_loss(self):
         result = _make_mock_result()
         report = generate_report(result)
-        
+
         # Samsung: +2.86% win, SK Hynix: -4.17% loss
         assert report.metrics.avg_win > 0
         assert report.metrics.avg_loss < 0
@@ -95,23 +95,23 @@ class TestGenerateReport:
     def test_profit_factor(self):
         result = _make_mock_result()
         report = generate_report(result)
-        
+
         # Gross profit > gross loss → profit factor > 1
         assert report.metrics.profit_factor > 0
 
     def test_best_and_worst_trade(self):
         result = _make_mock_result()
         report = generate_report(result)
-        
+
         assert report.metrics.best_trade > 0
         assert report.metrics.worst_trade < 0
 
     def test_stock_performance(self):
         result = _make_mock_result()
         report = generate_report(result)
-        
+
         assert len(report.stock_performance) == 2  # Two stocks
-        
+
         # Samsung should be first (profitable)
         samsung = report.stock_performance[0]
         assert samsung.code == "005930"
@@ -120,7 +120,7 @@ class TestGenerateReport:
     def test_trade_log_built(self):
         result = _make_mock_result()
         report = generate_report(result)
-        
+
         assert len(report.trade_log) == 4
         for entry in report.trade_log:
             assert "code" in entry
@@ -130,7 +130,7 @@ class TestGenerateReport:
     def test_summary_is_korean(self):
         result = _make_mock_result()
         report = generate_report(result)
-        
+
         assert "백테스트 결과" in report.summary
         assert "수익률" in report.summary
         assert "승률" in report.summary
@@ -139,7 +139,7 @@ class TestGenerateReport:
     def test_summary_has_all_sections(self):
         result = _make_mock_result()
         report = generate_report(result)
-        
+
         assert "거래 통계" in report.summary
         assert "리스크 지표" in report.summary
 
@@ -148,7 +148,7 @@ class TestGenerateReport:
         result = _make_mock_result()
         report = generate_report(result)
         print_report(report)
-        
+
         captured = capsys.readouterr()
         assert len(captured.out) > 0
 
@@ -170,9 +170,9 @@ class TestGenerateReport:
             trades=[],
             daily_capital=[10_000_000, 10_000_000],
         )
-        
+
         report = generate_report(result)
-        
+
         assert report.metrics.total_return == 0.0
         assert report.metrics.total_trades == 0
         assert len(report.stock_performance) == 0

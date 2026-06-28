@@ -48,7 +48,7 @@ def _train_test_model() -> PriceRiseModel:
         trend = 250 if i % 2 == 0 else -150
         all_prices.append(_make_price_data(120, start=50000 + i * 10000, trend=trend))
         codes.append(f"{i:06d}")
-    
+
     model, _ = train_from_price_data(all_prices, codes, model_type="random_forest")
     return model
 
@@ -80,7 +80,7 @@ class TestMLInference:
         """Entry prediction should return an MLPrediction."""
         prices = _make_price_data(80)
         pred = inference.predict_entry(candidate, prices)
-        
+
         assert pred is not None
         assert pred.code == "005930"
         assert pred.name == "삼성전자"
@@ -99,7 +99,7 @@ class TestMLInference:
         """Entry prediction should include quantitative evidence."""
         prices = _make_price_data(80)
         pred = inference.predict_entry(candidate, prices)
-        
+
         assert pred is not None
         assert "rise_probability" in pred.evidence
         assert "screening_score" in pred.evidence
@@ -109,7 +109,7 @@ class TestMLInference:
         """Entry prediction should include the feature vector."""
         prices = _make_price_data(80)
         pred = inference.predict_entry(candidate, prices)
-        
+
         assert pred is not None
         assert len(pred.feature_vector) == 20  # 20 features
 
@@ -117,7 +117,7 @@ class TestMLInference:
         """Exit prediction should return an ExitPrediction."""
         prices = _make_price_data(80)
         pred = inference.predict_exit("005930", "삼성전자", prices, current_profit_pct=3.5)
-        
+
         assert pred is not None
         assert pred.code == "005930"
         assert 0 <= pred.rise_probability <= 1
@@ -134,7 +134,7 @@ class TestMLInference:
         """High profit + low rise probability should trigger SELL."""
         prices = _make_price_data(80, trend=-100)  # Downtrending
         pred = inference.predict_exit("005930", "삼성전자", prices, current_profit_pct=8.0)
-        
+
         if pred is not None:
             # With downtrending data, probability should be low
             if pred.rise_probability < 0.50:
@@ -143,7 +143,7 @@ class TestMLInference:
     def test_predict_before_training_raises(self):
         """Inference with untrained model should raise RuntimeError."""
         model = PriceRiseModel("random_forest")  # Not trained
-        
+
         with pytest.raises(RuntimeError, match="학습되지"):
             inference = MLInference(model)
             candidate = ScreenCandidate(
@@ -161,9 +161,9 @@ class TestMLInference:
             )
             prices = _make_price_data(80, start=50000 + i * 10000, trend=200 if i % 2 == 0 else 50)
             candidates.append((cand, prices))
-        
+
         predictions = inference.batch_predict_entry(candidates)
-        
+
         if len(predictions) >= 2:
             probs = [p.rise_probability for p in predictions]
             assert probs == sorted(probs, reverse=True)
@@ -172,7 +172,7 @@ class TestMLInference:
         """Prediction reason should contain Korean text."""
         prices = _make_price_data(80)
         pred = inference.predict_entry(candidate, prices)
-        
+
         assert pred is not None
         # Should contain Korean action words
         korean_words = ["매수", "홀드", "관망", "상승", "확률"]
@@ -185,6 +185,6 @@ class TestMLInference:
             buy_threshold=0.80,
             sell_threshold=0.20,
         )
-        
+
         assert inference._buy_threshold == 0.80
         assert inference._sell_threshold == 0.20

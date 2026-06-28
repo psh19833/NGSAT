@@ -24,32 +24,24 @@ Every simulated trade includes a decision reason — same principle as live.
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from datetime import datetime
 from typing import Any
 
-import numpy as np
 
 from core.config import RiskConfig, StrategyConfig
 from core.logger import logger
 from core.types import (
     DecisionAction,
-    DecisionReason,
     Market,
-    MarketRegime,
-    OrderSide,
-    Position,
     PriceData,
     StockInfo,
-    StrategyMode,
 )
-from ml.features.builder import build_features, build_training_dataset, FEATURE_NAMES
 from ml.inference import MLInference, MLPrediction
-from ml.training.trainer import PriceRiseModel, train_from_price_data
-from strategy.regime import evaluate_regime, RegimeResult
-from strategy.screener import ScreenCandidate, ScreenResult, screen_stocks
+from ml.training.trainer import PriceRiseModel
+from strategy.regime import evaluate_regime
+from strategy.screener import screen_stocks
 from strategy.entry_timing import refine_entry
 from strategy.exit_timing import refine_exit, ExitUrgency
-from strategy.mode_selector import ModeDecision, select_mode, estimate_volatility_from_prices
+from strategy.mode_selector import select_mode, estimate_volatility_from_prices
 
 
 @dataclass
@@ -84,7 +76,7 @@ class BacktestTrade:
 @dataclass
 class BacktestResult:
     """Complete backtest result.
-    
+
     Attributes:
         start_date: Backtest start date.
         end_date: Backtest end date.
@@ -125,15 +117,15 @@ class BacktestResult:
 
 class BacktestEngine:
     """Backtest execution engine.
-    
+
     Runs the NGSAT pipeline on historical data, simulating trades
     day by day. Does NOT use live/ modules — complete isolation.
-    
+
     Usage:
         engine = BacktestEngine(model, initial_capital=10_000_000)
         result = engine.run(universe, index_prices)
     """
-    
+
     def __init__(
         self,
         model: PriceRiseModel,
@@ -169,7 +161,7 @@ class BacktestEngine:
     BUY_FEE_RATE = 0.00015    # 매수 수수료 0.015%
     SELL_FEE_RATE = 0.00015   # 매도 수수료 0.015%
     SELL_TAX_RATE = 0.0023    # 농특세 0.20% + 거래소/청산소 0.03%
-    
+
     def run(
         self,
         universe: list[tuple[StockInfo, list[PriceData]]],
@@ -178,23 +170,23 @@ class BacktestEngine:
         minute_provider=None,
     ) -> BacktestResult:
         """Run backtest on historical data.
-        
+
         Args:
             universe: List of (StockInfo, price history) tuples.
             index_prices: Index price history for regime evaluation.
             start_day: First day to start trading (need history for indicators).
-        
+
         Returns:
             BacktestResult with full performance metrics.
         """
         if not universe or not index_prices:
             return self._empty_result()
-        
+
         # Determine the number of trading days
         n_days = min(len(index_prices), max(len(p) for _, p in universe if p))
-        
+
         logger.info(f"백테스트 시작: {n_days}일, 종목 {len(universe)}개, 자본 {self._initial_capital:,.0f}")
-        
+
         for day_idx in range(start_day, n_days):
             date_str = str(index_prices[day_idx].timestamp.date()) if day_idx < len(index_prices) else f"day_{day_idx}"
 
@@ -286,7 +278,7 @@ class BacktestEngine:
                             if entry.limit_price:
                                 entry_price = entry.limit_price
                     self._execute_buy(pred, entry_price, date_str, is_short_term)
-            
+
             # 4. Check exits for existing positions (모드별 청산)
             positions_to_check = list(self._positions.items())
             for code, pos in positions_to_check:
@@ -348,7 +340,7 @@ class BacktestEngine:
 
                 if exit_pred and exit_pred.action == DecisionAction.SELL:
                     self._execute_sell(pos, sell_price, date_str, DecisionAction.SELL, exit_pred.reason)
-            
+
             # 5. Daily loss check (day-over-day, not max drawdown)
             current_capital = self._total_capital(universe, day_idx)
             self._daily_capital.append(current_capital)
@@ -364,7 +356,7 @@ class BacktestEngine:
             if abs(daily_loss_pct) >= self._risk.daily_loss_limit_pct:
                 self._is_halted = True
                 logger.warning(f"백테스트 일일 손실 한도 도달: {daily_loss_pct:.1f}% → 매매 중단")
-        
+
         # Close all remaining positions at last price
         for code, pos in list(self._positions.items()):
             last_price = 0.0
@@ -372,12 +364,12 @@ class BacktestEngine:
                 if info.code == code and prices:
                     last_price = prices[-1].close
                     break
-            
+
             if last_price > 0:
                 self._execute_sell(pos, last_price, str(n_days), DecisionAction.SELL, "백테스트 종료 - 전량 매도")
-        
+
         return self._build_result(start_day, n_days, index_prices)
-    
+
     def _execute_buy(
         self,
         pred: MLPrediction,
@@ -390,10 +382,10 @@ class BacktestEngine:
         size_pct = 0.05 if is_short_term else 0.10
         budget = self._cash * size_pct
         quantity = int(budget / price)
-        
+
         if quantity <= 0:
             return
-        
+
         amount = price * quantity
         fee = amount * self.BUY_FEE_RATE
         total_cost = amount + fee
@@ -402,7 +394,7 @@ class BacktestEngine:
             return
 
         self._cash -= total_cost
-        
+
         self._positions[pred.code] = BacktestPosition(
             code=pred.code,
             name=pred.name,
@@ -412,7 +404,7 @@ class BacktestEngine:
             buy_date=date_str,
             stop_loss_pct=self._risk.default_stop_loss_pct,
         )
-        
+
         trade = BacktestTrade(
             code=pred.code,
             name=pred.name,
@@ -426,12 +418,12 @@ class BacktestEngine:
             evidence=pred.evidence,
         )
         self._trades.append(trade)
-        
+
         # Track buy in FIFO queue for correct win/loss matching
         self._buy_queue.setdefault(pred.code, []).append(trade)
-        
+
         logger.debug(f"백테스트 매수: {pred.name}({pred.code}) {quantity}주 @ {price:,.0f}")
-    
+
     def _execute_sell(
         self,
         pos: BacktestPosition,
@@ -446,7 +438,7 @@ class BacktestEngine:
         tax = amount * self.SELL_TAX_RATE
         net_amount = amount - fee - tax
         self._cash += net_amount
-        
+
         self._trades.append(BacktestTrade(
             code=pos.code,
             name=pos.name,
@@ -458,33 +450,33 @@ class BacktestEngine:
             action=action.value,
             reason=reason,
         ))
-        
+
         del self._positions[pos.code]
-        
+
         logger.debug(f"백테스트 매도: {pos.name}({pos.code}) {pos.quantity}주 @ {price:,.0f}")
-    
+
     def _total_capital(self, universe: list[tuple[StockInfo, list[PriceData]]], day_idx: int) -> float:
         """Calculate total capital (cash + position values)."""
         total = self._cash
-        
+
         price_map: dict[str, float] = {}
         for info, prices in universe:
             if len(prices) > day_idx:
                 price_map[info.code] = prices[day_idx].close
-        
+
         for code, pos in self._positions.items():
             if code in price_map:
                 total += price_map[code] * pos.quantity
-        
+
         return total
-    
+
     def _build_result(self, start_day: int, n_days: int, index_prices: list[PriceData]) -> BacktestResult:
         """Build the final backtest result."""
         final_capital = self._cash
-        
+
         buy_count = sum(1 for t in self._trades if t.side == "buy")
         sell_count = sum(1 for t in self._trades if t.side == "sell")
-        
+
         # Calculate win/loss from sell trades
         winning = 0
         losing = 0
@@ -497,11 +489,11 @@ class BacktestEngine:
                     winning += 1
                 elif buy_trade:
                     losing += 1
-        
+
         win_rate = (winning / (winning + losing) * 100) if (winning + losing) > 0 else 0.0
-        
+
         total_return = ((final_capital - self._initial_capital) / self._initial_capital * 100) if self._initial_capital > 0 else 0.0
-        
+
         # Max drawdown
         max_dd = 0.0
         if self._daily_capital:
@@ -512,10 +504,10 @@ class BacktestEngine:
                 dd = (cap - peak) / peak * 100 if peak > 0 else 0
                 if dd < max_dd:
                     max_dd = dd
-        
+
         start_date = str(index_prices[start_day].timestamp.date()) if start_day < len(index_prices) else ""
         end_date = str(index_prices[-1].timestamp.date()) if index_prices else ""
-        
+
         reason = (
             f"백테스트 완료: {start_date} ~ {end_date}, "
             f"초기 자본 {self._initial_capital:,.0f} → 최종 {final_capital:,.0f}, "
@@ -525,9 +517,9 @@ class BacktestEngine:
             f"진입보류 {self._entries_deferred}건, "
             f"모드: 스윙{self._swing_days}일/단타{self._short_term_days}일/관망{self._hold_days}일"
         )
-        
+
         logger.info(reason)
-        
+
         return BacktestResult(
             start_date=start_date,
             end_date=end_date,
@@ -546,7 +538,7 @@ class BacktestEngine:
             daily_capital=self._daily_capital,
             reason=reason,
         )
-    
+
     def _empty_result(self) -> BacktestResult:
         return BacktestResult(
             start_date="",

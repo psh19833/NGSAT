@@ -37,11 +37,11 @@ class TestBuildFeatures:
         """Should build 20 features from 60+ days of data."""
         prices = _make_price_data(80)
         fv = build_features(prices, code="005930")
-        
+
         assert fv is not None
         assert fv.code == "005930"
         assert len(fv.features) == len(FEATURE_NAMES)
-        
+
         # Check all expected features present
         for name in FEATURE_NAMES:
             assert name in fv.features, f"Missing feature: {name}"
@@ -56,7 +56,7 @@ class TestBuildFeatures:
         """All feature values should be numeric (float)."""
         prices = _make_price_data(80)
         fv = build_features(prices, code="005930")
-        
+
         for name, value in fv.features.items():
             assert isinstance(value, (int, float)), f"{name} is not numeric: {type(value)}"
             assert not np.isnan(value), f"{name} is NaN"
@@ -86,9 +86,9 @@ class TestBuildTrainingDataset:
         """Dataset should have correct shape."""
         stocks = [_make_price_data(100, trend=200), _make_price_data(100, trend=-100)]
         codes = ["005930", "000660"]
-        
+
         X, y, names = build_training_dataset(stocks, codes, forward_days=5, forward_threshold=0.02)
-        
+
         assert X.shape[1] == len(FEATURE_NAMES)
         assert len(y) == X.shape[0]
         assert names == FEATURE_NAMES
@@ -98,36 +98,36 @@ class TestBuildTrainingDataset:
         """Labels should be 0 or 1."""
         stocks = [_make_price_data(100, trend=200), _make_price_data(100, trend=-100)]
         codes = ["005930", "000660"]
-        
+
         X, y, names = build_training_dataset(stocks, codes)
-        
+
         assert set(np.unique(y)).issubset({0, 1})
 
     def test_insufficient_data_returns_empty(self):
         """Stocks with < 60 + forward_days should produce no samples."""
         stocks = [_make_price_data(50)]
         codes = ["005930"]
-        
+
         X, y, names = build_training_dataset(stocks, codes, forward_days=5)
-        
+
         assert X.shape[0] == 0
 
     def test_no_nan_in_features(self):
         """Feature matrix should not contain NaN (replaced with 0)."""
         stocks = [_make_price_data(100, trend=200)]
         codes = ["005930"]
-        
+
         X, y, names = build_training_dataset(stocks, codes)
-        
+
         assert not np.any(np.isnan(X))
 
     def test_uptrend_stock_has_more_up_labels(self):
         """A strongly uptrending stock should have more 'up' labels."""
         stocks = [_make_price_data(100, trend=500)]  # Strong uptrend
         codes = ["005930"]
-        
+
         X, y, names = build_training_dataset(stocks, codes, forward_threshold=0.01)
-        
+
         if len(y) > 0:
             up_ratio = np.mean(y)
             # In a strong uptrend, most labels should be 1
