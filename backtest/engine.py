@@ -156,8 +156,25 @@ class BacktestEngine:
         self._swing_days: int = 0
         self._short_term_days: int = 0
         self._hold_days: int = 0
+        # Slippage: seed from initial capital for deterministic backtests
 
-    # ── Fee constants (한국 주식 시장 기준) ──
+    # ── Slippage model ──
+    def _slippage(self, price: float, urgent: bool = False) -> float:
+        """Apply slippage to execution price.
+        
+        Normal: ±0.1% random (default)
+        Urgent (stop loss / force sell): ±0.3% random
+        
+        Uses deterministic seed based on trade count for reproducibility.
+        """
+        import hashlib
+        seed = int(hashlib.md5(f"{self._initial_capital}_{len(self._trades)}".encode()).hexdigest()[:8], 16)
+        rng_seed = (seed % 10000) / 10000
+        slip_pct = 0.003 if urgent else 0.001
+        slippage = price * slip_pct * (rng_seed * 2 - 1)
+        return price + slippage
+
+    # ── Fee constants ──
     BUY_FEE_RATE = 0.00015    # 매수 수수료 0.015%
     SELL_FEE_RATE = 0.00015   # 매도 수수료 0.015%
     SELL_TAX_RATE = 0.0023    # 농특세 0.20% + 거래소/청산소 0.03%
@@ -377,16 +394,18 @@ class BacktestEngine:
         date_str: str,
         is_short_term: bool = False,
     ) -> None:
-        """Execute a simulated buy with mode-aware position sizing."""
+        """Execute a simulated buy with mode-aware position sizing and slippage."""
         # 모드별 포지션 크기: 스윙=10%, 단타=5%
         size_pct = 0.05 if is_short_term else 0.10
         budget = self._cash * size_pct
-        quantity = int(budget / price)
+        # Apply slippage: buy pays slightly more (adverse)
+        exec_price = self._slippage(price, urgent=False)
+        quantity = int(budget / exec_price)
 
         if quantity <= 0:
             return
 
-        amount = price * quantity
+        amount = exec_price * quantity
         fee = amount * self.BUY_FEE_RATE
         total_cost = amount + fee
 
@@ -398,9 +417,9 @@ class BacktestEngine:
         self._positions[pred.code] = BacktestPosition(
             code=pred.code,
             name=pred.name,
-            market=Market.KOSPI,  # Simplified for backtest
+            market=Market.KOSPI,
             quantity=quantity,
-            buy_price=price,
+            buy_price=exec_price,
             buy_date=date_str,
             stop_loss_pct=self._risk.default_stop_loss_pct,
         )
@@ -410,7 +429,7 @@ class BacktestEngine:
             name=pred.name,
             side="buy",
             quantity=quantity,
-            price=price,
+            price=exec_price,
             amount=amount,
             date=date_str,
             action=pred.action.value,
@@ -418,11 +437,11 @@ class BacktestEngine:
             evidence=pred.evidence,
         )
         self._trades.append(trade)
-
+        
         # Track buy in FIFO queue for correct win/loss matching
         self._buy_queue.setdefault(pred.code, []).append(trade)
-
-        logger.debug(f"백테스트 매수: {pred.name}({pred.code}) {quantity}주 @ {price:,.0f}")
+        
+        logger.debug(f"백테스트 매수: {pred.name}({pred.code}) {quantity}주 @ {exec_price:,.0f} (슬리피지 {exec_price - price:+.1f})")
 
     def _execute_sell(
         self,
@@ -432,8 +451,10 @@ class BacktestEngine:
         action: DecisionAction,
         reason: str,
     ) -> None:
-        """Execute a simulated sell."""
-        amount = price * pos.quantity
+        """Execute a simulated sell with slippage (urgent=stop loss/force sell: 0.3%, normal: 0.1%)."""
+        urgent = action in (DecisionAction.STOP_LOSS, DecisionAction.FORCE_SELL)
+        exec_price = self._slippage(price, urgent=urgent)
+        amount = exec_price * pos.quantity
         fee = amount * self.SELL_FEE_RATE
         tax = amount * self.SELL_TAX_RATE
         net_amount = amount - fee - tax
@@ -444,7 +465,7 @@ class BacktestEngine:
             name=pos.name,
             side="sell",
             quantity=pos.quantity,
-            price=price,
+            price=exec_price,
             amount=amount,
             date=date_str,
             action=action.value,
@@ -453,7 +474,7 @@ class BacktestEngine:
 
         del self._positions[pos.code]
 
-        logger.debug(f"백테스트 매도: {pos.name}({pos.code}) {pos.quantity}주 @ {price:,.0f}")
+        logger.debug(f"백테스트 매도: {pos.name}({pos.code}) {pos.quantity}주 @ {exec_price:,.0f} (슬리피지 {exec_price - price:+.1f})")
 
     def _total_capital(self, universe: list[tuple[StockInfo, list[PriceData]]], day_idx: int) -> float:
         """Calculate total capital (cash + position values)."""

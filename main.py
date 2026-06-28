@@ -190,6 +190,19 @@ async def run_live(config, args):
     init_mode_selector_config(config.strategy)
     logger.info("전략 설정 주입 완료 (스크리너 + 모드선택기 + 레짐)")
 
+    # ── 3A. Restart recovery: sync positions from broker ──
+    try:
+        positions = await orchestrator._fetch_positions()
+        if positions:
+            logger.info(
+                f"재시작 복구: KIS 계좌에서 {len(positions)}개 포지션 감지됨 — "
+                + ", ".join(f"{p.name}({p.code}) {p.quantity}주" for p in positions[:5])
+            )
+        else:
+            logger.info("재시작 복구: 보유 포지션 없음 — 신규 시작")
+    except Exception as e:
+        logger.warning(f"재시작 복구: 포지션 조회 실패 — {type(e).__name__}: {e}")
+
     # ── 4. Telegram bot (optional) ──
     telegram_bot = None
     if not args.no_telegram and config.telegram.is_configured:
