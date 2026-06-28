@@ -340,14 +340,20 @@ async def run_live(config, args):
 
 
 async def train_model(config):
-    """Train ML model and save to disk."""
-    from backtest.data_loader import generate_synthetic_universe
+    """Train ML model using real KIS data and save to disk."""
+    from data.real_data_provider import RealDataProvider
     from ml.training.trainer import train_from_price_data
 
-    logger.info("=== NGSAT ML 모델 학습 ===")
-    logger.info("주의: 합성 데이터로 학습합니다. 실제 데이터 연결은 다음 업데이트입니다.")
+    logger.info("=== NGSAT ML 모델 학습 (KIS 실데이터) ===")
 
-    universe = generate_synthetic_universe(n_stocks=30, n_days=200, seed=42)
+    data_provider = RealDataProvider()
+    universe, index_prices = await data_provider.load()
+
+    if not universe:
+        logger.error("KIS 실데이터 로드 실패 — 학습 중단")
+        return
+
+    logger.info(f"KIS 실데이터 로드 완료: {len(universe)}종목")
     all_prices = [prices for _, prices in universe]
     codes = [info.code for info, _ in universe]
 
