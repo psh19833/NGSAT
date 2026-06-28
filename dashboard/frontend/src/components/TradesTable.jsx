@@ -1,4 +1,5 @@
 import { useState } from 'react'
+import EvidenceBox from './EvidenceBox.jsx'
 
 export default function TradesTable({ trades }) {
   const [expandedIndex, setExpandedIndex] = useState(null)
@@ -116,14 +117,9 @@ export default function TradesTable({ trades }) {
                           )}
                         </div>
 
-                        {/* Evidence JSON */}
+                        {/* Evidence */}
                         {t.evidence && Object.keys(t.evidence).length > 0 && (
-                          <div>
-                            <div className="text-xs text-ngsat-muted mb-1">정량 근거</div>
-                            <div className="bg-ngsat-card rounded p-3 text-xs font-mono text-ngsat-text max-h-32 overflow-y-auto">
-                              {JSON.stringify(t.evidence, null, 2)}
-                            </div>
-                          </div>
+                          <EvidenceBox evidence={t.evidence} />
                         )}
                       </div>
                     </td>

@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef } from 'react'
+import SkeletonCard from './SkeletonCard.jsx'
 
 export default function DiagnosisPanel({ api }) {
   const [data, setData] = useState(null)
@@ -20,11 +21,11 @@ export default function DiagnosisPanel({ api }) {
   }, [])
 
   if (loading || !data) {
-    return <div className="ngsat-card p-6"><h3 className="text-sm text-ngsat-muted">진단 현황</h3><p className="text-ngsat-muted text-sm mt-2">불러오는 중...</p></div>
+    return <SkeletonCard lines={4} className="mt-4" />
   }
 
   if (data.message) {
-    return <div className="ngsat-card p-6"><h3 className="text-sm text-ngsat-muted">진단 현황</h3><p className="text-ngsat-muted text-sm mt-2">{data.message}</p></div>
+    return <SkeletonCard lines={2} className="mt-4" />
   }
 
   const screened = data.screened || []

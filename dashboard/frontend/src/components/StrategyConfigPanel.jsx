@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react'
+import SkeletonCard from './SkeletonCard.jsx'
 
 // ── Section + field definitions ──
 const SECTIONS = [
@@ -389,12 +390,7 @@ export default function StrategyConfigPanel({ api }) {
   }
 
   if (loading) {
-    return (
-      <div className="ngsat-card p-6">
-        <h3 className="text-sm text-ngsat-muted mb-4">전략 설정</h3>
-        <p className="text-ngsat-muted text-sm">불러오는 중...</p>
-      </div>
-    )
+    return <SkeletonCard lines={6} />
   }
 
   if (!config) {
