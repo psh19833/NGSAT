@@ -18,6 +18,7 @@ const TABS = [
   { id: 'control', label: '운영 제어', icon: Radio },
   { id: 'diagnosis', label: '진단 현황', icon: Search },
   { id: 'strategy', label: '전략 설정', icon: SlidersHorizontal },
+  { id: 'backtest', label: '백테스트', icon: BarChart3 },
 ]
 
 export default function Sidebar({ activeTab, onTabChange, onRestart, status }) {

@@ -17,6 +17,7 @@ import StrategyConfigPanel from './components/StrategyConfigPanel.jsx'
 import Toast from './components/Toast.jsx'
 import ErrorBoundary from './components/ErrorBoundary.jsx'
 import ConfirmModal from './components/ConfirmModal.jsx'
+import BacktestPanel from './components/BacktestPanel.jsx'
 
 export default function App() {
   const [status, setStatus] = useState(null)
@@ -211,6 +212,10 @@ export default function App() {
 
           {connected && activeTab === 'strategy' && (
             <StrategyConfigPanel api={api} />
+          )}
+
+          {connected && activeTab === 'backtest' && (
+            <BacktestPanel api={api} />
           )}
 
           {connected && activeTab === 'control' && (

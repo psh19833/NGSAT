@@ -41,4 +41,8 @@ export const api = {
     method: 'PUT',
     body: JSON.stringify(data),
   }),
+
+  runBacktest: () => fetchJSON('/backtest/run', { method: 'POST' }),
+  getBacktestState: () => fetchJSON('/backtest/state'),
+  getBacktestResults: () => fetchJSON('/backtest/results'),
 }

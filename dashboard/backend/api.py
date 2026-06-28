@@ -448,6 +448,45 @@ def create_app(orchestrator=None, config=None) -> FastAPI:
             return {"connected": True, "message": "아직 진단 데이터가 없습니다"}
         return {"connected": True, **diag}
 
+    # ── Backtest ──
+    @app.post("/api/backtest/run")
+    async def backtest_run():
+        """백테스트 실행 (별도 스레드, 진행률 폴링 가능)."""
+        from core.backtest_runner import run_backtest_async, get_backtest_state
+        import asyncio
+
+        state = get_backtest_state()
+        if state["status"] == "running":
+            return {"connected": True, "status": "error", "message": "이미 백테스트가 실행 중입니다"}
+
+        cfg = app.state.config
+        if cfg is None:
+            return {"connected": False}
+
+        # Run in executor to avoid blocking the dashboard
+        loop = asyncio.get_event_loop()
+        result = await loop.run_in_executor(
+            None, lambda: asyncio.run(run_backtest_async(cfg))
+        )
+
+        return {"connected": True, "status": "completed", "result": result}
+
+    @app.get("/api/backtest/state")
+    async def backtest_state():
+        """백테스트 진행률 조회."""
+        from core.backtest_runner import get_backtest_state
+        state = get_backtest_state()
+        return {"connected": True, **state}
+
+    @app.get("/api/backtest/results")
+    async def backtest_results():
+        """완료된 백테스트 결과 조회."""
+        from core.backtest_runner import get_backtest_state
+        state = get_backtest_state()
+        if state["status"] == "completed" and state["result"]:
+            return {"connected": True, "result": state["result"]}
+        return {"connected": True, "result": None, "message": "완료된 백테스트 결과가 없습니다"}
+
     # ── Health ──
     @app.get("/api/health")
     async def health():
