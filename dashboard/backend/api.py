@@ -196,13 +196,14 @@ def create_app(orchestrator=None, config=None) -> FastAPI:
 
     # ── Trades (from database) ──
     @app.get("/api/trades")
-    async def get_trades(limit: int = 50):
+    async def get_trades(limit: int = 50, offset: int = 0):
         orch = _get_orchestrator()
         if orch is None:
             return _not_connected()
 
         try:
-            records = orch._trade_repo.get_recent_trades(limit)
+            records = orch._trade_repo.get_recent_trades(limit, offset)
+            total = orch._trade_repo.count_trades()
             trades = [
                 {
                     "date": r.created_at.strftime("%Y-%m-%d %H:%M") if r.created_at else "",
@@ -214,7 +215,7 @@ def create_app(orchestrator=None, config=None) -> FastAPI:
                 }
                 for r in records
             ]
-            return {"connected": True, "trades": trades}
+            return {"connected": True, "trades": trades, "total": total}
         except Exception as e:
             return {"connected": True, "trades": [], "message": f"거래 내역 조회 오류: {e}"}
 

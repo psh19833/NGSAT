@@ -1,4 +1,5 @@
 import { formatNumber, formatPercent, formatWon, pnlColor } from '../utils.js'
+import EquityChart from './EquityChart.jsx'
 
 export default function AccountCard({ account, detailed = false }) {
   if (!account || account.connected === false) {
@@ -39,7 +40,10 @@ export default function AccountCard({ account, detailed = false }) {
 
   return (
     <div className="ngsat-card p-6">
-      <h3 className="text-sm text-ngsat-muted mb-4">계좌 현황</h3>
+      <div className="flex items-center justify-between mb-4">
+        <h3 className="text-sm text-ngsat-muted">계좌 현황</h3>
+        {account.equity_history && <EquityChart data={account.equity_history} height={60} />}
+      </div>
       <div className={`grid gap-4 ${detailed ? 'grid-cols-2 md:grid-cols-3' : 'grid-cols-2 md:grid-cols-4'}`}>
         {stats.map(stat => (
           <div key={stat.label}>

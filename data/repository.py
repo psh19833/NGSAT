@@ -96,14 +96,20 @@ class TradeRepository:
             .all()
         )
 
-    def get_recent_trades(self, limit: int = 50) -> list[TradeRecord]:
-        """Get most recent trades across all stocks."""
+    def get_recent_trades(self, limit: int = 50, offset: int = 0) -> list[TradeRecord]:
+        """Get most recent trades across all stocks with pagination."""
         return (
             self._session.query(TradeRecord)
             .order_by(TradeRecord.created_at.desc())
+            .offset(offset)
             .limit(limit)
             .all()
         )
+
+    def count_trades(self) -> int:
+        """Get total number of trade records."""
+        from sqlalchemy import func
+        return self._session.query(func.count(TradeRecord.id)).scalar() or 0
 
 
 class PositionRepository:
