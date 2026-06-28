@@ -83,6 +83,7 @@ class RiskConfig:
     """Risk management configuration."""
     daily_loss_limit_pct: float = 5.0       # 일일 총손실 한도 (%)
     default_stop_loss_pct: float = 3.0      # 종목별 기본 손절선 (%)
+    mode_short_stop_loss_pct: float = 1.5   # 단타 손절선 (%)
     max_stop_loss_pct: float = 5.0          # 종목별 최대 손절선 (%)
     kospi_weight: float = 0.7               # 코스피 선호 비중
     kosdaq_weight: float = 0.3              # 코스닥 비중
@@ -130,7 +131,7 @@ class StrategyConfig:
     mode_swing_stop_loss_pct: float = 3.0
     mode_swing_daily_loss_pct: float = 5.0
     mode_swing_position_size: float = 0.10
-    mode_short_stop_loss_pct: float = 1.0
+    mode_short_stop_loss_pct: float = 1.5   # 단타 손절선 (%)
     mode_short_daily_loss_pct: float = 3.0
     mode_short_position_size: float = 0.05
     mode_hold_stop_loss_pct: float = 3.0

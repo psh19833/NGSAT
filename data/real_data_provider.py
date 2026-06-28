@@ -217,7 +217,7 @@ class RealDataProvider:
                             close=price,
                             volume=volume,
                         )
-                        self._universe_cache[i] = (info, [updated])
+                        prices[-1] = updated
                         break
 
             ws.on_price = on_price

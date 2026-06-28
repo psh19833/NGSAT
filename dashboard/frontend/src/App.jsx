@@ -15,6 +15,7 @@ import TradesTable from './components/TradesTable.jsx'
 import DiagnosisPanel from './components/DiagnosisPanel.jsx'
 import StrategyConfigPanel from './components/StrategyConfigPanel.jsx'
 import Toast from './components/Toast.jsx'
+import ErrorBoundary from './components/ErrorBoundary.jsx'
 
 export default function App() {
   const [status, setStatus] = useState(null)
@@ -101,6 +102,7 @@ export default function App() {
   const connected = status?.connected !== false
 
   return (
+    <ErrorBoundary>
     <div className="flex h-screen bg-ngsat-bg">
       {/* Sidebar */}
       <Sidebar
@@ -209,5 +211,5 @@ export default function App() {
         <Toast toast={toast} onClose={() => setToast(null)} />
       </div>
     </div>
-  </div>
+    </ErrorBoundary>
 )
