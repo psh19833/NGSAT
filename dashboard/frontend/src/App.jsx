@@ -14,6 +14,7 @@ import ControlPanel from './components/ControlPanel.jsx'
 import TradesTable from './components/TradesTable.jsx'
 import DiagnosisPanel from './components/DiagnosisPanel.jsx'
 import StrategyConfigPanel from './components/StrategyConfigPanel.jsx'
+import Toast from './components/Toast.jsx'
 
 export default function App() {
   const [status, setStatus] = useState(null)
@@ -103,7 +104,6 @@ export default function App() {
     <div className="flex h-screen bg-ngsat-bg">
       {/* Sidebar */}
       <Sidebar
-        activeTab={activeTab}
         onTabChange={setActiveTab}
         onRestart={handleRestart}
         status={status}
@@ -206,13 +206,8 @@ export default function App() {
             </div>
           )}
         </main>
+        <Toast toast={toast} onClose={() => setToast(null)} />
       </div>
     </div>
-    {toast && (
-      <div className={`fixed bottom-6 right-6 px-4 py-3 rounded-lg shadow-lg text-sm font-medium z-50 transition-all
-        ${toast.type === 'success' ? 'bg-ngsat-green/90 text-white' : 'bg-ngsat-accent/90 text-white'}`}>
-        {toast.message}
-      </div>
-    )}
   </div>
 )
