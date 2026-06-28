@@ -149,6 +149,16 @@ _MARKET_HOURS = KisEndpoint(
     description="장운영 시간 조회",
 )
 
+# ── 수급 (외국인/기관) ──
+_FOREIGN_INVESTOR = KisEndpoint(
+    name="inquire_foreign_investor",
+    category=KisCategory.QUOTATION,
+    path="/uapi/domestic-stock/v1/quotations/inquire-foreign-investor",
+    method="GET",
+    tr_id="FHKST01011000",
+    description="외국인 순매수 조회",
+)
+
 # ── Order TR IDs (매수/매도 구분) ──
 BUY_TR_ID = "TTTC0802U"
 SELL_TR_ID = "TTTC0801U"
@@ -163,6 +173,7 @@ _ENDPOINTS: dict[str, KisEndpoint] = {
         _INDEX_DAILY,
         _STOCK_BASIC,
         _MARKET_HOLIDAY, _MARKET_HOURS,
+        _FOREIGN_INVESTOR,
     ]
 }
 

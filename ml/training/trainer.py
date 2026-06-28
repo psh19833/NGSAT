@@ -311,6 +311,14 @@ class PriceRiseModel:
         if not self._is_trained or self._model is None:
             raise RuntimeError("모델이 학습되지 않았습니다")
 
+        # Handle feature count mismatch (backward compatibility)
+        expected = getattr(self._model, 'n_features_in_', X.shape[1])
+        if X.shape[1] > expected:
+            X = X[:, :expected]
+        elif X.shape[1] < expected:
+            pad = np.zeros((X.shape[0], expected - X.shape[1]))
+            X = np.hstack([X, pad])
+
         if self._scaler is not None:
             X = self._scaler.transform(X)
 

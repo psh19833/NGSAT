@@ -50,6 +50,14 @@ FEATURE_NAMES: list[str] = [
     "volatility_20d",
     "return_skew_20d",
     "high_low_range_pct",
+    # ── Enhanced features (optional, filled with 0 if unavailable) ──
+    "foreign_net_buy_5d",
+    "foreign_net_buy_20d",
+    "institution_net_buy_5d",
+    "institution_net_buy_20d",
+    "per",
+    "pbr",
+    "eps",
 ]
 
 
@@ -190,6 +198,17 @@ def build_features(
     features["high_low_range_pct"] = (
         (recent_high - recent_low) / recent_low * 100 if recent_low > 0 else 0.0
     )
+
+    # ── Enhanced features (optional, defaults to 0 if data unavailable) ──
+    # These are filled with 0 when data sources (foreign investor, stock info)
+    # are not available. The fillna(0) approach maintains model compatibility.
+    features["foreign_net_buy_5d"] = 0.0
+    features["foreign_net_buy_20d"] = 0.0
+    features["institution_net_buy_5d"] = 0.0
+    features["institution_net_buy_20d"] = 0.0
+    features["per"] = 0.0
+    features["pbr"] = 0.0
+    features["eps"] = 0.0
 
     # ── Target (for training) ──
     target = None
