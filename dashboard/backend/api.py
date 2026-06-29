@@ -417,13 +417,21 @@ def create_app(orchestrator=None, config=None) -> FastAPI:
             return {"connected": False, "message": "시세 데이터가 없습니다 — 매매 사이클 시작 후 시도하세요"}
 
         try:
-            # Refresh latest prices
-            new_universe, _ = await data_provider.refresh_prices()
+            # 현재 전략 설정에 맞춰 데이터 프로바이더 날짜 갱신 + 캐시 무효화
+            cfg = _get_app_config()
+            if cfg:
+                data_provider.update_date_range(
+                    start_date=cfg.ml_training_start_date,
+                    end_date=cfg.ml_training_end_date,
+                    training_days=cfg.ml_training_days,
+                )
+            # Fresh data load with updated date range
+            new_universe, _ = await data_provider.load()
             if not new_universe:
-                return {"connected": False, "message": "시세 데이터 갱신 실패"}
+                return {"connected": False, "message": "시세 데이터 로드 실패"}
 
             codes = [info.code for info, _ in new_universe]
-            prices_list = [prices for _, prices in new_universe]  # list[list[PriceData]]: build_training_dataset 기대 형식
+            prices_list = [prices for _, prices in new_universe]
 
             logger.info(f"수동 재학습 시작: {len(codes)}개 종목, 모델={model.model_type}")
             changed, result = model.auto_retrain(prices_list, codes)

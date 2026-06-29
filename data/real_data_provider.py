@@ -89,6 +89,30 @@ class RealDataProvider:
         self._ws: Any = None
         self._ws_task: Any = None
 
+    def update_date_range(
+        self,
+        start_date: str | None = None,
+        end_date: str | None = None,
+        training_days: int | None = None,
+    ):
+        """날짜 설정 변경 및 캐시 무효화. start/end 설정 시 training_days 무시."""
+        if start_date is not None:
+            self._start_date_str = start_date
+        if end_date is not None:
+            self._end_date_str = end_date
+        if training_days is not None:
+            self._training_days = training_days
+        # 캐시 무효화 → 다음 load()에서 새 날짜로 fresh 로드
+        self._universe_cache = None
+        self._index_cache = None
+        self._cache_date = ""
+        logger.info(
+            f"데이터 날짜 범위 변경: "
+            f"start={self._start_date_str or '(N/A)'}, "
+            f"end={self._end_date_str or '(N/A)'}, "
+            f"training_days={self._training_days}"
+        )
+
     async def _get_adapter(self):
         """Lazy-create KIS adapter with .env loaded."""
         if self._adapter is None:
