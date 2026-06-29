@@ -17,6 +17,8 @@ export default function BacktestPanel({ api }) {
       if (resp?.status === 'completed' && resp?.result) {
         setResult(resp.result)
         setProgress(null)
+      } else if (resp?.status === 'error') {
+        setProgress({ pct: 0, label: resp?.message || '백테스트 실행 실패' })
       } else {
         setProgress({ pct: 0, label: '실패: ' + (resp?.message || '알 수 없는 오류') })
       }

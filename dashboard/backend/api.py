@@ -567,11 +567,14 @@ def create_app(orchestrator=None, config=None) -> FastAPI:
 
         # Run in executor to avoid blocking the dashboard
         loop = asyncio.get_event_loop()
-        result = await loop.run_in_executor(
-            None, lambda: asyncio.run(run_backtest_async(cfg))
-        )
-
-        return {"connected": True, "status": "completed", "result": result}
+        try:
+            result = await loop.run_in_executor(
+                None, lambda: asyncio.run(run_backtest_async(cfg))
+            )
+            return {"connected": True, "status": "completed", "result": result}
+        except Exception as e:
+            logger.exception(f"백테스트 실행 실패: {e}")
+            return {"connected": True, "status": "error", "message": f"백테스트 실패: {e}"}
 
     @app.get("/api/backtest/state")
     async def backtest_state():

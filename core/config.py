@@ -107,7 +107,7 @@ class StrategyConfig:
     regime_weight_rsi: float = 20.0
     regime_weight_bollinger: float = 20.0
     regime_weight_change_rate: float = 15.0
-    regime_weight_volume: float = 15.0
+    regime_weight_volume: float = 10.0
     regime_weight_adx: float = 5.0
 
     # ── 스크리너 ──
