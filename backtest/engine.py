@@ -161,10 +161,10 @@ class BacktestEngine:
     # ── Slippage model ──
     def _slippage(self, price: float, urgent: bool = False) -> float:
         """Apply slippage to execution price.
-        
+
         Normal: ±0.1% random (default)
         Urgent (stop loss / force sell): ±0.3% random
-        
+
         Uses deterministic seed based on trade count for reproducibility.
         """
         import hashlib
@@ -217,6 +217,7 @@ class BacktestEngine:
             regime_result = evaluate_regime(
                 [p.close for p in regime_index],
                 [p.volume for p in regime_index],
+                config=self._strategy,
             )
 
             # 1b. Mode selection (하이브리드 2단계)
@@ -225,7 +226,7 @@ class BacktestEngine:
                 [p.high for p in regime_index],
                 [p.low for p in regime_index],
             )
-            mode_decision = select_mode(regime_result, atr_pct=vol)
+            mode_decision = select_mode(regime_result, atr_pct=vol, config=self._strategy)
             self._current_mode = mode_decision.mode.value
             is_short_term = self._current_mode == "short_term"
 
@@ -243,7 +244,7 @@ class BacktestEngine:
                 if len(prices) > day_idx:
                     stocks_for_screening.append((info, prices[:day_idx + 1]))
 
-            screen_result = screen_stocks(stocks_for_screening, regime_result)
+            screen_result = screen_stocks(stocks_for_screening, regime_result, config=self._strategy)
 
             # 3. ML predictions for top candidates (모드별 라우팅)
             for candidate in screen_result.candidates:
@@ -437,10 +438,10 @@ class BacktestEngine:
             evidence=pred.evidence,
         )
         self._trades.append(trade)
-        
+
         # Track buy in FIFO queue for correct win/loss matching
         self._buy_queue.setdefault(pred.code, []).append(trade)
-        
+
         logger.debug(f"백테스트 매수: {pred.name}({pred.code}) {quantity}주 @ {exec_price:,.0f} (슬리피지 {exec_price - price:+.1f})")
 
     def _execute_sell(

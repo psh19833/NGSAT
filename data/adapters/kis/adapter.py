@@ -364,6 +364,34 @@ class KisAdapter(BrokerAdapter):
         logger.info(f"주문 상태 조회: {order_id} → {status.value}")
         return status
 
+    async def get_vi_status(self, code: str) -> bool:
+        """Check VI (Volatility Interruption) status for a stock.
+
+        Uses the 호가(orderbook) endpoint which returns VI_YN field.
+        VI means the stock price moved too fast — orders may be restricted.
+
+        Args:
+            code: 6-digit stock code.
+
+        Returns:
+            True if VI is currently active.
+        """
+        params = {
+            "FID_COND_MRKT_DIV_CODE": "J",
+            "FID_INPUT_ISCD": code,
+        }
+        try:
+            resp = await self._http.get("inquire_asking_price", params=params)
+            if not resp.success:
+                logger.warning(f"VI 조회 실패 ({code}): {resp.msg_cd} — VI 미발동으로 간주")
+                return False
+            # KIS returns VI_YN = "Y" when VI is active
+            vi_yn = (resp.data or {}).get("VI_YN", "N")
+            return vi_yn == "Y"
+        except Exception as e:
+            logger.warning(f"VI 조회 중 오류 ({code}): {e} — VI 미발동으로 간주")
+            return False
+
     async def is_market_open(self) -> bool:
         """Check if the stock market is currently open.
 

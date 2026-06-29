@@ -13,7 +13,6 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 from datetime import datetime
-from typing import Sequence
 
 import numpy as np
 
@@ -82,15 +81,6 @@ class ScreenResult:
 # ── Strategy config injection ──
 from core.config import StrategyConfig as _StrategyConfig
 
-_strategy_config: _StrategyConfig | None = None
-
-def init_screener_config(cfg: _StrategyConfig) -> None:
-    global _strategy_config
-    _strategy_config = cfg
-
-def _get_screener_config() -> _StrategyConfig:
-    return _strategy_config or _StrategyConfig()
-
 # ── Screening thresholds by regime (configurable via StrategyConfig) ──
 # Defaults match the original hardcoded values.
 def _build_regime_thresholds(cfg: _StrategyConfig) -> dict:
@@ -118,6 +108,7 @@ _KOSPI_BONUS = 5.0
 def screen_stocks(
     stocks: list[tuple[StockInfo, list[PriceData]]],
     regime_result: RegimeResult,
+    config: _StrategyConfig | None = None,
 ) -> ScreenResult:
     """Screen stocks for trading candidates.
 
@@ -136,7 +127,7 @@ def screen_stocks(
     Returns:
         ScreenResult with ranked candidates.
     """
-    thresholds = _build_regime_thresholds(_get_screener_config()).get(
+    thresholds = _build_regime_thresholds(config or _StrategyConfig()).get(
         regime_result.regime,
     )
     if thresholds is None:

@@ -145,6 +145,7 @@ class StrategyConfig:
 
     # ── 포트폴리오 리스크 ──
     max_holdings: int = 10                # 최대 보유 종목 수 (0=제한 없음)
+    max_sector_concentration: int = 3     # 동일 업종 최대 보유 수 (TR-5)
 
 
 @dataclass

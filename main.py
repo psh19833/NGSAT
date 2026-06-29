@@ -109,17 +109,13 @@ async def run_backtest(config):
 
     # Run backtest with strategy config
     logger.info("백테스트 실행 중...")
-    from strategy.regime import init_regime_config
-    from strategy.screener import init_screener_config
-    from strategy.mode_selector import init_mode_selector_config
-    init_regime_config(config.strategy)
-    init_screener_config(config.strategy)
-    init_mode_selector_config(config.strategy)
+    from backtest.engine import BacktestEngine
     engine = BacktestEngine(
         model,
         initial_capital=10_000_000,
         buy_threshold=config.strategy.buy_threshold,
         sell_threshold=config.strategy.sell_threshold,
+        strategy_config=config.strategy,
     )
     # start_day: last ~1 month of the shortest stock's data
     if universe:
@@ -188,15 +184,6 @@ async def run_live(config, args):
         db_max_overflow=config.database.max_overflow,
     )
     logger.info("오케스트레이터 초기화 완료")
-
-    # Inject strategy config into module-level globals (screener, mode_selector, regime)
-    from strategy.regime import init_regime_config
-    from strategy.screener import init_screener_config
-    from strategy.mode_selector import init_mode_selector_config
-    init_regime_config(config.strategy)
-    init_screener_config(config.strategy)
-    init_mode_selector_config(config.strategy)
-    logger.info("전략 설정 주입 완료 (스크리너 + 모드선택기 + 레짐)")
 
     # ── 3A. Restart recovery: sync positions from broker ──
     try:

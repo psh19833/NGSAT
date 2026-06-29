@@ -118,6 +118,18 @@ class BrokerAdapter(ABC):
         ...
 
     @abstractmethod
+    async def get_vi_status(self, code: str) -> bool:
+        """Check if a stock has VI (Volatility Interruption) active.
+
+        Args:
+            code: 6-digit stock code.
+
+        Returns:
+            True if VI is currently active for this stock.
+        """
+        ...
+
+    @abstractmethod
     async def cancel_order(self, order_id: str) -> bool:
         """Cancel a pending order.
 

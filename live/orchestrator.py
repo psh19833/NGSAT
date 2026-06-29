@@ -221,6 +221,7 @@ class TradingOrchestrator:
             [p.volume for p in index_prices],
             [p.high for p in index_prices],
             [p.low for p in index_prices],
+            config=self._strategy,
         )
         self._last_regime = regime_result
         result.regime = regime_result.regime
@@ -233,7 +234,7 @@ class TradingOrchestrator:
             [p.high for p in index_prices],
             [p.low for p in index_prices],
         )
-        mode_decision = select_mode(regime_result, atr_pct=vol)
+        mode_decision = select_mode(regime_result, atr_pct=vol, config=self._strategy)
         self._current_mode = mode_decision.mode.value
         result.mode_decision = {
             "mode": mode_decision.mode.value,
@@ -251,7 +252,7 @@ class TradingOrchestrator:
             logger.info("HOLD 모드 — 신규 진입 없이 기존 포지션 청산만 실행")
 
         # ── Step 5: Screen stocks ──
-        screen_result = screen_stocks(stock_universe, regime_result)
+        screen_result = screen_stocks(stock_universe, regime_result, config=self._strategy)
         result.candidates_found = len(screen_result.candidates)
         result.screened = [
             {"code": c.code, "name": c.name, "score": round(c.score, 1),
@@ -269,6 +270,17 @@ class TradingOrchestrator:
 
         is_short_term = self._current_mode == "short_term"
 
+        # ── TR-5: 섹터 집중도 체크를 위한 섹터 룩업 ──
+        sector_lookup: dict[str, str] = {}
+        for info, _ in stock_universe:
+            sector_lookup[info.code] = info.sector
+
+        held_sector_counts: dict[str, int] = {}
+        for p in current_positions:
+            sec = p.sector or sector_lookup.get(p.code, "")
+            if sec:
+                held_sector_counts[sec] = held_sector_counts.get(sec, 0) + 1
+
         for candidate in screen_result.candidates:
             if not market_open:
                 break
@@ -281,6 +293,19 @@ class TradingOrchestrator:
                     f"최대 보유 종목({self._strategy.max_holdings}개) 도달 — 신규 진입 생략"
                 )
                 break
+
+            # 섹터 집중도 체크 (TR-5): 동일 업종 N개 초과 시 진입 불가
+            candidate_sector = sector_lookup.get(candidate.code, "")
+            max_sec = self._strategy.max_sector_concentration
+            if candidate_sector and max_sec > 0:
+                current_sector_count = held_sector_counts.get(candidate_sector, 0)
+                if current_sector_count >= max_sec:
+                    logger.info(
+                        f"섹터 집중도 제한: {candidate.name}({candidate.code}) "
+                        f"업종={candidate_sector} {current_sector_count}/{max_sec} — 진입 생략"
+                    )
+                    result.entries_deferred += 1
+                    continue
 
             # HOLD 모드: 신규 진입 금지
             if self._current_mode == "hold":

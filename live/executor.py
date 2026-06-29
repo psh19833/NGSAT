@@ -88,6 +88,53 @@ class OrderExecutor:
         # BE-1: idempotency — track successfully submitted orders to prevent duplicates
         self._submitted_orders: dict[tuple[str, str], str] = {}  # (code, side) -> order_id
 
+    async def _adapt_price_for_vi(
+        self,
+        code: str,
+        price: float | None,
+        side: OrderSide,
+    ) -> tuple[float | None, str]:
+        """Check VI (Volatility Interruption) and adapt order price.
+
+        If VI is active:
+        - Market order (price=None) → fetch current price and use as limit
+        - Limit order → keep as-is (VI 기준가와 무관)
+        - Stop-loss sell during VI → warn but proceed with limit
+
+        Args:
+            code: Stock code.
+            price: Original price (None = market order).
+            side: BUY or SELL.
+
+        Returns:
+            Tuple of (adjusted_price, log_message).
+        """
+        try:
+            vi_active = await self._broker.get_vi_status(code)
+        except Exception:
+            vi_active = False
+
+        if not vi_active:
+            return price, ""
+
+        logger.warning(f"VI 발동 감지: {code} — 시장가 주문을 지정가로 전환")
+
+        if price is not None:
+            # Already a limit order — keep as-is
+            return price, f"VI 활성 · 지정가 유지 ({price:,.0f}원)"
+
+        # Market order → fetch current price for limit
+        try:
+            price_data = await self._broker.get_price(code)
+            limit_price = price_data.close
+            logger.info(
+                f"VI 대응: {code} 시장가→지정가({limit_price:,.0f}원) 전환"
+            )
+            return limit_price, f"VI 활성 · 시장가→지정가({limit_price:,.0f}원)"
+        except Exception as e:
+            logger.error(f"VI 대응 중 현재가 조회 실패 ({code}): {e}")
+            return price, ""
+
     async def _submit_with_retry(
         self,
         code: str,
@@ -219,13 +266,19 @@ class OrderExecutor:
 
         logger.info(f"매수 주문: {name}({code}) {quantity}주")
 
+        # VI 대응: 시장가→지정가 전환
+        vi_price, vi_msg = await self._adapt_price_for_vi(code, price, OrderSide.BUY)
+        adapted_price = vi_price if vi_price != price else price
+        if vi_msg:
+            logger.info(f"매수 VI 대응: {vi_msg}")
+
         try:
             order_id = await self._submit_with_retry(
                 code=code, side=OrderSide.BUY,
-                quantity=quantity, price=price,
+                quantity=quantity, price=adapted_price,
             )
 
-            amount = (price or 0) * quantity
+            amount = (adapted_price or 0) * quantity
 
             result = ExecutionResult(
                 success=True,
@@ -290,13 +343,19 @@ class OrderExecutor:
 
         logger.info(f"매도 주문: {name}({code}) {quantity}주 — {action.value}")
 
+        # VI 대응: 시장가→지정가 전환
+        vi_price, vi_msg = await self._adapt_price_for_vi(code, price, OrderSide.SELL)
+        adapted_price = vi_price if vi_price != price else price
+        if vi_msg:
+            logger.info(f"매도 VI 대응: {vi_msg}")
+
         try:
             order_id = await self._submit_with_retry(
                 code=code, side=OrderSide.SELL,
-                quantity=quantity, price=price,
+                quantity=quantity, price=adapted_price,
             )
 
-            amount = (price or 0) * quantity
+            amount = (adapted_price or 0) * quantity
 
             result = ExecutionResult(
                 success=True,

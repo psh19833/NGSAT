@@ -25,7 +25,7 @@ import numpy as np
 
 from core.logger import logger
 from core.types import MarketRegime
-from strategy.indicators import sma, rsi, bollinger_bands, ema, adx
+from strategy.indicators import sma, rsi, bollinger_bands, adx
 
 
 @dataclass(frozen=True)
@@ -48,15 +48,6 @@ class RegimeResult:
 # ── Strategy config injection ──
 from core.config import StrategyConfig as _StrategyConfig
 
-_strategy_config: _StrategyConfig | None = None
-
-def init_regime_config(cfg: _StrategyConfig) -> None:
-    global _strategy_config
-    _strategy_config = cfg
-
-def _get_regime_config() -> _StrategyConfig:
-    return _strategy_config or _StrategyConfig()
-
 # ── Scoring weights (configurable via StrategyConfig) ──
 _WEIGHT_MA_ALIGNMENT = 30.0    # MA 정렬 (기존 35→30)
 _WEIGHT_RSI = 20.0             # RSI 모멘텀
@@ -76,6 +67,7 @@ def evaluate_regime(
     index_volumes: Sequence[int] | None = None,
     index_high: Sequence[float] | None = None,
     index_low: Sequence[float] | None = None,
+    config: _StrategyConfig | None = None,
 ) -> RegimeResult:
     """Evaluate market regime from index price data.
 
@@ -102,7 +94,7 @@ def evaluate_regime(
     reasons: list[str] = []
 
     # ── Use dynamic config if injected ──
-    cfg = _get_regime_config()
+    cfg = config or _StrategyConfig()
     w_ma = cfg.regime_weight_ma
     w_rsi = cfg.regime_weight_rsi
     w_bb = cfg.regime_weight_bollinger

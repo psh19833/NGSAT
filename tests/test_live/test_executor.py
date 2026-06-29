@@ -2,17 +2,15 @@
 
 from __future__ import annotations
 
-import asyncio
-from typing import Any
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import AsyncMock
 
 import pytest
 
 from core.config import RiskConfig
-from core.types import AccountSummary, DecisionAction, Market, OrderSide, Position
+from core.types import AccountSummary, DecisionAction, OrderStatus, Position
 from data.adapters.base import BrokerAdapter
 from live.controller import TradingController
-from live.executor import ExecutionResult, OrderExecutor
+from live.executor import OrderExecutor
 from live.risk import RiskManager
 
 
@@ -38,6 +36,10 @@ class MockBroker(BrokerAdapter):
     async def cancel_order(self, order_id): return True
     async def is_market_open(self): return True
     async def close(self): pass
+    async def get_order_status(self, order_id: str) -> OrderStatus:
+        return OrderStatus.FILLED
+    async def get_vi_status(self, code: str) -> bool:
+        return False
 
 
 @pytest.fixture

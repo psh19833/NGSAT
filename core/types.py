@@ -11,7 +11,6 @@ from enum import Enum
 from typing import Any, Optional
 
 # Re-export enums from config for convenience
-from core.config import Environment, MarketRegime, OrderSide, OrderStatus
 
 
 class Market(str, Enum):
@@ -102,6 +101,7 @@ class StockInfo:
     code: str                          # 종목코드 (6-digit)
     name: str                          # 종목명
     market: Market                     # 코스피/코스닥
+    sector: str = ""                   # 업종 코드/명
 
 
 @dataclass
@@ -132,6 +132,7 @@ class Position:
     profit_loss_pct: float             # 평가 손익률 (%)
     stop_loss_pct: float               # 현재 적용 중인 손절선 (%)
     stop_loss_reason: Optional[str] = None  # 손절선 조정 시 근거
+    sector: str = ""                   # 업종 (TR-5: 섹터 집중도 체크용)
 
 
 @dataclass

@@ -6,7 +6,6 @@ be called both from the command line and the dashboard API.
 
 from __future__ import annotations
 
-import asyncio
 from datetime import datetime
 from typing import Any
 
@@ -112,13 +111,6 @@ async def run_backtest_async(
 
         # ── 3. Run backtest engine ──
         from backtest.engine import BacktestEngine
-        from strategy.regime import init_regime_config
-        from strategy.screener import init_screener_config
-        from strategy.mode_selector import init_mode_selector_config
-
-        init_regime_config(config.strategy)
-        init_screener_config(config.strategy)
-        init_mode_selector_config(config.strategy)
 
         engine = BacktestEngine(
             model=model,
@@ -132,7 +124,6 @@ async def run_backtest_async(
         result = engine.run(universe, index_prices, start_day=60)
 
         # ── 4. Build response ──
-        import json
         bt_result = {
             "status": "completed",
             "data_source": data_source,

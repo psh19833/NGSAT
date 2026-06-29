@@ -4,15 +4,13 @@ from __future__ import annotations
 
 from datetime import datetime, timedelta
 
-import numpy as np
 import pytest
 
-from backtest.data_loader import generate_synthetic_data, generate_synthetic_index, generate_synthetic_universe
-from core.config import RiskConfig
-from core.types import AccountSummary, Market, Position, PriceData, StockInfo
+from backtest.data_loader import generate_synthetic_index, generate_synthetic_universe
+from core.types import AccountSummary, Market, Position, PriceData
 from data.adapters.base import BrokerAdapter
 from live.orchestrator import CycleResult, TradingOrchestrator
-from ml.training.trainer import PriceRiseModel, train_from_price_data
+from ml.training.trainer import train_from_price_data
 
 
 class MockBroker(BrokerAdapter):
@@ -57,6 +55,9 @@ class MockBroker(BrokerAdapter):
 
     async def close(self):
         pass
+
+    async def get_vi_status(self, code: str) -> bool:
+        return False
 
 
 class OverheatedMinuteBroker(MockBroker):
@@ -153,7 +154,7 @@ class TestTradingOrchestrator:
 
         result = await orchestrator.run_cycle(index_prices, universe)
 
-        assert "사이클" in result.reason or "대기" in result.reason or "리스크" in result.reason
+        assert "사이클" in result.reason or "대기" in result.reason or "리스크" in result.reason or "차단" in result.reason
 
     @pytest.mark.asyncio
     async def test_controller_accessible(self, orchestrator):

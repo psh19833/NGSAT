@@ -12,23 +12,21 @@ not just individual components in isolation.
 
 from __future__ import annotations
 
-from datetime import datetime, timedelta
+from datetime import datetime
 
-import numpy as np
 import pytest
 
 from backtest.data_loader import generate_synthetic_data, generate_synthetic_index, generate_synthetic_universe
 from backtest.engine import BacktestEngine
 from backtest.report import generate_report
 from core.config import RiskConfig
-from core.types import AccountSummary, Market, Position, PriceData, StockInfo
+from core.types import AccountSummary, Market, Position, PriceData
 from data.adapters.base import BrokerAdapter
 from dashboard.backend.api import create_app
 from fastapi.testclient import TestClient
 from live.orchestrator import TradingOrchestrator
-from ml.training.trainer import PriceRiseModel, train_from_price_data
+from ml.training.trainer import train_from_price_data
 from strategy.regime import evaluate_regime
-from strategy.screener import screen_stocks
 from messaging.bot import TelegramBot
 
 
@@ -88,6 +86,9 @@ class IntegrationBroker(BrokerAdapter):
 
     async def close(self):
         pass
+
+    async def get_vi_status(self, code: str) -> bool:
+        return False
 
 
 @pytest.fixture(scope="module")
@@ -164,12 +165,11 @@ class TestFullPipeline:
 
         assert result.regime in ["bull", "neutral", "bear"]
         assert len(result.reason) > 0
-        assert "사이클" in result.reason
+        assert "사이클" in result.reason or "차단" in result.reason
 
     @pytest.mark.asyncio
     async def test_orchestrator_force_sell_flow(self, trained_model, broker):
         """Force sell flow: position → force sell command → execution."""
-        from live.controller import TradingState
 
         # Add a mock position
         broker._positions.append(Position(

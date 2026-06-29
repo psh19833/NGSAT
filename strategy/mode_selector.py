@@ -45,15 +45,6 @@ class ModeDecision:
 # ── Strategy config injection ──
 from core.config import StrategyConfig as _StrategyConfig
 
-_strategy_config: _StrategyConfig | None = None
-
-def init_mode_selector_config(cfg: _StrategyConfig) -> None:
-    global _strategy_config
-    _strategy_config = cfg
-
-def _get_mode_config() -> _StrategyConfig:
-    return _strategy_config or _StrategyConfig()
-
 STRONG_TREND_SCORE = 60.0        # 레짐 점수 ≥ 60 → 강한 추세 (스윙 유리)
 
 
@@ -61,6 +52,7 @@ def select_mode(
     regime: RegimeResult,
     atr_pct: float | None = None,
     volatility_pct: float | None = None,
+    config: _StrategyConfig | None = None,
 ) -> ModeDecision:
     """시장 레짐 + 변동성 → 매매 모드 선택.
 
@@ -74,19 +66,20 @@ def select_mode(
     """
     vol = volatility_pct or atr_pct or 0.5
     regime_score = regime.score
+    cfg = config or _StrategyConfig()
 
     evidence: dict[str, float] = {
         "regime_score": regime_score,
         "regime": {"bull": 0, "neutral": 1, "bear": 2}.get(regime.regime.value, 1),
         "atr_pct": vol,
-        "high_volatility": 1.0 if vol >= _get_mode_config().mode_high_volatility_atr_pct else 0.0,
-        "low_volatility": 1.0 if vol <= _get_mode_config().mode_low_volatility_atr_pct else 0.0,
+        "high_volatility": 1.0 if vol >= cfg.mode_high_volatility_atr_pct else 0.0,
+        "low_volatility": 1.0 if vol <= cfg.mode_low_volatility_atr_pct else 0.0,
         "strong_trend": 1.0 if regime_score >= STRONG_TREND_SCORE else 0.0,
     }
 
     if regime.regime == MarketRegime.BULL:
         # 강세장 → 스윙 (추세를 따라간다)
-        if vol >= _get_mode_config().mode_high_volatility_atr_pct:
+        if vol >= cfg.mode_high_volatility_atr_pct:
             # 고변동성 강세 = 일부 단타도 가능하지만 기본은 스윙
             return ModeDecision(
                 mode=StrategyMode.SWING,
@@ -96,7 +89,7 @@ def select_mode(
                     f"ATR {vol:.1f}%. 기본 스윙 모드. "
                     f"고변동 구간이므로 단타 부분 활용 가능."
                 ),
-                forward_days=_get_mode_config().ml_swing_forward_days,
+                forward_days=cfg.ml_swing_forward_days,
                 evidence=evidence,
             )
         return ModeDecision(
@@ -106,7 +99,7 @@ def select_mode(
                 f"강세장 · 안정적: 레짐 점수 {regime_score:.0f}/100. "
                 f"추세 추종 스윙 모드."
             ),
-            forward_days=_get_mode_config().ml_swing_forward_days,
+            forward_days=cfg.ml_swing_forward_days,
             evidence=evidence,
         )
 
@@ -119,13 +112,13 @@ def select_mode(
                 f"약세장: 레짐 점수 {regime_score:.0f}/100. "
                 f"신규 진입 금지, 기존 포지션만 청산."
             ),
-            forward_days=_get_mode_config().ml_swing_forward_days,
+            forward_days=cfg.ml_swing_forward_days,
             evidence=evidence,
         )
 
     else:  # NEUTRAL
         # 중립장 → 변동성에 따라 단타/스윙 결정
-        if vol >= _get_mode_config().mode_high_volatility_atr_pct:
+        if vol >= cfg.mode_high_volatility_atr_pct:
             return ModeDecision(
                 mode=StrategyMode.SHORT_TERM,
                 confidence=0.8,
@@ -133,10 +126,10 @@ def select_mode(
                     f"중립장 · 고변동성: 레짐 점수 {regime_score:.0f}/100, "
                     f"ATR {vol:.1f}%. 방향성 없고 변동 높음 → 단타 모드."
                 ),
-                forward_days=_get_mode_config().ml_short_forward_minutes,
+                forward_days=cfg.ml_short_forward_minutes,
                 evidence=evidence,
             )
-        elif vol <= _get_mode_config().mode_low_volatility_atr_pct:
+        elif vol <= cfg.mode_low_volatility_atr_pct:
             # 저변동성 중립 = 방향성도 없고 움직임도 없음 → 관망
             return ModeDecision(
                 mode=StrategyMode.HOLD,
@@ -145,7 +138,7 @@ def select_mode(
                     f"중립장 · 저변동성: 레짐 점수 {regime_score:.0f}/100, "
                     f"ATR {vol:.1f}%. 시장 움직임 미약 → 관망."
                 ),
-                forward_days=_get_mode_config().ml_swing_forward_days,
+                forward_days=cfg.ml_swing_forward_days,
                 evidence=evidence,
             )
         else:
@@ -157,7 +150,7 @@ def select_mode(
                     f"중립장 · 보통 변동성: 레짐 점수 {regime_score:.0f}/100. "
                     f"스윙 모드 유지, 단타 전환 조건 모니터링."
                 ),
-                forward_days=_get_mode_config().ml_swing_forward_days,
+                forward_days=cfg.ml_swing_forward_days,
                 evidence=evidence,
             )
 
