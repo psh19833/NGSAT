@@ -153,6 +153,7 @@ async def run_live(config, args):
 
     try:
         model = PriceRiseModel.load(model_path)
+        model.auto_select_model = config.strategy.ml_auto_select_model
         logger.info(f"ML 모델 로드: {model_path}")
     except Exception:
         logger.warning(f"저장된 모델 없음 ({model_path}). 모델 학습이 필요합니다.")

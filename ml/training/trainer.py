@@ -120,10 +120,12 @@ class PriceRiseModel:
         model_type: str = "random_forest",
         forward_days: int = 5,
         forward_threshold: float = 0.02,
+        auto_select_model: bool = False,
     ):
         self.model_type = model_type
         self.forward_days = forward_days
         self.forward_threshold = forward_threshold
+        self.auto_select_model = auto_select_model
         self._model: Any = None
         self._scaler: StandardScaler | None = None
         self._is_trained = False
@@ -596,7 +598,14 @@ class PriceRiseModel:
             except Exception as e:
                 logger.warning(f"Auto-tune 실패 (skip, 기존 모델 유지): {e}")
 
-        # ── Standard retrain ──
+        # ── Model selection & retrain ──
+        if self.auto_select_model:
+            return self._multi_model_retrain(X, y)
+        else:
+            return self._single_model_retrain(X, y)
+
+    def _single_model_retrain(self, X, y):
+        """기존 방식: 현재 model_type 하나만 학습 후 AUC 비교 교체."""
         new_model = PriceRiseModel(self.model_type, self.forward_days, self.forward_threshold)
         new_result = new_model.train(X, y)
 
@@ -621,6 +630,71 @@ class PriceRiseModel:
             f"모델 자동 교체: {self.model_type}, AUC={new_result.auc:.3f}"
         )
         return True, new_result
+
+    def _multi_model_retrain(self, X, y):
+        """자동 모델 선택: 5개 모델 전부 학습 후 최고 AUC로 교체.
+
+        XGBoost/LightGBM 미설치 시 자동 fallback (sklearn 3종만 비교).
+        """
+        models_to_try = [
+            "gradient_boosting",
+            "logistic",
+            "random_forest",
+            "xgboost",
+            "lightgbm",
+        ]
+        best_auc = -1.0
+        best_model = None
+        best_type = self.model_type
+        results = []
+
+        for mtype in models_to_try:
+            try:
+                model = PriceRiseModel(mtype, self.forward_days, self.forward_threshold)
+                result = model.train(X, y)
+                if result.success:
+                    results.append((mtype, result.auc))
+                    if result.auc > best_auc:
+                        best_auc = result.auc
+                        best_model = model
+                        best_type = mtype
+            except Exception as e:
+                logger.debug(f"모델 {mtype} 학습 실패 (skip): {e}")
+
+        if not results:
+            logger.warning("모든 모델 학습 실패 — 기존 모델 유지")
+            return False, TrainingResult(success=False, reason="모든 모델 학습 실패")
+
+        # Log ranking
+        results.sort(key=lambda x: -x[1])
+        rank_str = " | ".join(f"{t}:{a:.3f}" for t, a in results)
+        logger.info(f"모델 랭킹: {rank_str}")
+
+        # Swap model if better than current
+        prev_auc = getattr(self, '_last_auc', 0)
+        if best_auc > prev_auc:
+            old_type = self.model_type
+            self._model = best_model._model
+            self._scaler = best_model._scaler
+            self.model_type = best_type
+            self._is_trained = True
+            self._last_auc = best_auc
+            changed = " (변경)" if best_type != old_type else ""
+            logger.info(
+                f"모델 자동 선택: {old_type} → {best_type}{changed}, "
+                f"AUC {prev_auc:.3f} → {best_auc:.3f}"
+            )
+        else:
+            logger.info(
+                f"모델 자동 선택: 기존 유지 ({best_type}, AUC={best_auc:.3f} ≤ 기존 {prev_auc:.3f})"
+            )
+
+        return True, TrainingResult(
+            success=True, model_type=best_type,
+            auc=best_auc,
+            n_samples=len(X), n_features=X.shape[1],
+            reason=f"Auto-select: {best_type} (AUC={best_auc:.3f})",
+        )
 
 
 def train_from_price_data(

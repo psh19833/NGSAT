@@ -109,6 +109,8 @@ const SECTIONS = [
         hint: 'AI 모델을 선택합니다. XGBoost·LightGBM이 일반적으로 더 높은 성능을 냅니다. 변경 후 모델 재학습이 필요합니다.' },
       { key: 'ml_auto_retrain', label: '자동 재학습', type: 'toggle',
         hint: '켜면 매일 장 마감 후 새로운 데이터로 AI가 스스로 재학습합니다.' },
+      { key: 'ml_auto_select_model', label: '자동 모델 선택', type: 'toggle',
+        hint: '켜면 5개 AI 모델 전부 테스트 후 가장 성능이 좋은 모델로 자동 교체합니다.' },
       { key: 'ml_training_days', label: '최근 N일 학습', unit: '일', min: 30, max: 1000, step: 10,
         hint: '기본 모드. 최근 N일 데이터로 학습합니다. 아래 날짜를 설정하면 이 값 대신 해당 구간이 사용됩니다.' },
       { key: 'ml_training_start_date', label: '▸ 시작일 (선택)', type: 'date',
@@ -336,6 +338,8 @@ export default function StrategyConfigPanel({ api }) {
   const [saving, setSaving] = useState(false)
   const [message, setMessage] = useState('')
   const [activePreset, setActivePreset] = useState('균형형')
+  const [currentModelType, setCurrentModelType] = useState(null)
+  const [currentAuc, setCurrentAuc] = useState(null)
 
   useEffect(() => {
     loadConfig()
@@ -346,6 +350,11 @@ export default function StrategyConfigPanel({ api }) {
     const resp = await api.getStrategyConfig()
     if (resp?.config) {
       setConfig(resp.config)
+      // Store current model info from API
+      if (resp.current_model_type) {
+        setCurrentModelType(resp.current_model_type)
+        setCurrentAuc(resp.current_auc ?? null)
+      }
       // Match preset
       for (const [name, p] of Object.entries(PRESETS)) {
         if (Object.entries(p.values).every(([k, v]) => Math.abs(v - (resp.config[k] ?? 0)) < 0.001)) {
@@ -468,6 +477,19 @@ export default function StrategyConfigPanel({ api }) {
           <div key={section.id} className="ngsat-card p-5">
             <h4 className="text-sm font-semibold text-ngsat-text mb-1">{section.title}</h4>
             <p className="text-xs text-ngsat-muted mb-4 leading-relaxed">{section.desc}</p>
+            {section.id === 'ml_training' && currentModelType && (
+              <div className="flex items-center gap-3 px-3 py-2 mb-3 bg-ngsat-accent/5 border border-ngsat-accent/20 rounded text-xs">
+                <span className="text-ngsat-text font-medium">현재 모델:</span>
+                <span className="text-ngsat-accent font-semibold">{currentModelType}</span>
+                {currentAuc != null && (
+                  <>
+                    <span className="text-ngsat-muted">|</span>
+                    <span className="text-ngsat-text">AUC:</span>
+                    <span className="text-ngsat-green font-semibold">{Number(currentAuc).toFixed(3)}</span>
+                  </>
+                )}
+              </div>
+            )}
             {section.warning && section.warning(config) && (
               <div className="bg-ngsat-red/10 border border-ngsat-red/20 rounded-lg p-3 mb-4 text-xs text-ngsat-red leading-relaxed">
                 {section.warning(config)}

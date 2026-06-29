@@ -58,6 +58,7 @@ CONFIG_FIELD_MAP: dict[str, str] = {
     "NGSAT_ML_TRAINING_DAYS": "ml_training_days",
     "NGSAT_ML_TRAINING_START_DATE": "ml_training_start_date",
     "NGSAT_ML_TRAINING_END_DATE": "ml_training_end_date",
+    "NGSAT_ML_AUTO_SELECT_MODEL": "ml_auto_select_model",
 }
 
 
@@ -103,6 +104,7 @@ class StrategyUpdateRequest(BaseModel):
     ml_training_days: int | None = Field(None, ge=30, le=1000)
     ml_training_start_date: str | None = None
     ml_training_end_date: str | None = None
+    ml_auto_select_model: bool | None = None
     mode_high_volatility_atr_pct: float | None = Field(None, ge=0.1, le=10)
     mode_low_volatility_atr_pct: float | None = Field(None, ge=0.1, le=5)
     reset: bool = False
@@ -399,12 +401,19 @@ def create_app(orchestrator=None, config=None) -> FastAPI:
     # ── Strategy Config ──
     @app.get("/api/strategy/config")
     async def get_strategy_config():
-        """현재 전략·정책 설정값 반환."""
+        """현재 전략·정책 설정값 반환 + 현재 ML 모델 정보."""
         from dataclasses import asdict
         cfg = _get_app_config()
         if cfg is None:
             return {"connected": False}
-        return {"connected": True, "config": asdict(cfg)}
+        result = {"connected": True, "config": asdict(cfg)}
+        orch = _get_orchestrator()
+        if orch and hasattr(orch, '_inference') and orch._inference is not None:
+            m = getattr(orch._inference, '_model', None)
+            if m is not None:
+                result['current_model_type'] = m.model_type
+                result['current_auc'] = getattr(m, '_last_auc', None)
+        return result
 
     @app.put("/api/strategy/config")
     async def update_strategy_config(data: StrategyUpdateRequest):
