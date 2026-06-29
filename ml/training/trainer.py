@@ -681,22 +681,27 @@ class PriceRiseModel:
             self.model_type = best_type
             self._is_trained = True
             self._last_auc = best_auc
-            changed = " (변경)" if best_type != old_type else ""
+            changed_str = " (변경)" if best_type != old_type else ""
             logger.info(
-                f"모델 자동 선택: {old_type} → {best_type}{changed}, "
+                f"모델 자동 선택: {old_type} → {best_type}{changed_str}, "
                 f"AUC {prev_auc:.3f} → {best_auc:.3f}"
+            )
+            return True, TrainingResult(
+                success=True, model_type=best_type,
+                auc=best_auc,
+                n_samples=len(X), n_features=X.shape[1],
+                reason=f"Auto-select: {best_type} (AUC={best_auc:.3f})",
             )
         else:
             logger.info(
                 f"모델 자동 선택: 기존 유지 ({best_type}, AUC={best_auc:.3f} ≤ 기존 {prev_auc:.3f})"
             )
-
-        return True, TrainingResult(
-            success=True, model_type=best_type,
-            auc=best_auc,
-            n_samples=len(X), n_features=X.shape[1],
-            reason=f"Auto-select: {best_type} (AUC={best_auc:.3f})",
-        )
+            return False, TrainingResult(
+                success=True, model_type=best_type,
+                auc=best_auc,
+                n_samples=len(X), n_features=X.shape[1],
+                reason=f"Auto-select: {best_type} 유지 (AUC={best_auc:.3f} ≤ 기존 {prev_auc:.3f})",
+            )
 
 
 def train_from_price_data(

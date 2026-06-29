@@ -423,10 +423,10 @@ def create_app(orchestrator=None, config=None) -> FastAPI:
                 return {"connected": False, "message": "시세 데이터 갱신 실패"}
 
             codes = [info.code for info, _ in new_universe]
-            prices_dict = {info.code: prices for info, prices in new_universe}
+            prices_list = [prices for _, prices in new_universe]  # list[list[PriceData]]: build_training_dataset 기대 형식
 
             logger.info(f"수동 재학습 시작: {len(codes)}개 종목, 모델={model.model_type}")
-            changed, result = model.auto_retrain(prices_dict, codes)
+            changed, result = model.auto_retrain(prices_list, codes)
 
             if changed:
                 # Save new model

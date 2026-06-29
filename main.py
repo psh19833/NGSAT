@@ -287,10 +287,10 @@ async def run_live(config, args):
                                 and _is_after_market_close_kst()):
                             _last_retrain_date = _today_kst_str
                             codes = [info.code for info, _ in universe]
-                            prices_dict = {info.code: prices for info, prices in universe}
+                            prices_list = [prices for _, prices in universe]  # list[list[PriceData]]
                             logger.info(f"자동 재학습 시작: {len(codes)}개 종목")
                             try:
-                                changed, result = model.auto_retrain(prices_dict, codes)
+                                changed, result = model.auto_retrain(prices_list, codes)
                                 if changed:
                                     model.save()
                                     logger.info(f"자동 재학습 완료: AUC={result.auc:.3f}")
