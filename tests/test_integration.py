@@ -77,6 +77,12 @@ class IntegrationBroker(BrokerAdapter):
             return True
         return False
 
+    async def get_order_status(self, order_id):
+        from core.types import OrderStatus
+        if order_id in self._orders:
+            return OrderStatus.FILLED
+        return OrderStatus.REJECTED
+
     async def is_market_open(self):
         return True
 
@@ -375,9 +381,9 @@ class TestSystemIntegrity:
         assert config.kospi_weight == 0.7            # 코스피 비중
 
     def test_feature_count(self):
-        """ML feature count should be exactly 20."""
+        """ML feature count should be exactly 27."""
         from ml.features.builder import FEATURE_NAMES
-        assert len(FEATURE_NAMES) == 20
+        assert len(FEATURE_NAMES) == 27
 
     def test_endpoint_catalog_complete(self):
         """KIS endpoint catalog should have all required endpoints."""

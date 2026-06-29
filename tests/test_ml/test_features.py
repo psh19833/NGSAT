@@ -62,8 +62,8 @@ class TestBuildFeatures:
             assert not np.isnan(value), f"{name} is NaN"
 
     def test_feature_names_count(self):
-        """Should have exactly 20 features."""
-        assert len(FEATURE_NAMES) == 20
+        """Should have exactly 27 features."""
+        assert len(FEATURE_NAMES) == 27
 
     def test_rsi_in_valid_range(self):
         """RSI should be between 0 and 100."""

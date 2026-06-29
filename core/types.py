@@ -52,6 +52,33 @@ class StrategyMode(str, Enum):
     HOLD = "hold"
 
 
+def is_market_hours(dt: datetime | None = None) -> bool:
+    """Check if the Korean stock market is currently in trading hours.
+
+    KOSPI/KOSDAQ trading hours: 평일 09:00 ~ 15:30 KST.
+
+    Args:
+        dt: Datetime to check (None = now).
+
+    Returns:
+        True if within market hours.
+    """
+    from datetime import timezone, timedelta
+    now = dt or datetime.now()
+    # Convert to KST (UTC+9)
+    kst = now.astimezone(timezone(timedelta(hours=9)))
+    weekday = kst.weekday()
+    if weekday >= 5:  # Saturday=5, Sunday=6
+        return False
+    hour = kst.hour
+    minute = kst.minute
+    if hour < 9 or hour > 15:
+        return False
+    if hour == 15 and minute > 30:
+        return False
+    return True
+
+
 @dataclass
 class DecisionReason:
     """Mandatory reason for every trading decision.

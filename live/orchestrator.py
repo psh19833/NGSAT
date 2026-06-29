@@ -32,6 +32,7 @@ from core.types import (
     Position,
     PriceData,
     StrategyMode,
+    is_market_hours,
 )
 from data.adapters.base import BrokerAdapter
 from live.controller import TradingController
@@ -119,7 +120,7 @@ class TradingOrchestrator:
         # Database for trade records
         from sqlalchemy import create_engine
         from sqlalchemy.orm import sessionmaker
-        from data.repository import TradeRepository
+        from data.repository import TradeRepository, PositionRepository
 
         if db_url:
             self._db_engine = create_engine(
@@ -139,6 +140,7 @@ class TradingOrchestrator:
         self._db_session = Session()
         self._TradeRepo = TradeRepository  # class ref for per-cycle instantiation
         self._trade_repo = TradeRepository(self._db_session)
+        self._PositionRepo = PositionRepository
 
         # State
         self._last_regime: RegimeResult | None = None
@@ -261,9 +263,15 @@ class TradingOrchestrator:
         # ── Step 6: ML predictions & buy execution (모드별 라우팅) ──
         current_positions = await self._fetch_positions()
         held_codes = {p.code for p in current_positions}
+        market_open = is_market_hours()
+        if not market_open:
+            logger.info("장 운영 시간 아님 — 신규 진입 생략 (매도만 실행)")
+
         is_short_term = self._current_mode == "short_term"
 
         for candidate in screen_result.candidates:
+            if not market_open:
+                break
             if candidate.code in held_codes:
                 continue  # Already holding
 
@@ -392,6 +400,22 @@ class TradingOrchestrator:
                 )
                 if exec_result.success:
                     result.sells_executed += 1
+                    try:
+                        with self._Session() as session:
+                            self._TradeRepo(session).save_trade(
+                                code=position.code, name=position.name,
+                                side=OrderSide.SELL, quantity=position.quantity,
+                                price=exec_result.price or sell_price or 0,
+                                amount=exec_result.amount or (position.quantity * (exec_result.price or sell_price or 0)),
+                                action=DecisionAction.STOP_LOSS,
+                                reason=f"손절: {position.name}({position.code}) 손실 {loss_pct:.1f}%",
+                            )
+                            self._PositionRepo(session).close_position(
+                                code=position.code, final_profit_loss=position.profit_loss_pct
+                            )
+                            session.commit()
+                    except Exception as e:
+                        logger.error(f"손절 기록 저장 실패: {e}")
                 else:
                     result.errors.append(f"손절 실패 {position.code}: {exec_result.error}")
                 continue
@@ -408,6 +432,22 @@ class TradingOrchestrator:
                 )
                 if exec_result.success:
                     result.sells_executed += 1
+                    try:
+                        with self._Session() as session:
+                            self._TradeRepo(session).save_trade(
+                                code=position.code, name=position.name,
+                                side=OrderSide.SELL, quantity=position.quantity,
+                                price=exec_result.price or sell_price or 0,
+                                amount=exec_result.amount or (position.quantity * (exec_result.price or sell_price or 0)),
+                                action=DecisionAction.SELL,
+                                reason=f"분봉 청산: {exit_ref.reason}",
+                            )
+                            self._PositionRepo(session).close_position(
+                                code=position.code, final_profit_loss=position.profit_loss_pct
+                            )
+                            session.commit()
+                    except Exception as e:
+                        logger.error(f"매도 기록 저장 실패: {e}")
                 else:
                     result.errors.append(f"매도 실패 {position.code}: {exec_result.error}")
                 continue
@@ -441,6 +481,22 @@ class TradingOrchestrator:
                 )
                 if exec_result.success:
                     result.sells_executed += 1
+                    try:
+                        with self._Session() as session:
+                            self._TradeRepo(session).save_trade(
+                                code=position.code, name=position.name,
+                                side=OrderSide.SELL, quantity=position.quantity,
+                                price=exec_result.price or sell_price or 0,
+                                amount=exec_result.amount or (position.quantity * (exec_result.price or sell_price or 0)),
+                                action=DecisionAction.SELL,
+                                reason=f"{exit_pred.reason} || 청산정밀화: {exit_ref.reason}",
+                            )
+                            self._PositionRepo(session).close_position(
+                                code=position.code, final_profit_loss=position.profit_loss_pct
+                            )
+                            session.commit()
+                    except Exception as e:
+                        logger.error(f"매도 기록 저장 실패: {e}")
                 else:
                     result.errors.append(f"매도 실패 {position.code}: {exec_result.error}")
 

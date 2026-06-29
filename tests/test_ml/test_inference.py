@@ -111,7 +111,7 @@ class TestMLInference:
         pred = inference.predict_entry(candidate, prices)
 
         assert pred is not None
-        assert len(pred.feature_vector) == 20  # 20 features
+        assert len(pred.feature_vector) == 27  # 27 features
 
     def test_predict_exit_returns_prediction(self, inference):
         """Exit prediction should return an ExitPrediction."""

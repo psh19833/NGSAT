@@ -131,7 +131,7 @@ def create_app(orchestrator=None, config=None) -> FastAPI:
     )
 
     # CORS for frontend — production: set NGSAT_CORS_ORIGINS env (comma-separated)
-    origins_env = os.getenv("NGSAT_CORS_ORIGINS", "*")
+    origins_env = os.getenv("NGSAT_CORS_ORIGINS", "http://localhost:5173,http://localhost:8000,http://127.0.0.1:8000")
     allow_origins = [o.strip() for o in origins_env.split(",") if o.strip()] if origins_env != "*" else ["*"]
     app.add_middleware(
         CORSMiddleware,

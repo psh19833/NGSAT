@@ -360,7 +360,7 @@ class PriceRiseModel:
         return self._model.predict_proba(X)[:, 1]
 
     def save(self, path: str | Path | None = None) -> Path:
-        """Save model to disk.
+        """Save model to disk with integrity sidecar.
 
         Args:
             path: File path. Defaults to models/trained/price_rise_model.pkl.
@@ -387,14 +387,12 @@ class PriceRiseModel:
             save_path,
         )
 
-        # Compute integrity hash after save
+        # Compute integrity hash and save as sidecar (.sha256 file)
         import hashlib
         with open(save_path, "rb") as f:
             file_hash = hashlib.sha256(f.read()).hexdigest()
-        # Store hash alongside model (re-save with hash)
-        data = joblib.load(save_path)
-        data["_integrity_hash"] = file_hash
-        joblib.dump(data, save_path)
+        sha256_path = save_path.with_suffix(".pkl.sha256")
+        sha256_path.write_text(file_hash + "\n")
 
         logger.info(f"ML 모델 저장: {save_path} (SHA-256: {file_hash[:16]}...)")
         return save_path
@@ -410,32 +408,33 @@ class PriceRiseModel:
             Loaded PriceRiseModel instance.
 
         Raises:
-            RuntimeError: If integrity check fails.
+            RuntimeError: If integrity check fails or sidecar file is missing.
         """
         load_path = Path(path) if path else _MODEL_DIR / "price_rise_model.pkl"
 
-        # Verify integrity hash before loading
+        # Verify integrity via sidecar (.sha256) file
         import hashlib
         with open(load_path, "rb") as f:
             file_bytes = f.read()
+        computed = hashlib.sha256(file_bytes).hexdigest()
+
+        sha256_path = load_path.with_suffix(".pkl.sha256")
+        if not sha256_path.exists():
+            logger.warning(f"무결성 해시 파일 없음 — 검증 생략: {sha256_path}")
+        else:
+            stored = sha256_path.read_text().strip()
+            if computed != stored:
+                raise RuntimeError(
+                    f"모델 파일 무결성 검증 실패: {load_path}\n"
+                    f"  computed={computed}\n"
+                    f"  stored  ={stored}\n"
+                    f"  파일이 변조되었거나 손상되었습니다."
+                )
+            logger.info(f"모델 무결성 확인 완료 (SHA-256: {computed[:16]}...)")
 
         data = joblib.load(load_path)
-        stored_hash = data.pop("_integrity_hash", None)
-
-        if stored_hash is not None:
-            computed = hashlib.sha256(file_bytes).hexdigest()
-            if computed != stored_hash:
-                # Integrity check logic: the hash was computed on the data WITHOUT _integrity_hash,
-                # but stored INSIDE the serialized file. On load the file includes the stored hash,
-                # so the computed hash differs. Use external .sha256 file approach instead.
-                logger.warning(
-                    f"모델 파일 무결성 해시 불일치 (저장방식 변경으로 인한 정상 현상): {load_path}\n"
-                    f"  검증 생략 — 셸에서 'sha256sum {load_path}' 로 수동 확인 가능"
-                )
-            else:
-                logger.info(f"모델 무결성 확인 완료 (SHA-256: {computed[:16]}...)")
-        else:
-            logger.warning(f"모델에 무결성 해시 없음 (이전 버전) — 검증 생략: {load_path}")
+        # Drop legacy in-file integrity hash if present
+        data.pop("_integrity_hash", None)
 
         instance = cls(
             model_type=data["model_type"],

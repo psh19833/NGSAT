@@ -23,6 +23,7 @@ from typing import Sequence
 
 import numpy as np
 
+from core.logger import logger
 from core.types import MarketRegime
 from strategy.indicators import sma, rsi, bollinger_bands, ema, adx
 
@@ -61,7 +62,7 @@ _WEIGHT_MA_ALIGNMENT = 30.0    # MA 정렬 (기존 35→30)
 _WEIGHT_RSI = 20.0             # RSI 모멘텀
 _WEIGHT_BOLLINGER = 20.0       # 볼린저밴드 위치
 _WEIGHT_CHANGE_RATE = 15.0     # 단기 등락률
-_WEIGHT_VOLUME_TREND = 15.0    # 거래량 추세 (기존 10→15)
+_WEIGHT_VOLUME_TREND = 10.0    # 거래량 추세 (기존 15→10, ADX 5점 확보)
 _WEIGHT_ADX = 5.0              # ADX 추세강도 (신규)
 
 # ── Thresholds ──
@@ -154,8 +155,15 @@ def evaluate_regime(
         + scores["bollinger"] * w_bb / 100
         + scores["change_rate"] * w_cr / 100
         + scores["volume_trend"] * w_vol / 100
-        + scores["adx"] * _WEIGHT_ADX / 100
+        + scores["adx"] * cfg.regime_weight_adx / 100
     )
+    # Validate config weights sum to 100
+    w_sum = w_ma + w_rsi + w_bb + w_cr + w_vol + cfg.regime_weight_adx
+    if abs(w_sum - 100.0) > 0.01:
+        logger.warning(
+            f"레짐 가중치 합이 100이 아님: {w_sum:.1f} "
+            f"(MA={w_ma} RSI={w_rsi} BB={w_bb} CR={w_cr} VOL={w_vol} ADX={cfg.regime_weight_adx})"
+        )
 
     # Determine regime
     if total >= bull_t:

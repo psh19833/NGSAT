@@ -54,7 +54,7 @@ class TestPriceRiseModel:
         assert result.success is True
         assert result.model_type == "random_forest"
         assert result.n_samples > 0
-        assert result.n_features == 20
+        assert result.n_features == 27
         assert len(result.reason) > 0
 
     def test_train_logistic_regression(self):
@@ -78,7 +78,7 @@ class TestPriceRiseModel:
 
         assert result.success is True
         assert result.model_type == "gradient_boosting"
-        assert result.n_features == 20
+        assert result.n_features == 27
         assert 0.0 <= result.positive_rate <= 1.0
 
     def test_gradient_boosting_predict_proba(self):

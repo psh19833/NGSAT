@@ -87,15 +87,17 @@ class KisTokenManager:
                 )
                 if not token.is_expired:
                     return token
-        except Exception:
-            pass
+        except Exception as e:
+            logger.warning(f"토큰 캐시 읽기 실패 (무시): {e}")
         return None
 
     def _save_cache(self, token: KisToken) -> None:
         """Save token to disk cache."""
         import json
+        import os
         try:
             self._CACHE_DIR.mkdir(parents=True, exist_ok=True)
+            self._CACHE_DIR.chmod(0o700)
             data = {
                 "access_token": token.access_token,
                 "token_type": token.token_type,
@@ -103,8 +105,9 @@ class KisTokenManager:
                 "issued_at": token.issued_at.isoformat(),
             }
             self._CACHE_FILE.write_text(json.dumps(data, indent=2))
-        except Exception:
-            pass  # 캐시 실패는 치명적이지 않음
+            os.chmod(self._CACHE_FILE, 0o600)
+        except Exception as e:
+            logger.warning(f"토큰 캐시 쓰기 실패 (무시): {e}")
 
     @property
     def is_configured(self) -> bool:
@@ -180,6 +183,6 @@ class KisTokenManager:
         try:
             if self._CACHE_FILE.exists():
                 self._CACHE_FILE.unlink()
-        except Exception:
-            pass
+        except Exception as e:
+            logger.warning(f"토큰 캐시 삭제 실패 (무시): {e}")
         logger.info("KIS 토큰 캐시 삭제")

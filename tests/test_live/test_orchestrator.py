@@ -48,6 +48,10 @@ class MockBroker(BrokerAdapter):
     async def cancel_order(self, order_id):
         return True
 
+    async def get_order_status(self, order_id):
+        from core.types import OrderStatus
+        return OrderStatus.FILLED
+
     async def is_market_open(self):
         return True
 
