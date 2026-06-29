@@ -184,12 +184,15 @@ class RealDataProvider:
         index_prices = await self._fetch_index(adapter)
 
         # KOSPI 지수 API가 부족하면 종목군 평균으로 시장 지수 계산
-        if len(index_prices) < 20 and universe:
-            logger.warning(
-                f"KOSPI 지수 부족 ({len(index_prices)}일) — "
-                f"종목 {len(universe)}개 평균으로 시장 지수 계산"
-            )
-            index_prices = self._compute_market_index(universe)
+        if len(index_prices) < 20:
+            if universe:
+                logger.warning(
+                    f"KOSPI 지수 부족 ({len(index_prices)}일) — "
+                    f"종목 {len(universe)}개 평균으로 시장 지수 계산"
+                )
+                index_prices = self._compute_market_index(universe)
+            else:
+                index_prices = self._synthetic_index()
 
         self._universe_cache = universe
         self._index_cache = index_prices
@@ -239,14 +242,14 @@ class RealDataProvider:
                 logger.info(f"KOSPI 지수 조회: {len(prices)}일")
                 if len(prices) >= 20:
                     return prices
-                logger.warning(f"KOSPI 지수 부족 ({len(prices)}일) — 합성 지수로 보강")
+                logger.warning(f"KOSPI 지수 부족 ({len(prices)}일) — 시장 지수 계산으로 대체")
             else:
                 logger.warning(f"KOSPI 지수 조회 실패: {resp.msg_cd} {resp.msg1}")
         except Exception as e:
             logger.warning(f"KOSPI 지수 조회 실패: {type(e).__name__}")
 
-        # 폴백: 합성 지수
-        return self._synthetic_index()
+        # return empty — caller decides fallback (시장 지수 계산 or 합성지수)
+        return []
 
     def _synthetic_index(self) -> list[PriceData]:
         """KOSPI 지수 조회 실패 시 합성 지수 반환."""
