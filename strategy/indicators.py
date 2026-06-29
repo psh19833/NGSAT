@@ -289,3 +289,82 @@ def current_macd(
     """Get the latest MACD values (macd_line, signal_line, histogram)."""
     macd_line, signal_line, hist = macd(values, fast, slow, signal)
     return float(macd_line[-1]), float(signal_line[-1]), float(hist[-1])
+
+
+def adx(
+    high: Sequence[float],
+    low: Sequence[float],
+    close: Sequence[float],
+    period: int = 14,
+) -> np.ndarray:
+    """Average Directional Index — trend strength (0~100).
+
+    ADX < 20: trendless (weak)
+    ADX 20~40: trending
+    ADX > 40: strong trend
+
+    Uses Wilder's smoothing (modified EMA with alpha=1/period).
+    """
+    h = np.asarray(high, dtype=float)
+    l = np.asarray(low, dtype=float)
+    c = np.asarray(close, dtype=float)
+    n = len(c)
+    if n < period + 1:
+        return np.full(n, np.nan)
+
+    # True Range
+    tr = np.full(n, np.nan)
+    for i in range(1, n):
+        hl = h[i] - l[i]
+        hc = abs(h[i] - c[i - 1])
+        lc = abs(l[i] - c[i - 1])
+        tr[i] = max(hl, hc, lc)
+
+    # Directional Movement
+    plus_dm = np.full(n, np.nan)
+    minus_dm = np.full(n, np.nan)
+    for i in range(1, n):
+        up_move = h[i] - h[i - 1]
+        down_move = l[i - 1] - l[i]
+        if up_move > down_move and up_move > 0:
+            plus_dm[i] = up_move
+        else:
+            plus_dm[i] = 0.0
+        if down_move > up_move and down_move > 0:
+            minus_dm[i] = down_move
+        else:
+            minus_dm[i] = 0.0
+
+    # Wilder's smoothing (first value = SMA, then EMA-like)
+    def wilder_smooth(raw: np.ndarray, p: int) -> np.ndarray:
+        result = np.full(n, np.nan)
+        result[p] = np.nanmean(raw[1 : p + 1])  # first SMA
+        for i in range(p + 1, n):
+            result[i] = (result[i - 1] * (p - 1) + raw[i]) / p
+        return result
+
+    tr_s = wilder_smooth(tr, period)
+    plus_dm_s = wilder_smooth(plus_dm, period)
+    minus_dm_s = wilder_smooth(minus_dm, period)
+
+    # Directional Indicators
+    plus_di = np.full(n, np.nan)
+    minus_di = np.full(n, np.nan)
+    for i in range(period, n):
+        if tr_s[i] > 0:
+            plus_di[i] = (plus_dm_s[i] / tr_s[i]) * 100.0
+            minus_di[i] = (minus_dm_s[i] / tr_s[i]) * 100.0
+
+    # DX and ADX
+    dx = np.full(n, np.nan)
+    for i in range(period, n):
+        di_sum = plus_di[i] + minus_di[i]
+        if di_sum > 0:
+            dx[i] = abs(plus_di[i] - minus_di[i]) / di_sum * 100.0
+
+    adx_values = np.full(n, np.nan)
+    adx_values[period * 2 - 1] = np.nanmean(dx[period : period * 2])  # first SMA
+    for i in range(period * 2, n):
+        adx_values[i] = (adx_values[i - 1] * (period - 1) + dx[i]) / period
+
+    return adx_values

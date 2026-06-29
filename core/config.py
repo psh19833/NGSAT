@@ -103,11 +103,12 @@ class StrategyConfig:
     # ── 레짐 판정 ──
     regime_bull_threshold: float = 65.0    # ≥ 65점 → 강세
     regime_bear_threshold: float = 35.0    # ≤ 35점 → 약세
-    regime_weight_ma: float = 35.0
+    regime_weight_ma: float = 30.0
     regime_weight_rsi: float = 20.0
     regime_weight_bollinger: float = 20.0
     regime_weight_change_rate: float = 15.0
-    regime_weight_volume: float = 10.0
+    regime_weight_volume: float = 15.0
+    regime_weight_adx: float = 5.0
 
     # ── 스크리너 ──
     screener_bull_min_score: float = 60.0
@@ -220,11 +221,12 @@ def load_config(env_file: str | None = None) -> Config:
     s.sell_threshold = float(os.getenv("NGSAT_SELL_THRESHOLD", "0.35"))
     s.regime_bull_threshold = float(os.getenv("NGSAT_REGIME_BULL_THRESHOLD", "65.0"))
     s.regime_bear_threshold = float(os.getenv("NGSAT_REGIME_BEAR_THRESHOLD", "35.0"))
-    s.regime_weight_ma = float(os.getenv("NGSAT_REGIME_WEIGHT_MA", "35.0"))
+    s.regime_weight_ma = float(os.getenv("NGSAT_REGIME_WEIGHT_MA", "30.0"))
     s.regime_weight_rsi = float(os.getenv("NGSAT_REGIME_WEIGHT_RSI", "20.0"))
     s.regime_weight_bollinger = float(os.getenv("NGSAT_REGIME_WEIGHT_BOLLINGER", "20.0"))
     s.regime_weight_change_rate = float(os.getenv("NGSAT_REGIME_WEIGHT_CHANGE_RATE", "15.0"))
-    s.regime_weight_volume = float(os.getenv("NGSAT_REGIME_WEIGHT_VOLUME", "10.0"))
+    s.regime_weight_volume = float(os.getenv("NGSAT_REGIME_WEIGHT_VOLUME", "15.0"))
+    s.regime_weight_adx = float(os.getenv("NGSAT_REGIME_WEIGHT_ADX", "5.0"))
     s.screener_bull_min_score = float(os.getenv("NGSAT_SCREENER_BULL_MIN_SCORE", "60.0"))
     s.screener_bull_max_candidates = int(os.getenv("NGSAT_SCREENER_BULL_MAX_CANDIDATES", "15"))
     s.screener_neutral_min_score = float(os.getenv("NGSAT_SCREENER_NEUTRAL_MIN_SCORE", "70.0"))

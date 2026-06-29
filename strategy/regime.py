@@ -24,7 +24,7 @@ from typing import Sequence
 import numpy as np
 
 from core.types import MarketRegime
-from strategy.indicators import sma, rsi, bollinger_bands, ema
+from strategy.indicators import sma, rsi, bollinger_bands, ema, adx
 
 
 @dataclass(frozen=True)
@@ -57,11 +57,12 @@ def _get_regime_config() -> _StrategyConfig:
     return _strategy_config or _StrategyConfig()
 
 # ── Scoring weights (configurable via StrategyConfig) ──
-_WEIGHT_MA_ALIGNMENT = 35.0    # MA 정렬 (가장 중요)
+_WEIGHT_MA_ALIGNMENT = 30.0    # MA 정렬 (기존 35→30)
 _WEIGHT_RSI = 20.0             # RSI 모멘텀
 _WEIGHT_BOLLINGER = 20.0       # 볼린저밴드 위치
 _WEIGHT_CHANGE_RATE = 15.0     # 단기 등락률
-_WEIGHT_VOLUME_TREND = 10.0    # 거래량 추세 (향후 확장)
+_WEIGHT_VOLUME_TREND = 15.0    # 거래량 추세 (기존 10→15)
+_WEIGHT_ADX = 5.0              # ADX 추세강도 (신규)
 
 # ── Thresholds ──
 BULL_THRESHOLD = 65.0          # ≥ 65점 → 강세
@@ -72,6 +73,8 @@ BEAR_THRESHOLD = 35.0          # ≤ 35점 → 약세
 def evaluate_regime(
     index_closes: Sequence[float],
     index_volumes: Sequence[int] | None = None,
+    index_high: Sequence[float] | None = None,
+    index_low: Sequence[float] | None = None,
 ) -> RegimeResult:
     """Evaluate market regime from index price data.
 
@@ -132,6 +135,18 @@ def evaluate_regime(
     scores["volume_trend"] = vol_score
     reasons.append(vol_reason)
 
+    # ── 6. ADX trend strength (5점, 신규) ──
+    adx_score, adx_reason, adx_value = _score_adx(c, index_high, index_low)
+    scores["adx"] = adx_score
+    reasons.append(adx_reason)
+
+    # ── BBW (Bollinger Band Width) — 점수 미포함, 참고용 evidence ──
+    bb_upper, bb_middle, bb_lower = bollinger_bands(c, 20, 2.0)
+    if not np.isnan(bb_middle[-1]) and bb_middle[-1] > 0:
+        bbw = (bb_upper[-1] - bb_lower[-1]) / bb_middle[-1] * 100.0
+    else:
+        bbw = float("nan")
+
     # ── Weighted total ──
     total = (
         scores["ma_alignment"] * w_ma / 100
@@ -139,6 +154,7 @@ def evaluate_regime(
         + scores["bollinger"] * w_bb / 100
         + scores["change_rate"] * w_cr / 100
         + scores["volume_trend"] * w_vol / 100
+        + scores["adx"] * _WEIGHT_ADX / 100
     )
 
     # Determine regime
@@ -158,6 +174,9 @@ def evaluate_regime(
     evidence["total_score"] = total
     evidence["bull_threshold"] = bull_t
     evidence["bear_threshold"] = bear_t
+    evidence["adx_value"] = adx_value    # raw ADX (not score)
+    if not np.isnan(bbw):
+        evidence["bb_width"] = round(bbw, 2)  # 볼린저밴드 폭 %
 
     return RegimeResult(
         regime=regime,
@@ -301,3 +320,48 @@ def _score_volume_trend(
         return 55.0, "가격 상승 + 거래량 미증가 (상승 신뢰도 낮음)"
     else:
         return 45.0, "가격 하락 + 거래량 미증가 (중립)"
+
+
+def _score_adx(
+    closes: np.ndarray,
+    high: Sequence[float] | None = None,
+    low: Sequence[float] | None = None,
+) -> tuple[float, str, float]:
+    """Score ADX trend strength.
+
+    ADX < 20: no trend → 50점 (중립)
+    ADX 20~40: trending → 50~80점 (선형)
+    ADX > 40: strong trend → 80~100점
+
+    high/low가 없으면 closes로 근사 (저/고가 = 종가 ±0.5%).
+    """
+    if len(closes) < 28:  # ADX(14) needs 27+ bars
+        return 50.0, "ADX 데이터 부족 (중립)", float("nan")
+
+    if high is not None and low is not None:
+        h = np.asarray(high, dtype=float)
+        l = np.asarray(low, dtype=float)
+    else:
+        # 근사: 고가 = 종가 * 1.005, 저가 = 종가 * 0.995
+        c = np.asarray(closes, dtype=float)
+        h = c * 1.005
+        l = c * 0.995
+
+    adx_values = adx(h, l, closes, period=14)
+    current_adx = float(adx_values[-1]) if not np.isnan(adx_values[-1]) else 0.0
+
+    if current_adx < 20:
+        score = 50.0
+        reason = f"ADX {current_adx:.1f} (추세 없음, 중립)"
+    elif current_adx < 40:
+        # 20→50점, 40→80점 (linear)
+        score = 50.0 + (current_adx - 20) * 1.5
+        score = min(80, max(50, score))
+        reason = f"ADX {current_adx:.1f} (추세 보통)"
+    else:
+        # 40→80점, 100→100점 (linear)
+        score = 80.0 + (min(current_adx, 100) - 40) * 0.333
+        score = min(100, score)
+        reason = f"ADX {current_adx:.1f} (강한 추세)"
+
+    return score, reason, current_adx

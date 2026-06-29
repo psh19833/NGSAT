@@ -42,6 +42,7 @@ CONFIG_FIELD_MAP: dict[str, str] = {
     "NGSAT_REGIME_WEIGHT_BOLLINGER": "regime_weight_bollinger",
     "NGSAT_REGIME_WEIGHT_CHANGE_RATE": "regime_weight_change_rate",
     "NGSAT_REGIME_WEIGHT_VOLUME": "regime_weight_volume",
+    "NGSAT_REGIME_WEIGHT_ADX": "regime_weight_adx",
     "NGSAT_SCREENER_BULL_MIN_SCORE": "screener_bull_min_score",
     "NGSAT_SCREENER_BULL_MAX_CANDIDATES": "screener_bull_max_candidates",
     "NGSAT_SCREENER_NEUTRAL_MIN_SCORE": "screener_neutral_min_score",
@@ -83,6 +84,7 @@ class StrategyUpdateRequest(BaseModel):
     regime_weight_bollinger: float | None = Field(None, ge=0, le=100)
     regime_weight_change_rate: float | None = Field(None, ge=0, le=100)
     regime_weight_volume: float | None = Field(None, ge=0, le=100)
+    regime_weight_adx: float | None = Field(None, ge=0, le=100)
     screener_bull_min_score: float | None = Field(None, ge=0, le=100)
     screener_bull_max_candidates: int | None = Field(None, ge=1, le=100)
     screener_neutral_min_score: float | None = Field(None, ge=0, le=100)

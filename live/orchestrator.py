@@ -217,6 +217,8 @@ class TradingOrchestrator:
         regime_result = evaluate_regime(
             [p.close for p in index_prices],
             [p.volume for p in index_prices],
+            [p.high for p in index_prices],
+            [p.low for p in index_prices],
         )
         self._last_regime = regime_result
         result.regime = regime_result.regime

@@ -72,6 +72,8 @@ const SECTIONS = [
         hint: '최근 5일 등락을 얼마나 반영할지.' },
       { key: 'regime_weight_volume', label: '거래량 중요도', unit: '/100', min: 5, max: 30, step: 5,
         hint: '거래량 추세를 얼마나 반영할지.' },
+      { key: 'regime_weight_adx', label: '추세 강도(ADX)', unit: '/100', min: 0, max: 20, step: 5,
+        hint: '추세가 얼마나 강한지(ADX) 반영 비중. 0=미사용. 높을수록 강한 추세에 더 민감.' },
     ],
   },
   {
