@@ -68,6 +68,7 @@ def evaluate_regime(
     index_high: Sequence[float] | None = None,
     index_low: Sequence[float] | None = None,
     config: _StrategyConfig | None = None,
+    prev_regime: MarketRegime | None = None,
 ) -> RegimeResult:
     """Evaluate market regime from index price data.
 
@@ -157,16 +158,34 @@ def evaluate_regime(
             f"(MA={w_ma} RSI={w_rsi} BB={w_bb} CR={w_cr} VOL={w_vol} ADX={cfg.regime_weight_adx})"
         )
 
-    # Determine regime
-    if total >= bull_t:
-        regime = MarketRegime.BULL
-        regime_kr = "강세장"
-    elif total <= bear_t:
-        regime = MarketRegime.BEAR
-        regime_kr = "약세장"
+    # Determine regime with hysteresis (TR-10)
+    HYSTERESIS_BAND = 5.0  # 점수 범위 내에서 이전 레짐 유지
+    if prev_regime is not None:
+        if prev_regime == MarketRegime.BULL and total >= bull_t - HYSTERESIS_BAND:
+            regime = MarketRegime.BULL
+            regime_kr = "강세장"
+        elif prev_regime == MarketRegime.BEAR and total <= bear_t + HYSTERESIS_BAND:
+            regime = MarketRegime.BEAR
+            regime_kr = "약세장"
+        elif total >= bull_t:
+            regime = MarketRegime.BULL
+            regime_kr = "강세장"
+        elif total <= bear_t:
+            regime = MarketRegime.BEAR
+            regime_kr = "약세장"
+        else:
+            regime = MarketRegime.NEUTRAL
+            regime_kr = "중립장"
     else:
-        regime = MarketRegime.NEUTRAL
-        regime_kr = "중립장"
+        if total >= bull_t:
+            regime = MarketRegime.BULL
+            regime_kr = "강세장"
+        elif total <= bear_t:
+            regime = MarketRegime.BEAR
+            regime_kr = "약세장"
+        else:
+            regime = MarketRegime.NEUTRAL
+            regime_kr = "중립장"
 
     reason = f"{regime_kr} (점수: {total:.1f}/100) — " + " | ".join(reasons)
 

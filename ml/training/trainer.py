@@ -550,10 +550,30 @@ class PriceRiseModel:
         매 20회째 재학습 시 Optuna 하이퍼파라미터 튜닝 병행
         (auto_tune)하여 AUC 개선을 시도한다.
 
+        TR-9: Purge-embargo — 1시간 내 중복 재학습 방지.
+        경과 시간이 embargo 기간 미만이면 건너뛴다.
+
         Returns:
             (was_replaced: bool, new_result: TrainingResult)
         """
+        # TR-9: Purge-embargo — 1시간 내 재학습 방지
+        import time
+        embargo_seconds = 3600
+        last_retrain = getattr(self, '_last_retrain_time', None)
+        if last_retrain is not None:
+            elapsed = time.time() - last_retrain
+            if elapsed < embargo_seconds:
+                remaining = embargo_seconds - elapsed
+                logger.info(f"재학습 제한 (embargo): {remaining:.0f}초 후 재시도 가능")
+                return False, TrainingResult(
+                    success=False,
+                    reason=f"재학습 제한 중 ({(embargo_seconds - elapsed)/60:.0f}분 후 재시도)",
+                )
+
         from ml.features.builder import build_training_dataset
+
+        # TR-9: 재학습 시도 기록 (embargo 체크 통과 = timer reset)
+        self._last_retrain_time = time.time()
 
         # Build dataset and train new model
         X, y, _ = build_training_dataset(

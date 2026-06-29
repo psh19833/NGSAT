@@ -224,7 +224,11 @@ class BacktestEngine:
                 [p.close for p in regime_index],
                 [p.volume for p in regime_index],
                 config=self._strategy,
+                prev_regime=getattr(self, '_last_regime', None),
             )
+
+            # TR-10: Track last regime for hysteresis
+            self._last_regime = regime_result.regime.value
 
             # 1b. Mode selection (하이브리드 2단계)
             vol = estimate_volatility_from_prices(
@@ -301,7 +305,12 @@ class BacktestEngine:
                                 continue
                             if entry.limit_price:
                                 entry_price = entry.limit_price
-                    self._execute_buy(pred, entry_price, date_str, is_short_term)
+                    self._execute_buy(
+                        pred, entry_price, date_str, is_short_term,
+                        closes=[p.close for p in prices],
+                        highs=[p.high for p in prices],
+                        lows=[p.low for p in prices],
+                    )
 
             # 4. Check exits for existing positions (모드별 청산)
             positions_to_check = list(self._positions.items())
@@ -400,10 +409,26 @@ class BacktestEngine:
         price: float,
         date_str: str,
         is_short_term: bool = False,
+        closes: list[float] | None = None,
+        highs: list[float] | None = None,
+        lows: list[float] | None = None,
     ) -> None:
-        """Execute a simulated buy with mode-aware position sizing and slippage."""
-        # 모드별 포지션 크기: 스윙=10%, 단타=5%
-        size_pct = 0.05 if is_short_term else 0.10
+        """Execute a simulated buy with ATR-based position sizing and slippage (TR-12)."""
+        # ATR 기반 포지션 사이징 (하이브리드 2단계)
+        base_pct = 0.05 if is_short_term else 0.10
+        if closes and len(closes) >= 20:
+            from strategy.mode_selector import estimate_volatility_from_prices
+            vol_pct = estimate_volatility_from_prices(closes, highs, lows)
+            if vol_pct > 0:
+                target_vol = 1.5
+                min_pct = base_pct * 0.3
+                max_pct = base_pct * 2.0
+                adjusted_pct = base_pct * (target_vol / vol_pct)
+                size_pct = max(min_pct, min(adjusted_pct, max_pct))
+            else:
+                size_pct = base_pct
+        else:
+            size_pct = base_pct
         budget = self._cash * size_pct
         # Apply slippage: buy pays slightly more (adverse)
         exec_price = self._slippage(price, urgent=False, is_buy=True)

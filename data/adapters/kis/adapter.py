@@ -317,13 +317,45 @@ class KisAdapter(BrokerAdapter):
         return order_id
 
     async def cancel_order(self, order_id: str) -> bool:
-        """Cancel a pending order.
+        """Cancel a pending order via KIS order-cancel endpoint.
 
-        Note: KIS cancel-order endpoint requires additional fields
-        (ORD_GNO_BRNO, ORGN_ODNO). Will be fully implemented in Phase 6.
+        Args:
+            order_id: KIS order number (ODNO) to cancel.
+
+        Returns:
+            True if cancellation succeeded.
+
+        Raises:
+            BrokerError: If cancellation fails.
         """
-        logger.warning(f"cancel_order not yet fully implemented for order_id={order_id}")
-        return False
+        from datetime import datetime
+
+        now = datetime.now()
+        payload = {
+            "CANO": self._account_no,
+            "ACNT_PRDT_CD": self._account_product_code,
+            "KRX_FWDG_ORD_ORGNO": "",  # KRX 주문 조직번호 (미입력 시 자동)
+            "ORGN_ODNO": order_id,      # 원주문번호
+            "ORD_DVSN": "00",           # 00=지정가
+            "QTY_ALL_ORD_YN": "Y",      # 잔량전체
+        }
+        extra_headers = {"tr_id": "TTTC0803U"}
+
+        try:
+            resp = await self._http.post(
+                "order_cancel",
+                json_data=payload,
+                extra_headers=extra_headers,
+            )
+            if resp.success:
+                logger.info(f"주문 취소 성공: {order_id}")
+                return True
+            else:
+                logger.warning(f"주문 취소 실패: {order_id} — {resp.msg_cd} {resp.msg1}")
+                return False
+        except Exception as e:
+            logger.error(f"주문 취소 중 오류: {order_id} — {e}")
+            return False
 
     async def get_order_status(self, order_id: str) -> OrderStatus:
         """Check current status of a submitted order via KIS inquire-order.

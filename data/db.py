@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from contextlib import contextmanager
+from threading import Lock
 from typing import Generator
 
 from sqlalchemy import create_engine
@@ -15,10 +16,12 @@ from core.models import Base
 
 _engine: Engine | None = None
 _SessionLocal: sessionmaker | None = None
+_engine_lock = Lock()
+_session_lock = Lock()
 
 
 def get_engine(config: DatabaseConfig | None = None) -> Engine:
-    """Get or create the SQLAlchemy engine (singleton).
+    """Get or create the SQLAlchemy engine (thread-safe singleton).
 
     Args:
         config: Database config. If None, loads from .env.
@@ -28,15 +31,18 @@ def get_engine(config: DatabaseConfig | None = None) -> Engine:
     """
     global _engine
     if _engine is None:
-        if config is None:
-            config = load_config().database
-        _engine = create_engine(
-            config.url,
-            echo=config.echo,
-            pool_pre_ping=True,
-            pool_size=10,
-            max_overflow=20,
-        )
+        with _engine_lock:
+            # Double-checked locking
+            if _engine is None:
+                if config is None:
+                    config = load_config().database
+                _engine = create_engine(
+                    config.url,
+                    echo=config.echo,
+                    pool_pre_ping=True,
+                    pool_size=10,
+                    max_overflow=20,
+                )
     return _engine
 
 

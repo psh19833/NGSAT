@@ -82,6 +82,16 @@ _ORDER_INQUIRY = KisEndpoint(
     description="주식 주문 조회 (ODNO로 단일 주문 상태 확인)",
 )
 
+_ORDER_CANCEL = KisEndpoint(
+    name="order_cancel",
+    category=KisCategory.TRADING,
+    path="/uapi/domestic-stock/v1/trading/order-cash",
+    method="POST",
+    tr_id="TTTC0803U",
+    is_order=True,
+    description="주식 주문 취소",
+)
+
 # ── 시세 (Quotation) ──
 _CURRENT_PRICE = KisEndpoint(
     name="inquire_price",
@@ -177,7 +187,7 @@ _ENDPOINTS: dict[str, KisEndpoint] = {
     ep.name: ep
     for ep in [
         _TOKEN_ISSUE,
-        _BALANCE, _DAILY_FILLS, _ORDER_CASH, _ORDER_INQUIRY,
+        _BALANCE, _DAILY_FILLS, _ORDER_CASH, _ORDER_INQUIRY, _ORDER_CANCEL,
         _CURRENT_PRICE, _DAILY_CHART, _MINUTE_CHART, _ORDERBOOK,
         _INDEX_DAILY,
         _STOCK_BASIC,

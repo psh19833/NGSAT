@@ -151,6 +151,73 @@ class TradingOrchestrator:
         self._daily_trade_date: str = ""
         self._daily_trade_count: int = 0
 
+    def refresh_read_session(self) -> None:
+        """BE-10: 읽기 전용 세션 갱신 — dashboard 조회 전 호출하여 데이터 신선도 유지."""
+        try:
+            if hasattr(self, '_db_session') and self._db_session:
+                self._db_session.close()
+        except Exception:
+            pass
+        Session = self._Session
+        self._db_session = Session()
+        if hasattr(self, '_TradeRepo'):
+            self._trade_repo = self._TradeRepo(self._db_session)
+
+    async def _check_correlation_risk(
+        self,
+        candidate_code: str,
+        candidate_prices: list[PriceData],
+        current_positions: list[Position],
+        stock_universe: list[tuple[Any, list[PriceData]]],
+    ) -> tuple[bool, str]:
+        """TR-7: 포트폴리오 상관관계 검사.
+
+        후보 종목과 보유 포지션 간 가격 수익률 상관계수가
+        임계값(0.85)을 초과하면 진입을 보류.
+
+        Returns:
+            (is_safe: bool, reason: str)
+        """
+        if len(current_positions) < 2:
+            return True, ""
+
+        closes_map: dict[str, list[float]] = {candidate_code: [p.close for p in candidate_prices]}
+        for info, prices in stock_universe:
+            if info.code in {p.code for p in current_positions}:
+                closes_map[info.code] = [p.close for p in prices]
+
+        import numpy as np
+        from numpy.lib.stride_tricks import sliding_window_view
+
+        cand_returns = np.diff(np.log(closes_map[candidate_code][-60:]))
+
+        high_corr_count = 0
+        total_checked = 0
+        threshold = 0.85
+
+        for pos in current_positions:
+            p_prices = closes_map.get(pos.code)
+            if p_prices is None or len(p_prices) < 60:
+                continue
+            pos_returns = np.diff(np.log(p_prices[-60:]))
+            if len(cand_returns) != len(pos_returns):
+                continue
+            corr = np.corrcoef(cand_returns, pos_returns)[0, 1]
+            if not np.isnan(corr) and abs(corr) > threshold:
+                high_corr_count += 1
+            total_checked += 1
+
+        if total_checked == 0:
+            return True, ""
+
+        avg_corr = high_corr_count / total_checked
+        if avg_corr > 0.5:
+            return False, (
+                f"포트폴리오 상관관계 주의: {high_corr_count}/{total_checked}개 포지션 "
+                f"상관계수 {threshold:.0%} 초과"
+            )
+        return True, ""
+
     @property
     def controller(self) -> TradingController:
         """Access the trading controller for start/stop/force operations."""
@@ -232,6 +299,7 @@ class TradingOrchestrator:
             [p.high for p in index_prices],
             [p.low for p in index_prices],
             config=self._strategy,
+            prev_regime=self._last_regime.regime if self._last_regime else None,
         )
         self._last_regime = regime_result
         result.regime = regime_result.regime
@@ -390,6 +458,22 @@ class TradingOrchestrator:
                 if current_exposure + new_exposure > max_exposure:
                     logger.info(f"총 노출 한도 초과: {current_exposure:,.0f}+{new_exposure:,.0f} > {max_exposure:,.0f} — 진입 생략")
                     result.entries_deferred += 1
+                    continue
+
+                # TR-7: 포트폴리오 상관관계 검사
+                corr_safe, corr_reason = await self._check_correlation_risk(
+                    candidate_code=candidate.code,
+                    candidate_prices=prices,
+                    current_positions=current_positions,
+                    stock_universe=stock_universe,
+                )
+                if not corr_safe:
+                    logger.info(f"상관관계 리스크: {candidate.name}({candidate.code}) — {corr_reason}")
+                    result.entries_deferred += 1
+                    result.deferred_entries.append(
+                        {"code": candidate.code, "name": candidate.name,
+                         "reason": corr_reason, "probability": 0}
+                    )
                     continue
 
                 buy_reason = f"{pred.reason} || 진입정밀화: {entry.reason}"
