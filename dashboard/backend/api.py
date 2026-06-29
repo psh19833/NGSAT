@@ -434,6 +434,10 @@ def create_app(orchestrator=None, config=None) -> FastAPI:
             prices_list = [prices for _, prices in new_universe]
 
             logger.info(f"수동 재학습 시작: {len(codes)}개 종목, 모델={model.model_type}")
+
+            # Force: always replace model with one trained on current settings
+            old_last_auc = model._last_auc
+            model._last_auc = -1.0
             changed, result = model.auto_retrain(prices_list, codes)
 
             if changed:
@@ -443,7 +447,21 @@ def create_app(orchestrator=None, config=None) -> FastAPI:
                 orch = _get_orchestrator()
                 if orch and hasattr(orch, '_inference') and orch._inference is not None:
                     orch._inference._model = model
-                logger.info(f"수동 재학습 완료: AUC={result.auc:.3f}")
+                logger.info(f"수동 재학습 완료: AUC={result.auc:.3f} (model_type={result.model_type})")
+                return {
+                    "connected": True,
+                    "message": f"재학습 완료 — {result.model_type}, AUC={result.auc:.3f}",
+                    "model_type": result.model_type,
+                    "auc": result.auc,
+                }
+            elif result.success:
+                # Model trained but not better than old best — update anyway for manual retrain
+                model._last_auc = result.auc
+                model.save()
+                orch = _get_orchestrator()
+                if orch and hasattr(orch, '_inference') and orch._inference is not None:
+                    orch._inference._model = model
+                logger.info(f"수동 재학습 (강제 교체): AUC={result.auc:.3f}")
                 return {
                     "connected": True,
                     "message": f"재학습 완료 — {result.model_type}, AUC={result.auc:.3f}",
@@ -451,11 +469,13 @@ def create_app(orchestrator=None, config=None) -> FastAPI:
                     "auc": result.auc,
                 }
             else:
-                logger.info(f"수동 재학습: 변경 없음 — {result.reason}")
+                model._last_auc = old_last_auc
+                logger.info(f"수동 재학습 실패 — {result.reason}")
                 return {
-                    "connected": True,
+                    "connected": False,
                     "model_type": model.model_type,
                     "auc": getattr(model, '_last_auc', 0.0),
+                    "message": result.reason,
                 }
         except Exception as e:
             logger.exception("수동 재학습 실패")
