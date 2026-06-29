@@ -96,7 +96,7 @@ const SECTIONS = [
   {
     id: 'ml_training',
     title: '⑧ ML 학습 기간',
-    desc: 'AI 모델 종류와 예측 기간을 설정합니다.',
+    desc: 'AI가 학습할 데이터와 모델을 설정합니다. "최근 N일" 또는 "과거 특정 구간"의 실제 데이터로 학습합니다.',
     fields: [
       { key: 'ml_model_type', label: 'AI 모델 종류', type: 'select',
         options: [
@@ -108,9 +108,13 @@ const SECTIONS = [
         ],
         hint: 'AI 모델을 선택합니다. XGBoost·LightGBM이 일반적으로 더 높은 성능을 냅니다. 변경 후 모델 재학습이 필요합니다.' },
       { key: 'ml_auto_retrain', label: '자동 재학습', type: 'toggle',
-        hint: '켜면 매일 장 마감 후 새로운 데이터로 AI가 스스로 재학습합니다. 더 나은 성능이 나오면 자동으로 교체됩니다.' },
-      { key: 'ml_training_days', label: '학습 기간', unit: '일', min: 30, max: 1000, step: 10,
-        hint: 'AI가 학습할 데이터 기간입니다. 250일=약 1년 치 데이터로 학습합니다. 숫자가 클수록 더 많은 과거 데이터를 보고 패턴을 학습하지만 학습 시간이 늘어납니다.' },
+        hint: '켜면 매일 장 마감 후 새로운 데이터로 AI가 스스로 재학습합니다.' },
+      { key: 'ml_training_days', label: '최근 N일 학습', unit: '일', min: 30, max: 1000, step: 10,
+        hint: '기본 모드. 최근 N일 데이터로 학습합니다. 아래 날짜를 설정하면 이 값 대신 해당 구간이 사용됩니다.' },
+      { key: 'ml_training_start_date', label: '▸ 시작일 (선택)', type: 'date',
+        hint: '과거 특정 구간 시작일. 설정 시 위 "최근 N일"보다 우선합니다. 예: 2022-01-01' },
+      { key: 'ml_training_end_date', label: '▸ 종료일 (선택)', type: 'date',
+        hint: '과거 특정 구간 종료일. 비워두면 오늘까지 조회합니다. 예: 2023-06-30' },
       { key: 'ml_swing_forward_days', label: '스윙 예측 기간', unit: '일', min: 1, max: 10, step: 1,
         hint: '스윙 모드: N일 뒤 +2% 상승을 예측합니다. 3일이면 "3일 뒤 오를까?"를 학습합니다.' },
       { key: 'ml_short_forward_minutes', label: '단타 예측 기간', unit: '분', min: 10, max: 240, step: 10,
@@ -237,6 +241,23 @@ function FieldRow({ field, value, onChange }) {
             }`} />
           </button>
         </div>
+        {field.hint && <p className="text-xs text-ngsat-muted mt-1">{field.hint}</p>}
+      </div>
+    )
+  }
+
+  // Date input
+  if (field.type === 'date') {
+    return (
+      <div className="mb-4">
+        <label className="text-sm font-medium text-ngsat-text block mb-1">{field.label}</label>
+        <input
+          type="date"
+          value={value || ''}
+          onChange={e => onChange(field.key, e.target.value || null)}
+          className="w-full px-3 py-2 text-sm bg-ngsat-bg border border-ngsat-border rounded
+            text-ngsat-text focus:outline-none focus:border-ngsat-accent/50"
+        />
         {field.hint && <p className="text-xs text-ngsat-muted mt-1">{field.hint}</p>}
       </div>
     )

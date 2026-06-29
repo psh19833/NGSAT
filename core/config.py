@@ -120,6 +120,8 @@ class StrategyConfig:
     # ── ML 학습 ──
     ml_model_type: str = "gradient_boosting"  # logistic/random_forest/gradient_boosting/xgboost/lightgbm
     ml_training_days: int = 250               # 학습 기간 (일), KIS API 조회 기간
+    ml_training_start_date: str | None = None  # 과거 데이터 학습 시작일 (YYYY-MM-DD), 설정 시 days 무시
+    ml_training_end_date: str | None = None     # 과거 데이터 학습 종료일 (YYYY-MM-DD), 기본값=오늘
     ml_auto_retrain: bool = False          # True: 매일 장 마감 후 자동 재학습
     ml_swing_forward_days: int = 3        # 스윙: N일 뒤 +2% 예측
     ml_short_forward_minutes: int = 60    # 단타: N분 뒤 +1.0% 예측 (분봉 ML threshold=0.01)
@@ -232,6 +234,8 @@ def load_config(env_file: str | None = None) -> Config:
     s.mode_low_volatility_atr_pct = float(os.getenv("NGSAT_MODE_LOW_VOL_ATR_PCT", "0.5"))
     s.ml_model_type = os.getenv("NGSAT_ML_MODEL_TYPE", "gradient_boosting")
     s.ml_training_days = int(os.getenv("NGSAT_ML_TRAINING_DAYS", "250"))
+    s.ml_training_start_date = os.getenv("NGSAT_ML_TRAINING_START_DATE", None)
+    s.ml_training_end_date = os.getenv("NGSAT_ML_TRAINING_END_DATE", None)
     s.ml_auto_retrain = os.getenv("NGSAT_ML_AUTO_RETRAIN", "false").lower() == "true"
     s.ml_swing_forward_days = int(os.getenv("NGSAT_ML_SWING_FORWARD_DAYS", "3"))
     s.ml_short_forward_minutes = int(os.getenv("NGSAT_ML_SHORT_FORWARD_MINUTES", "60"))

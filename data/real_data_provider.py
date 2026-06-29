@@ -70,9 +70,17 @@ class RealDataProvider:
     - 지수 데이터: KOSPI 일봉 (FID_COND_MRKT_DIV_CODE=U)
     """
 
-    def __init__(self, codes: list[str] | None = None, training_days: int = 250):
+    def __init__(
+        self,
+        codes: list[str] | None = None,
+        training_days: int = 250,
+        start_date: str | None = None,   # YYYY-MM-DD, 설정 시 training_days 무시
+        end_date: str | None = None,      # YYYY-MM-DD, 설정 시 training_days 무시
+    ):
         self._codes = codes or DEFAULT_UNIVERSE_CODES
         self._training_days = training_days
+        self._start_date_str = start_date
+        self._end_date_str = end_date
         self._adapter: Any = None
         self._universe_cache: list[tuple[StockInfo, list[PriceData]]] | None = None
         self._index_cache: list[PriceData] | None = None
@@ -105,9 +113,25 @@ class RealDataProvider:
             logger.debug(f"데이터 캐시 사용 (날짜: {today})")
             return self._universe_cache, self._index_cache
 
-        logger.info(f"KIS 실데이터 로드 시작: 종목 {len(self._codes)}개, 기간 {self._training_days}일")
+        # 학습 기간 결정: start_date/end_date 우선, 없으면 training_days
         end = datetime.now(KST)
-        start = end - timedelta(days=self._training_days)
+        if self._start_date_str and self._end_date_str:
+            try:
+                start = datetime.strptime(self._start_date_str, "%Y-%m-%d").replace(tzinfo=KST)
+                end = datetime.strptime(self._end_date_str, "%Y-%m-%d").replace(tzinfo=KST)
+                if (end - start).days < 20:
+                    logger.warning(f"학습 기간 부족 ({ (end-start).days }일) — 최소 20일 필요, training_days 폴백")
+                    start = end - timedelta(days=self._training_days)
+                    end = datetime.now(KST)
+            except ValueError:
+                logger.warning(f"날짜 파싱 오류: start={self._start_date_str}, end={self._end_date_str} — training_days 폴백")
+                start = end - timedelta(days=self._training_days)
+                end = datetime.now(KST)
+        else:
+            start = end - timedelta(days=self._training_days)
+
+        period_label = f"{start.strftime('%Y-%m-%d')}~{end.strftime('%Y-%m-%d')}"
+        logger.info(f"KIS 실데이터 로드 시작: 종목 {len(self._codes)}개, 기간 {period_label}")
 
         # 1. 종목별 일봉 데이터
         universe: list[tuple[StockInfo, list[PriceData]]] = []
@@ -153,8 +177,19 @@ class RealDataProvider:
         inquire-daily-indexchartprice (FHPUP02110000) 사용.
         KOSPI 지수 코드는 0001, 시장구분코드 U(업종).
         """
+        # load()와 동일한 날짜 로직
         end = datetime.now(KST)
-        start = end - timedelta(days=self._training_days)
+        if self._start_date_str and self._end_date_str:
+            try:
+                start = datetime.strptime(self._start_date_str, "%Y-%m-%d").replace(tzinfo=KST)
+                end = datetime.strptime(self._end_date_str, "%Y-%m-%d").replace(tzinfo=KST)
+                if (end - start).days < 20:
+                    start = end - timedelta(days=self._training_days)
+                    end = datetime.now(KST)
+            except ValueError:
+                start = end - timedelta(days=self._training_days)
+        else:
+            start = end - timedelta(days=self._training_days)
 
         try:
             from data.adapters.kis.mapper import parse_index_history

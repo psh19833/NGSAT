@@ -73,7 +73,11 @@ async def run_backtest(config):
     try:
         from data.real_data_provider import RealDataProvider
         logger.info(f"KIS 실데이터 로드 시도 (기간: {training_days}일)...")
-        provider = RealDataProvider(training_days=training_days)
+        provider = RealDataProvider(
+            training_days=training_days,
+            start_date=config.strategy.ml_training_start_date,
+            end_date=config.strategy.ml_training_end_date,
+        )
         universe, index_prices = await provider.load()
         if universe:
             logger.info(f"KIS 실데이터 로드 성공: {len(universe)}종목, 지수 {len(index_prices)}일")
@@ -234,7 +238,11 @@ async def run_live(config, args):
         """Main trading loop — runs orchestrator cycle with real KIS data."""
         from data.real_data_provider import RealDataProvider
 
-        data_provider = RealDataProvider(training_days=config.strategy.ml_training_days)
+        data_provider = RealDataProvider(
+            training_days=config.strategy.ml_training_days,
+            start_date=config.strategy.ml_training_start_date,
+            end_date=config.strategy.ml_training_end_date,
+        )
         universe, index_prices = await data_provider.load()
 
         if not universe:
@@ -357,7 +365,11 @@ async def train_model(config):
 
     logger.info("=== NGSAT ML 모델 학습 (KIS 실데이터) ===")
 
-    data_provider = RealDataProvider()
+    data_provider = RealDataProvider(
+        training_days=config.strategy.ml_training_days,
+        start_date=config.strategy.ml_training_start_date,
+        end_date=config.strategy.ml_training_end_date,
+    )
     universe, index_prices = await data_provider.load()
 
     if not universe:
