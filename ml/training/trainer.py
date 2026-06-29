@@ -362,6 +362,8 @@ class PriceRiseModel:
     def save(self, path: str | Path | None = None) -> Path:
         """Save model to disk with integrity sidecar.
 
+        Delegates to ml.training.persistence.save_model.
+
         Args:
             path: File path. Defaults to models/trained/price_rise_model.pkl.
 
@@ -371,35 +373,24 @@ class PriceRiseModel:
         if not self._is_trained:
             raise RuntimeError("학습되지 않은 모델은 저장할 수 없습니다")
 
-        save_path = Path(path) if path else _MODEL_DIR / "price_rise_model.pkl"
-        save_path.parent.mkdir(parents=True, exist_ok=True)
+        from ml.training.persistence import save_model
 
-        joblib.dump(
-            {
-                "model": self._model,
-                "scaler": self._scaler,
-                "model_type": self.model_type,
-                "forward_days": self.forward_days,
-                "forward_threshold": self.forward_threshold,
-                "feature_names": FEATURE_NAMES,
-                "last_auc": self._last_auc,
-            },
-            save_path,
-        )
-
-        # Compute integrity hash and save as sidecar (.sha256 file)
-        import hashlib
-        with open(save_path, "rb") as f:
-            file_hash = hashlib.sha256(f.read()).hexdigest()
-        sha256_path = save_path.with_suffix(".pkl.sha256")
-        sha256_path.write_text(file_hash + "\n")
-
-        logger.info(f"ML 모델 저장: {save_path} (SHA-256: {file_hash[:16]}...)")
-        return save_path
+        model_data = {
+            "model": self._model,
+            "scaler": self._scaler,
+            "model_type": self.model_type,
+            "forward_days": self.forward_days,
+            "forward_threshold": self.forward_threshold,
+            "feature_names": FEATURE_NAMES,
+            "last_auc": self._last_auc,
+        }
+        return save_model(model_data, path)
 
     @classmethod
     def load(cls, path: str | Path | None = None) -> "PriceRiseModel":
         """Load a trained model from disk with integrity verification.
+
+        Delegates to ml.training.persistence.load_model.
 
         Args:
             path: File path. Defaults to models/trained/price_rise_model.pkl.
@@ -410,31 +401,9 @@ class PriceRiseModel:
         Raises:
             RuntimeError: If integrity check fails or sidecar file is missing.
         """
-        load_path = Path(path) if path else _MODEL_DIR / "price_rise_model.pkl"
+        from ml.training.persistence import load_model
 
-        # Verify integrity via sidecar (.sha256) file
-        import hashlib
-        with open(load_path, "rb") as f:
-            file_bytes = f.read()
-        computed = hashlib.sha256(file_bytes).hexdigest()
-
-        sha256_path = load_path.with_suffix(".pkl.sha256")
-        if not sha256_path.exists():
-            logger.warning(f"무결성 해시 파일 없음 — 검증 생략: {sha256_path}")
-        else:
-            stored = sha256_path.read_text().strip()
-            if computed != stored:
-                raise RuntimeError(
-                    f"모델 파일 무결성 검증 실패: {load_path}\n"
-                    f"  computed={computed}\n"
-                    f"  stored  ={stored}\n"
-                    f"  파일이 변조되었거나 손상되었습니다."
-                )
-            logger.info(f"모델 무결성 확인 완료 (SHA-256: {computed[:16]}...)")
-
-        data = joblib.load(load_path)
-        # Drop legacy in-file integrity hash if present
-        data.pop("_integrity_hash", None)
+        data = load_model(path)
 
         instance = cls(
             model_type=data["model_type"],
@@ -446,11 +415,13 @@ class PriceRiseModel:
         instance._is_trained = True
         instance._last_auc = data.get("last_auc", 0.0)
 
-        logger.info(f"ML 모델 로드: {load_path}")
+        logger.info(f"ML 모델 로드: {data.get('_load_path', '(default)')}")
         return instance
 
     def auto_tune(self, X, y, n_trials=50, timeout=300):
         """Optuna 하이퍼파라미터 자동 튜닝.
+
+        Delegates to ml.training.model_selection.auto_tune.
 
         Args:
             X: Feature matrix.
@@ -461,88 +432,8 @@ class PriceRiseModel:
         Returns:
             dict with best_params and best_score.
         """
-        import optuna
-        from sklearn.model_selection import cross_val_score, TimeSeriesSplit
-
-        def objective(trial):
-            if self.model_type == "random_forest":
-                params = {
-                    "n_estimators": trial.suggest_int("n_estimators", 50, 300, step=50),
-                    "max_depth": trial.suggest_int("max_depth", 3, 15),
-                    "class_weight": "balanced",
-                    "random_state": 42,
-                    "n_jobs": -1,
-                }
-                model = RandomForestClassifier(**params)
-            elif self.model_type == "xgboost" and XGBClassifier is not None:
-                params = {
-                    "n_estimators": trial.suggest_int("n_estimators", 50, 300, step=50),
-                    "max_depth": trial.suggest_int("max_depth", 3, 12),
-                    "learning_rate": trial.suggest_float("learning_rate", 0.01, 0.3, log=True),
-                    "random_state": 42,
-                    "verbosity": 0,
-                    "n_jobs": -1,
-                }
-                model = XGBClassifier(**params)
-            elif self.model_type == "lightgbm" and LGBMClassifier is not None:
-                params = {
-                    "n_estimators": trial.suggest_int("n_estimators", 50, 300, step=50),
-                    "max_depth": trial.suggest_int("max_depth", 3, 12),
-                    "learning_rate": trial.suggest_float("learning_rate", 0.01, 0.3, log=True),
-                    "random_state": 42,
-                    "verbose": -1,
-                    "n_jobs": -1,
-                    "class_weight": "balanced",
-                }
-                model = LGBMClassifier(**params)
-            elif self.model_type == "gradient_boosting":
-                params = {
-                    "max_iter": trial.suggest_int("max_iter", 100, 500, step=50),
-                    "max_depth": trial.suggest_int("max_depth", 3, 12),
-                    "learning_rate": trial.suggest_float("learning_rate", 0.01, 0.3, log=True),
-                    "random_state": 42,
-                    "class_weight": "balanced",
-                }
-                model = HistGradientBoostingClassifier(**params)
-            else:
-                return 0.0
-
-            cv = TimeSeriesSplit(n_splits=3)
-            scores = cross_val_score(model, X, y, cv=cv, scoring="roc_auc", n_jobs=-1)
-            return float(scores.mean())
-
-        study = optuna.create_study(direction="maximize")
-        study.optimize(objective, n_trials=n_trials, timeout=timeout)
-
-        # Train with best params — construct and fit the best model
-        best_params = study.best_params
-        if self.model_type == "random_forest":
-            best_model = RandomForestClassifier(**best_params)
-        elif self.model_type == "xgboost" and XGBClassifier is not None:
-            best_model = XGBClassifier(**best_params)
-        elif self.model_type == "lightgbm" and LGBMClassifier is not None:
-            best_model = LGBMClassifier(**best_params)
-        elif self.model_type == "gradient_boosting":
-            best_model = HistGradientBoostingClassifier(**best_params)
-        else:
-            logger.error(f"auto_tune: 알 수 없는 모델 타입 {self.model_type}")
-            return {"best_params": best_params, "best_auc": study.best_value}
-
-        best_model.fit(X, y)
-        self._model = best_model
-        # StandardScaler 일관성 유지 (train()과 동일 파이프라인)
-        from sklearn.preprocessing import StandardScaler
-        self._scaler = StandardScaler()
-        self._scaler.fit(X)
-        self._is_trained = True
-
-        logger.info(
-            f"Optuna 튜닝 완료: {self.model_type}, "
-            f"best AUC={study.best_value:.4f}, "
-            f"trials={len(study.trials)}, "
-            f"params={best_params}"
-        )
-        return {"best_params": best_params, "best_auc": study.best_value}
+        from ml.training.model_selection import auto_tune as _auto_tune
+        return _auto_tune(self, X, y, n_trials, timeout)
 
     def auto_retrain(self, all_prices, codes):
         """FreqAI-style 자동 재학습: 새 데이터로 학습 후 기존보다 좋으면 교체.
@@ -626,101 +517,20 @@ class PriceRiseModel:
             return self._single_model_retrain(X, y)
 
     def _single_model_retrain(self, X, y):
-        """기존 방식: 현재 model_type 하나만 학습 후 AUC 비교 교체."""
-        new_model = PriceRiseModel(self.model_type, self.forward_days, self.forward_threshold)
-        new_result = new_model.train(X, y)
-
-        if not new_result.success:
-            return False, new_result
-
-        # Compare: only replace if new model is better
-        if self._is_trained and new_result.auc <= getattr(self, '_last_auc', 0):
-            logger.info(
-                f"재학습 모델 성능 낮음 (기존 AUC={getattr(self, '_last_auc', 0):.3f} > "
-                f"신규 AUC={new_result.auc:.3f}) — 기존 모델 유지"
-            )
-            return False, new_result
-
-        # Replace
-        self._model = new_model._model
-        self._scaler = new_model._scaler
-        self._is_trained = True
-        self._last_auc = new_result.auc
-
-        logger.info(
-            f"모델 자동 교체: {self.model_type}, AUC={new_result.auc:.3f}"
-        )
-        return True, new_result
+        """기존 방식: 현재 model_type 하나만 학습 후 AUC 비교 교체.
+        Delegates to ml.training.model_selection.single_model_retrain.
+        """
+        from ml.training.model_selection import single_model_retrain as _single
+        return _single(self, X, y)
 
     def _multi_model_retrain(self, X, y):
         """자동 모델 선택: 5개 모델 전부 학습 후 최고 AUC로 교체.
+        Delegates to ml.training.model_selection.multi_model_retrain.
 
         XGBoost/LightGBM 미설치 시 자동 fallback (sklearn 3종만 비교).
         """
-        models_to_try = [
-            "gradient_boosting",
-            "logistic",
-            "random_forest",
-            "xgboost",
-            "lightgbm",
-        ]
-        best_auc = -1.0
-        best_model = None
-        best_type = self.model_type
-        results = []
-
-        for mtype in models_to_try:
-            try:
-                model = PriceRiseModel(mtype, self.forward_days, self.forward_threshold)
-                result = model.train(X, y)
-                if result.success:
-                    results.append((mtype, result.auc))
-                    if result.auc > best_auc:
-                        best_auc = result.auc
-                        best_model = model
-                        best_type = mtype
-            except Exception as e:
-                logger.debug(f"모델 {mtype} 학습 실패 (skip): {e}")
-
-        if not results:
-            logger.warning("모든 모델 학습 실패 — 기존 모델 유지")
-            return False, TrainingResult(success=False, reason="모든 모델 학습 실패")
-
-        # Log ranking
-        results.sort(key=lambda x: -x[1])
-        rank_str = " | ".join(f"{t}:{a:.3f}" for t, a in results)
-        logger.info(f"모델 랭킹: {rank_str}")
-
-        # Swap model if better than current
-        prev_auc = getattr(self, '_last_auc', 0)
-        if best_auc > prev_auc:
-            old_type = self.model_type
-            self._model = best_model._model
-            self._scaler = best_model._scaler
-            self.model_type = best_type
-            self._is_trained = True
-            self._last_auc = best_auc
-            changed_str = " (변경)" if best_type != old_type else ""
-            logger.info(
-                f"모델 자동 선택: {old_type} → {best_type}{changed_str}, "
-                f"AUC {prev_auc:.3f} → {best_auc:.3f}"
-            )
-            return True, TrainingResult(
-                success=True, model_type=best_type,
-                auc=best_auc,
-                n_samples=len(X), n_features=X.shape[1],
-                reason=f"Auto-select: {best_type} (AUC={best_auc:.3f})",
-            )
-        else:
-            logger.info(
-                f"모델 자동 선택: 기존 유지 ({best_type}, AUC={best_auc:.3f} ≤ 기존 {prev_auc:.3f})"
-            )
-            return False, TrainingResult(
-                success=True, model_type=best_type,
-                auc=best_auc,
-                n_samples=len(X), n_features=X.shape[1],
-                reason=f"Auto-select: {best_type} 유지 (AUC={best_auc:.3f} ≤ 기존 {prev_auc:.3f})",
-            )
+        from ml.training.model_selection import multi_model_retrain as _multi
+        return _multi(self, X, y)
 
 
 def train_from_price_data(
