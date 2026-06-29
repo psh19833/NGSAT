@@ -25,7 +25,12 @@ export default function DiagnosisPanel({ api }) {
   }
 
   if (data.message) {
-    return <SkeletonCard lines={2} className="mt-4" />
+    return (
+      <div className="ngsat-card p-4 mt-4">
+        <h3 className="text-sm font-semibold text-ngsat-text mb-2">🔍 진단 현황</h3>
+        <p className="text-xs text-ngsat-muted">{data.message}</p>
+      </div>
+    )
   }
 
   const screened = data.screened || []

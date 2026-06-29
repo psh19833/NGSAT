@@ -1,6 +1,8 @@
 export default function Toast({ toast, onClose }) {
   if (!toast) return null
-  const bg = toast.type === 'success' ? 'bg-ngsat-green/90 text-white' : 'bg-ngsat-accent/90 text-white'
+  const bg = toast.type === 'success' ? 'bg-ngsat-green/90 text-white'
+    : toast.type === 'error' ? 'bg-ngsat-red/90 text-white'
+    : 'bg-ngsat-accent/90 text-white'
 
   return (
     <div

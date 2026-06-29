@@ -60,6 +60,9 @@ export default function BacktestPanel({ api }) {
             <p className="text-xs text-ngsat-muted mt-2">{progress.label}</p>
           </div>
         )}
+        {!loading && !result && !progress && (
+          <p className="text-xs text-ngsat-muted mt-4">아직 백테스트를 실행하지 않았습니다. 위 버튼을 눌러 현재 설정으로 백테스트를 실행하세요.</p>
+        )}
       </div>
 
       {/* Result */}

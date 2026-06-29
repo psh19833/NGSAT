@@ -127,6 +127,7 @@ class KisTokenManager:
             BrokerError: If token issuance fails.
         """
         if self._cached_token and not self._cached_token.is_expired:
+            logger.debug("KIS 토큰 재사용 (캐시 유효)")
             return self._cached_token
 
         return await self._issue_token(http_client)

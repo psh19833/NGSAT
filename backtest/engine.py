@@ -159,11 +159,12 @@ class BacktestEngine:
         # Slippage: seed from initial capital for deterministic backtests
 
     # ── Slippage model ──
-    def _slippage(self, price: float, urgent: bool = False) -> float:
-        """Apply slippage to execution price.
+    def _slippage(self, price: float, urgent: bool = False, is_buy: bool = True) -> float:
+        """Apply asymmetric slippage to execution price (TR-11).
 
-        Normal: ±0.1% random (default)
-        Urgent (stop loss / force sell): ±0.3% random
+        Buy: price * (1 + 0~0.1%) — always worse (pay more)
+        Sell: price * (1 - 0~0.1%) — always worse (get less)
+        Urgent: 0~0.3% instead of 0~0.1%
 
         Uses deterministic seed based on trade count for reproducibility.
         """
@@ -171,7 +172,12 @@ class BacktestEngine:
         seed = int(hashlib.md5(f"{self._initial_capital}_{len(self._trades)}".encode()).hexdigest()[:8], 16)
         rng_seed = (seed % 10000) / 10000
         slip_pct = 0.003 if urgent else 0.001
-        slippage = price * slip_pct * (rng_seed * 2 - 1)
+        if is_buy:
+            # Buy: always positive (pay more)
+            slippage = price * slip_pct * rng_seed
+        else:
+            # Sell: always negative (get less)
+            slippage = price * slip_pct * (rng_seed - 1)
         return price + slippage
 
     # ── Fee constants ──
@@ -400,7 +406,7 @@ class BacktestEngine:
         size_pct = 0.05 if is_short_term else 0.10
         budget = self._cash * size_pct
         # Apply slippage: buy pays slightly more (adverse)
-        exec_price = self._slippage(price, urgent=False)
+        exec_price = self._slippage(price, urgent=False, is_buy=True)
         quantity = int(budget / exec_price)
 
         if quantity <= 0:
@@ -454,7 +460,7 @@ class BacktestEngine:
     ) -> None:
         """Execute a simulated sell with slippage (urgent=stop loss/force sell: 0.3%, normal: 0.1%)."""
         urgent = action in (DecisionAction.STOP_LOSS, DecisionAction.FORCE_SELL)
-        exec_price = self._slippage(price, urgent=urgent)
+        exec_price = self._slippage(price, urgent=urgent, is_buy=False)
         amount = exec_price * pos.quantity
         fee = amount * self.SELL_FEE_RATE
         tax = amount * self.SELL_TAX_RATE

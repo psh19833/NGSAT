@@ -146,6 +146,10 @@ class StrategyConfig:
     # ── 포트폴리오 리스크 ──
     max_holdings: int = 10                # 최대 보유 종목 수 (0=제한 없음)
     max_sector_concentration: int = 3     # 동일 업종 최대 보유 수 (TR-5)
+    kospi_bonus_score: float = 5.0        # KOSPI 가산점 (TR-8)
+    kosdaq_bonus_score: float = 0.0       # KOSDAQ 가산점 (TR-8)
+    daily_trade_limit: int = 20           # 일일 최대 거래 횟수 (TR-13)
+    max_total_exposure_pct: float = 50.0  # 총 노출 한도 (자산 대비 %, TR-14)
 
 
 @dataclass

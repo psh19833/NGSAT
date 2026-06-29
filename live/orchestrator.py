@@ -147,6 +147,9 @@ class TradingOrchestrator:
         self._current_mode: str = "swing"
         self._last_diagnosis: dict | None = None  # 진단 현황
         self._cycle_count: int = 0
+        # TR-13: 일일 거래 횟수 제한
+        self._daily_trade_date: str = ""
+        self._daily_trade_count: int = 0
 
     @property
     def controller(self) -> TradingController:
@@ -185,6 +188,13 @@ class TradingOrchestrator:
             return result
 
         logger.info(f"=== 매매 사이클 #{self._cycle_count} 시작 ===")
+
+        # TR-13: 일일 거래 횟수 리셋 (날짜 변경 시)
+        today = datetime.now().strftime("%Y-%m-%d")
+        if self._daily_trade_date != today:
+            self._daily_trade_date = today
+            self._daily_trade_count = 0
+            logger.info(f"일일 거래 횟수 리셋 ({today})")
 
         # ── Step 0: Universe sanity check (synthetic data guard) ──
         for info, _ in stock_universe:
@@ -364,6 +374,24 @@ class TradingOrchestrator:
                 if quantity <= 0:
                     continue
 
+                # TR-13: 일일 거래 횟수 제한
+                if self._strategy.daily_trade_limit > 0 and self._daily_trade_count >= self._strategy.daily_trade_limit:
+                    logger.info(f"일일 거래 횟수 제한 ({self._strategy.daily_trade_limit}회) 도달 — 진입 생략")
+                    result.entries_deferred += 1
+                    continue
+
+                # TR-14: 총 노출 한도 체크
+                max_exposure = account.total_asset * (self._strategy.max_total_exposure_pct / 100.0)
+                current_exposure = sum(
+                    p.eval_amount or (p.current_price * p.quantity)
+                    for p in current_positions
+                )
+                new_exposure = ref_price * quantity
+                if current_exposure + new_exposure > max_exposure:
+                    logger.info(f"총 노출 한도 초과: {current_exposure:,.0f}+{new_exposure:,.0f} > {max_exposure:,.0f} — 진입 생략")
+                    result.entries_deferred += 1
+                    continue
+
                 buy_reason = f"{pred.reason} || 진입정밀화: {entry.reason}"
                 exec_result = await self._executor.execute_buy(
                     code=pred.code,
@@ -376,6 +404,7 @@ class TradingOrchestrator:
 
                 if exec_result.success:
                     result.buys_executed += 1
+                    self._daily_trade_count += 1
                     # Record to database (per-cycle session for isolation)
                     try:
                         with self._Session() as session:

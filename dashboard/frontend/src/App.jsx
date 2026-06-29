@@ -184,6 +184,7 @@ export default function App() {
             <div>
               <h1 className="text-xl font-semibold text-ngsat-text">
               {activeTab === 'overview' && '운영 요약'}
+              {activeTab === 'backtest' && '백테스트'}
               {activeTab === 'account' && '계좌 현황'}
               {activeTab === 'positions' && '보유 포지션'}
               {activeTab === 'trades' && '거래 내역'}

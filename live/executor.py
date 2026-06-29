@@ -278,7 +278,16 @@ class OrderExecutor:
                 quantity=quantity, price=adapted_price,
             )
 
-            amount = (adapted_price or 0) * quantity
+            # BE-9: 시장가(price=None) 주문도 amount 계산 — 현재가 조회
+            if adapted_price is None or adapted_price == 0:
+                try:
+                    price_data = await self._broker.get_price(code)
+                    fill_price = price_data.close
+                except Exception:
+                    fill_price = 0
+            else:
+                fill_price = adapted_price
+            amount = fill_price * quantity
 
             result = ExecutionResult(
                 success=True,
@@ -287,7 +296,7 @@ class OrderExecutor:
                 name=name,
                 side="buy",
                 quantity=quantity,
-                price=price or 0,
+                price=fill_price,
                 amount=amount,
                 action=action.value,
                 reason=reason,
@@ -355,7 +364,16 @@ class OrderExecutor:
                 quantity=quantity, price=adapted_price,
             )
 
-            amount = (adapted_price or 0) * quantity
+            # BE-9: 시장가 주문 amount 계산
+            if adapted_price is None or adapted_price == 0:
+                try:
+                    price_data = await self._broker.get_price(code)
+                    fill_price = price_data.close
+                except Exception:
+                    fill_price = 0
+            else:
+                fill_price = adapted_price
+            amount = fill_price * quantity
 
             result = ExecutionResult(
                 success=True,
@@ -364,7 +382,7 @@ class OrderExecutor:
                 name=name,
                 side="sell",
                 quantity=quantity,
-                price=price or 0,
+                price=fill_price,
                 amount=amount,
                 action=action.value,
                 reason=reason,

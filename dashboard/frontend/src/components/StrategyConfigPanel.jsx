@@ -285,6 +285,7 @@ function FieldRow({ field, value, onChange }) {
           step={field.step}
           value={value ?? field.min}
           onChange={e => onChange(field.key, parseFloat(e.target.value))}
+          style={{ '--fill-pct': (((value ?? field.min) - field.min) / (field.max - field.min) * 100) + '%' }}
           className="flex-1 h-1.5 accent-ngsat-accent"
         />
         <input

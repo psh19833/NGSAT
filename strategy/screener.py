@@ -102,8 +102,6 @@ def _build_regime_thresholds(cfg: _StrategyConfig) -> dict:
         },
     }
 
-_KOSPI_BONUS = 5.0
-
 
 def screen_stocks(
     stocks: list[tuple[StockInfo, list[PriceData]]],
@@ -258,9 +256,12 @@ def _evaluate_single_stock(
 
     # KOSPI bonus (기획서: 코스피 비중 더 높게)
     kospi_bonus = False
+    cfg = _StrategyConfig()
     if stock.market == Market.KOSPI:
-        score += _KOSPI_BONUS
+        score += cfg.kospi_bonus_score
         kospi_bonus = True
+    elif stock.market == Market.KOSDAQ:
+        score += cfg.kosdaq_bonus_score
 
     score = max(0, min(100, score))
 

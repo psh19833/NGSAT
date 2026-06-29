@@ -33,8 +33,8 @@ export default function AccountCard({ account, detailed = false }) {
 
   if (detailed) {
     stats.push(
-      { label: '당일 손실', value: formatWon(account.daily_loss), color: pnlColor(-account.daily_loss) },
-      { label: '당일 손실률', value: formatPercent(-account.daily_loss_pct), color: pnlColor(-account.daily_loss_pct) },
+      { label: '당일 손실', value: formatWon(Math.abs(account.daily_loss)), color: pnlColor(-account.daily_loss) },
+      { label: '당일 손실률', value: formatPercent(Math.abs(account.daily_loss_pct)), color: pnlColor(-account.daily_loss_pct) },
     )
   }
 

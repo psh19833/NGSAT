@@ -64,6 +64,9 @@ async def run_backtest_async(
     Returns:
         Backtest result dict.
     """
+    # ── 0. 상태 락 — 중복 실행 방지 (BE-12)
+    if _backtest_state["status"] == "running":
+        raise RuntimeError("백테스트가 이미 실행 중입니다")
     reset_backtest_state()
     _backtest_state["status"] = "running"
     _backtest_state["started_at"] = datetime.now().isoformat()
