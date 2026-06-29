@@ -382,6 +382,7 @@ class PriceRiseModel:
                 "forward_days": self.forward_days,
                 "forward_threshold": self.forward_threshold,
                 "feature_names": FEATURE_NAMES,
+                "last_auc": self._last_auc,
             },
             save_path,
         )
@@ -444,6 +445,7 @@ class PriceRiseModel:
         instance._model = data["model"]
         instance._scaler = data["scaler"]
         instance._is_trained = True
+        instance._last_auc = data.get("last_auc", 0.0)
 
         logger.info(f"ML 모델 로드: {load_path}")
         return instance

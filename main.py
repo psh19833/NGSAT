@@ -20,6 +20,7 @@ from __future__ import annotations
 import asyncio
 import argparse
 import signal
+from datetime import datetime, timezone, timedelta
 from pathlib import Path
 
 from core.config import load_config
@@ -252,7 +253,20 @@ async def run_live(config, args):
 
         logger.info(f"KIS 실데이터 연결 완료: {len(universe)}종목, 지수 {len(index_prices)}일")
 
+        # Store references for manual retrain API
+        if dashboard_app:
+            dashboard_app.state.data_provider = data_provider
+            dashboard_app.state.model = model
+            dashboard_app.state.latest_universe = universe
+            dashboard_app.state.latest_index_prices = index_prices
+
         _refresh_counter = 0
+        _last_retrain_date = ""  # yyyy-mm-dd tracking for daily retrain
+
+        def _is_after_market_close_kst() -> bool:
+            """KST 기준 장 마감 여부 (15:30 이후)."""
+            kst_now = datetime.now(timezone.utc) + timedelta(hours=9)
+            return kst_now.hour > 15 or (kst_now.hour == 15 and kst_now.minute >= 30)
 
         while True:
             try:
@@ -262,6 +276,28 @@ async def run_live(config, args):
                 _refresh_counter += 1
                 if _refresh_counter % 30 == 0:
                     universe, index_prices = await data_provider.refresh_prices()
+                    # Update app.state for manual retrain API
+                    if dashboard_app:
+                        dashboard_app.state.latest_universe = universe
+                        dashboard_app.state.latest_index_prices = index_prices
+                    # ── Auto daily retrain ──
+                    if config.strategy.ml_auto_retrain and model:
+                        _today_kst_str = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+                        if (_last_retrain_date != _today_kst_str
+                                and _is_after_market_close_kst()):
+                            _last_retrain_date = _today_kst_str
+                            codes = [info.code for info, _ in universe]
+                            prices_dict = {info.code: prices for info, prices in universe}
+                            logger.info(f"자동 재학습 시작: {len(codes)}개 종목")
+                            try:
+                                changed, result = model.auto_retrain(prices_dict, codes)
+                                if changed:
+                                    model.save()
+                                    logger.info(f"자동 재학습 완료: AUC={result.auc:.3f}")
+                                    if dashboard_app:
+                                        dashboard_app.state.model = model
+                            except Exception as e:
+                                logger.exception(f"자동 재학습 실패: {e}")
 
                 if orchestrator.controller.is_running:
                     result = await orchestrator.run_cycle(index_prices, universe)

@@ -340,6 +340,8 @@ export default function StrategyConfigPanel({ api }) {
   const [activePreset, setActivePreset] = useState('균형형')
   const [currentModelType, setCurrentModelType] = useState(null)
   const [currentAuc, setCurrentAuc] = useState(null)
+  const [retraining, setRetraining] = useState(false)
+  const [retrainMsg, setRetrainMsg] = useState(null)
 
   useEffect(() => {
     loadConfig()
@@ -369,6 +371,21 @@ export default function StrategyConfigPanel({ api }) {
   const handleChange = (key, value) => {
     setConfig(prev => prev ? { ...prev, [key]: value } : prev)
     setActivePreset('')
+  }
+
+  const handleRetrain = async () => {
+    setRetraining(true)
+    setRetrainMsg(null)
+    const resp = await api.retrain()
+    if (resp?.connected) {
+      setRetrainMsg({ ok: true, text: resp.message || '재학습 완료' })
+      // Update model info
+      if (resp.model_type) setCurrentModelType(resp.model_type)
+      if (resp.auc != null) setCurrentAuc(resp.auc)
+    } else {
+      setRetrainMsg({ ok: false, text: resp?.message || '재학습 실패' })
+    }
+    setRetraining(false)
   }
 
   const handlePreset = (values) => {
@@ -505,6 +522,26 @@ export default function StrategyConfigPanel({ api }) {
                 />
               ))}
             </div>
+            {section.id === 'ml_training' && (
+              <div className="mt-4 pt-3 border-t border-ngsat-border/50">
+                <button
+                  onClick={handleRetrain}
+                  disabled={retraining}
+                  className="w-full px-4 py-2 text-sm font-medium text-white bg-ngsat-accent rounded-lg 
+                    hover:bg-ngsat-accent/80 transition-all disabled:opacity-50 disabled:cursor-wait"
+                >
+                  {retraining ? '재학습 중... (1~2분)' : '⚡ 지금 재학습 실행'}
+                </button>
+                {retrainMsg && (
+                  <div className={`mt-2 px-3 py-2 rounded text-xs ${
+                    retrainMsg.ok ? 'bg-ngsat-green/10 text-ngsat-green border border-ngsat-green/20'
+                      : 'bg-ngsat-red/10 text-ngsat-red border border-ngsat-red/20'
+                  }`}>
+                    {retrainMsg.text}
+                  </div>
+                )}
+              </div>
+            )}
           </div>
         ))}
       </div>

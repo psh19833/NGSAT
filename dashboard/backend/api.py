@@ -398,6 +398,61 @@ def create_app(orchestrator=None, config=None) -> FastAPI:
         orch.controller.force_hold(req.code)
         return {"connected": True, "message": f"강제 홀드 설정: {req.code}"}
 
+    # ── Control: Manual Retrain ──
+    @app.post("/api/control/retrain")
+    async def control_retrain():
+        """수동 ML 모델 재학습 트리거.
+
+        app.state에 저장된 data_provider + model + universe 정보를 사용.
+        """
+        model = getattr(app.state, 'model', None)
+        data_provider = getattr(app.state, 'data_provider', None)
+        universe = getattr(app.state, 'latest_universe', None)
+
+        if not model:
+            return {"connected": False, "message": "ML 모델이 로드되지 않았습니다"}
+        if not data_provider:
+            return {"connected": False, "message": "데이터 프로바이더가 없습니다"}
+        if not universe:
+            return {"connected": False, "message": "시세 데이터가 없습니다 — 매매 사이클 시작 후 시도하세요"}
+
+        try:
+            # Refresh latest prices
+            new_universe, _ = await data_provider.refresh_prices()
+            if not new_universe:
+                return {"connected": False, "message": "시세 데이터 갱신 실패"}
+
+            codes = [info.code for info, _ in new_universe]
+            prices_dict = {info.code: prices for info, prices in new_universe}
+
+            logger.info(f"수동 재학습 시작: {len(codes)}개 종목, 모델={model.model_type}")
+            changed, result = model.auto_retrain(prices_dict, codes)
+
+            if changed:
+                # Save new model
+                model.save()
+                # Update orchestrator's inference model
+                orch = _get_orchestrator()
+                if orch and hasattr(orch, '_inference') and orch._inference is not None:
+                    orch._inference._model = model
+                logger.info(f"수동 재학습 완료: AUC={result.auc:.3f}")
+                return {
+                    "connected": True,
+                    "message": f"재학습 완료 — {result.model_type}, AUC={result.auc:.3f}",
+                    "model_type": result.model_type,
+                    "auc": result.auc,
+                }
+            else:
+                logger.info(f"수동 재학습: 변경 없음 — {result.reason}")
+                return {
+                    "connected": True,
+                    "model_type": model.model_type,
+                    "auc": getattr(model, '_last_auc', 0.0),
+                }
+        except Exception as e:
+            logger.exception("수동 재학습 실패")
+            return {"connected": False, "message": f"재학습 실패: {e}"}
+
     # ── Strategy Config ──
     @app.get("/api/strategy/config")
     async def get_strategy_config():
