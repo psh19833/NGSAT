@@ -187,7 +187,6 @@ class TradingOrchestrator:
                 closes_map[info.code] = [p.close for p in prices]
 
         import numpy as np
-        from numpy.lib.stride_tricks import sliding_window_view
 
         cand_returns = np.diff(np.log(closes_map[candidate_code][-60:]))
 
@@ -427,7 +426,7 @@ class TradingOrchestrator:
                     continue
 
                 ref_price = entry.limit_price or prices[-1].close
-                base_budget_pct = self._position_budget_pct
+                base_budget_pct = self._risk.position_size_pct
                 # ATR-based dynamic position sizing
                 # High volatility → reduce position, Low volatility → increase (within limits)
                 target_vol_pct = 1.5  # 기준 변동성(%): 이 값에서 base_pct = full position
@@ -536,26 +535,12 @@ class TradingOrchestrator:
                         f"|| 청산정밀화: {exit_ref.reason}"
                     ),
                 )
-                if exec_result.success:
-                    result.sells_executed += 1
-                    try:
-                        with self._Session() as session:
-                            self._TradeRepo(session).save_trade(
-                                code=position.code, name=position.name,
-                                side=OrderSide.SELL, quantity=position.quantity,
-                                price=exec_result.price or sell_price or 0,
-                                amount=exec_result.amount or (position.quantity * (exec_result.price or sell_price or 0)),
-                                action=DecisionAction.STOP_LOSS,
-                                reason=f"손절: {position.name}({position.code}) 손실 {loss_pct:.1f}%",
-                            )
-                            self._PositionRepo(session).close_position(
-                                code=position.code, final_profit_loss=position.profit_loss_pct
-                            )
-                            session.commit()
-                    except Exception as e:
-                        logger.error(f"손절 기록 저장 실패: {e}")
-                else:
-                    result.errors.append(f"손절 실패 {position.code}: {exec_result.error}")
+                self._record_sell(
+                    result, exec_result, position, sell_price,
+                    action=DecisionAction.STOP_LOSS,
+                    log_label="손절",
+                    reason=f"손절: {position.name}({position.code}) 손실 {loss_pct:.1f}%",
+                )
                 continue
 
             # 2) 분봉 선제 청산 (일봉 ML보다 빠른 급락/과열익절 신호) — 양 모드 공통
@@ -568,26 +553,12 @@ class TradingOrchestrator:
                     action=DecisionAction.SELL,
                     reason=f"분봉 청산: {exit_ref.reason}",
                 )
-                if exec_result.success:
-                    result.sells_executed += 1
-                    try:
-                        with self._Session() as session:
-                            self._TradeRepo(session).save_trade(
-                                code=position.code, name=position.name,
-                                side=OrderSide.SELL, quantity=position.quantity,
-                                price=exec_result.price or sell_price or 0,
-                                amount=exec_result.amount or (position.quantity * (exec_result.price or sell_price or 0)),
-                                action=DecisionAction.SELL,
-                                reason=f"분봉 청산: {exit_ref.reason}",
-                            )
-                            self._PositionRepo(session).close_position(
-                                code=position.code, final_profit_loss=position.profit_loss_pct
-                            )
-                            session.commit()
-                    except Exception as e:
-                        logger.error(f"매도 기록 저장 실패: {e}")
-                else:
-                    result.errors.append(f"매도 실패 {position.code}: {exec_result.error}")
+                self._record_sell(
+                    result, exec_result, position, sell_price,
+                    action=DecisionAction.SELL,
+                    log_label="매도",
+                    reason=f"분봉 청산: {exit_ref.reason}",
+                )
                 continue
 
             # 3) ML 청산 예측 (모드별 라우팅)
@@ -617,26 +588,12 @@ class TradingOrchestrator:
                     action=DecisionAction.SELL,
                     reason=f"{exit_pred.reason} || 청산정밀화: {exit_ref.reason}",
                 )
-                if exec_result.success:
-                    result.sells_executed += 1
-                    try:
-                        with self._Session() as session:
-                            self._TradeRepo(session).save_trade(
-                                code=position.code, name=position.name,
-                                side=OrderSide.SELL, quantity=position.quantity,
-                                price=exec_result.price or sell_price or 0,
-                                amount=exec_result.amount or (position.quantity * (exec_result.price or sell_price or 0)),
-                                action=DecisionAction.SELL,
-                                reason=f"{exit_pred.reason} || 청산정밀화: {exit_ref.reason}",
-                            )
-                            self._PositionRepo(session).close_position(
-                                code=position.code, final_profit_loss=position.profit_loss_pct
-                            )
-                            session.commit()
-                    except Exception as e:
-                        logger.error(f"매도 기록 저장 실패: {e}")
-                else:
-                    result.errors.append(f"매도 실패 {position.code}: {exec_result.error}")
+                self._record_sell(
+                    result, exec_result, position, sell_price,
+                    action=DecisionAction.SELL,
+                    log_label="매도",
+                    reason=f"{exit_pred.reason} || 청산정밀화: {exit_ref.reason}",
+                )
 
         # ── Build summary ──
         result.reason = (
@@ -733,6 +690,30 @@ class TradingOrchestrator:
             if info.code == code:
                 return prices
         return None
+
+    def _record_sell(
+        self, result, exec_result, position, sell_price, action, log_label, reason,
+    ) -> None:
+        """Record a sell trade to DB + update cycle result."""
+        if not exec_result.success:
+            result.errors.append(f"{log_label} 실패 {position.code}: {exec_result.error}")
+            return
+        result.sells_executed += 1
+        try:
+            with self._Session() as session:
+                self._TradeRepo(session).save_trade(
+                    code=position.code, name=position.name,
+                    side=OrderSide.SELL, quantity=position.quantity,
+                    price=exec_result.price or sell_price or 0,
+                    amount=exec_result.amount or (position.quantity * (exec_result.price or sell_price or 0)),
+                    action=action, reason=reason,
+                )
+                self._PositionRepo(session).close_position(
+                    code=position.code, final_profit_loss=position.profit_loss_pct
+                )
+                session.commit()
+        except Exception as e:
+            logger.error(f"{log_label} 기록 저장 실패: {e}")
 
     async def force_sell(self, code: str, name: str = "") -> ExecutionResult:
         """Force sell a position — operator override.

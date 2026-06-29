@@ -49,12 +49,7 @@ class RegimeResult:
 from core.config import StrategyConfig as _StrategyConfig
 
 # ── Scoring weights (configurable via StrategyConfig) ──
-_WEIGHT_MA_ALIGNMENT = 30.0    # MA 정렬 (기존 35→30)
-_WEIGHT_RSI = 20.0             # RSI 모멘텀
-_WEIGHT_BOLLINGER = 20.0       # 볼린저밴드 위치
-_WEIGHT_CHANGE_RATE = 15.0     # 단기 등락률
-_WEIGHT_VOLUME_TREND = 10.0    # 거래량 추세 (기존 15→10, ADX 5점 확보)
-_WEIGHT_ADX = 5.0              # ADX 추세강도 (신규)
+# (weights defined in StrategyConfig: regime_weight_ma/rsi/bollinger/change_rate/volume/adx)
 
 # ── Thresholds ──
 BULL_THRESHOLD = 65.0          # ≥ 65점 → 강세

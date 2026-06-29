@@ -45,8 +45,6 @@ class ModeDecision:
 # ── Strategy config injection ──
 from core.config import StrategyConfig as _StrategyConfig
 
-STRONG_TREND_SCORE = 60.0        # 레짐 점수 ≥ 60 → 강한 추세 (스윙 유리)
-
 
 def select_mode(
     regime: RegimeResult,
@@ -74,7 +72,7 @@ def select_mode(
         "atr_pct": vol,
         "high_volatility": 1.0 if vol >= cfg.mode_high_volatility_atr_pct else 0.0,
         "low_volatility": 1.0 if vol <= cfg.mode_low_volatility_atr_pct else 0.0,
-        "strong_trend": 1.0 if regime_score >= STRONG_TREND_SCORE else 0.0,
+        "strong_trend": 1.0 if regime_score >= cfg.regime_bull_threshold - 5 else 0.0,
     }
 
     if regime.regime == MarketRegime.BULL:

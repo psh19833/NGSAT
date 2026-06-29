@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useRef } from 'react'
+import { useState, useEffect, useCallback } from 'react'
 import { Menu } from 'lucide-react'
 import { api } from './api.js'
 import {
@@ -31,7 +31,6 @@ export default function App() {
   const [confirmAction, setConfirmAction] = useState(null)
   const [mobileSidebarOpen, setMobileSidebarOpen] = useState(false)
   const [strategyDirty, setStrategyDirty] = useState(false)
-  const [wsReconnecting, setWsReconnecting] = useState(false)
 
   const showToast = (message, type = 'info') => {
     setToast({ message, type })
@@ -56,64 +55,6 @@ export default function App() {
     refreshAll()
     const interval = setInterval(refreshAll, 5000) // 5초마다 갱신
     return () => clearInterval(interval)
-  }, [refreshAll])
-
-  // WebSocket real-time updates with auto-reconnect
-  const wsRef = useRef(null)
-  const reconnectTimerRef = useRef(null)
-  const mountedRef = useRef(true)
-  const reconnectAttemptRef = useRef(0)
-  useEffect(() => {
-    mountedRef.current = true
-
-    const connect = () => {
-      if (!mountedRef.current) return
-      const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:'
-      const wsUrl = `${protocol}//${window.location.host}/ws/realtime`
-      const ws = new WebSocket(wsUrl)
-      wsRef.current = ws
-
-      ws.onopen = () => {
-        console.debug('WebSocket 연결됨')
-        reconnectAttemptRef.current = 0
-        setWsReconnecting(false)
-      }
-      ws.onmessage = (event) => {
-        try {
-          const data = JSON.parse(event.data)
-          if (data.type === 'cycle' || data.type === 'status') {
-            refreshAll()
-          }
-        } catch {
-          // ignore non-JSON messages (e.g. "pong")
-        }
-      }
-      ws.onclose = () => {
-        console.debug('WebSocket 연결 종료')
-        wsRef.current = null
-        if (mountedRef.current) {
-          const delay = Math.min(3000 * Math.pow(2, reconnectAttemptRef.current), 60000)
-          reconnectAttemptRef.current += 1
-          setWsReconnecting(true)
-          console.debug(`WebSocket ${delay / 1000}초 후 재연결...`)
-          reconnectTimerRef.current = setTimeout(connect, delay)
-        }
-      }
-    }
-
-    connect()
-
-    return () => {
-      mountedRef.current = false
-      if (reconnectTimerRef.current) {
-        clearTimeout(reconnectTimerRef.current)
-        reconnectTimerRef.current = null
-      }
-      if (wsRef.current) {
-        wsRef.current.close()
-        wsRef.current = null
-      }
-    }
   }, [refreshAll])
 
   const handleControl = async (action, code) => {
@@ -200,9 +141,6 @@ export default function App() {
             <span className="text-sm text-ngsat-muted">
               {connected ? '연결됨' : '미연결'}
             </span>
-            {wsReconnecting && (
-              <span className="text-xs text-yellow-400 animate-pulse">⚡ 재연결 중...</span>
-            )}
             {status?.server_time && (
               <span className="text-sm text-ngsat-muted font-mono tabular-nums">
                 {formatDateTime(status.server_time)}

@@ -3,12 +3,9 @@
 from __future__ import annotations
 
 import numpy as np
-import pytest
 
 from core.types import MarketRegime
 from strategy.mode_selector import (
-    STRONG_TREND_SCORE,
-    ModeDecision,
     StrategyMode,
     estimate_volatility_from_prices,
     select_mode,
@@ -87,7 +84,7 @@ class TestSelectMode:
     def test_strong_trend_overrides_volatility(self):
         """강한 추세 점수면 변동성 높아도 스윙."""
         result = select_mode(
-            _regime(MarketRegime.NEUTRAL, STRONG_TREND_SCORE + 5),
+            _regime(MarketRegime.NEUTRAL, 60.0 + 5),
             atr_pct=2.0,
         )
         # NEUTRAL이지만 점수가 STRONG_TREND_SCORE 이상이면 BULL과 동일하게 스윙
