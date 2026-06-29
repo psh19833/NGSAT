@@ -10,6 +10,7 @@ All credentials come from .env via core.config — never hardcoded.
 from __future__ import annotations
 
 import os
+import time
 from datetime import datetime
 from typing import Any
 
@@ -29,6 +30,9 @@ from data.adapters.kis.mapper import (
     parse_stock_info,
 )
 from data.adapters.kis.token_manager import KisTokenManager
+
+
+_BALANCE_CACHE_TTL = 1.5  # seconds — prevent duplicate inquire_balance calls
 
 
 class KisAdapter(BrokerAdapter):
@@ -63,6 +67,7 @@ class KisAdapter(BrokerAdapter):
             base_url=base_url,
             token_manager=self._token_manager,
         )
+        self._balance_cache: dict[str, tuple[float, Any]] = {}
 
     @staticmethod
     def _normalize_account_no(account_no: str) -> str:
@@ -79,6 +84,17 @@ class KisAdapter(BrokerAdapter):
         if len(digits) != 8:
             raise ConfigError(f"KIS account_no must be 8 digits, got: {len(digits)}")
         return digits
+
+    async def _cached_balance(self, key: str, fetcher):
+        """1.5초 TTL 캐시로 inquire_balance 중복 호출 방지."""
+        now = time.monotonic()
+        if key in self._balance_cache:
+            ts, data = self._balance_cache[key]
+            if now - ts < _BALANCE_CACHE_TTL:
+                return data
+        data = await fetcher()
+        self._balance_cache[key] = (now, data)
+        return data
 
     @classmethod
     def from_env(cls) -> "KisAdapter":
@@ -101,57 +117,63 @@ class KisAdapter(BrokerAdapter):
 
     async def get_account_summary(self) -> AccountSummary:
         """Fetch current account balance and position summary."""
-        params = {
-            "CANO": self._account_no,
-            "ACNT_PRDT_CD": self._account_product_code,
-            "AFHR_FLPR_YN": "N",
-            "OFL_YN": "",
-            "INQR_DVSN": "02",
-            "UNPR_DVSN": "01",
-            "FUND_STTL_ICLD_YN": "N",
-            "FNCG_AMT_AUTO_RDPT_YN": "N",
-            "PRCS_DVSN": "00",
-            "CTX_AREA_FK100": "",
-            "CTX_AREA_NK100": "",
-        }
+        async def _fetch():
+            params = {
+                "CANO": self._account_no,
+                "ACNT_PRDT_CD": self._account_product_code,
+                "AFHR_FLPR_YN": "N",
+                "OFL_YN": "",
+                "INQR_DVSN": "02",
+                "UNPR_DVSN": "01",
+                "FUND_STTL_ICLD_YN": "N",
+                "FNCG_AMT_AUTO_RDPT_YN": "N",
+                "PRCS_DVSN": "00",
+                "CTX_AREA_FK100": "",
+                "CTX_AREA_NK100": "",
+            }
 
-        resp = await self._http.get("inquire_balance", params=params)
+            resp = await self._http.get("inquire_balance", params=params)
 
-        if not resp.success:
-            raise BrokerError(f"KIS balance query failed: {resp.msg_cd} {resp.msg1}")
+            if not resp.success:
+                raise BrokerError(f"KIS balance query failed: {resp.msg_cd} {resp.msg1}")
 
-        # The raw response contains both account summary (output2) and positions (output)
-        summary = parse_account_summary(resp.raw)
-        logger.info(
-            f"계좌 조회 성공: 총자산={summary.total_asset:,.0f}, "
-            f"예수금={summary.deposit:,.0f}"
-        )
-        return summary
+            # The raw response contains both account summary (output2) and positions (output)
+            summary = parse_account_summary(resp.raw)
+            logger.info(
+                f"계좌 조회 성공: 총자산={summary.total_asset:,.0f}, "
+                f"예수금={summary.deposit:,.0f}"
+            )
+            return summary
+
+        return await self._cached_balance("summary", _fetch)
 
     async def get_positions(self) -> list[Position]:
         """Fetch all currently held positions."""
-        params = {
-            "CANO": self._account_no,
-            "ACNT_PRDT_CD": self._account_product_code,
-            "AFHR_FLPR_YN": "N",
-            "OFL_YN": "",
-            "INQR_DVSN": "02",
-            "UNPR_DVSN": "01",
-            "FUND_STTL_ICLD_YN": "N",
-            "FNCG_AMT_AUTO_RDPT_YN": "N",
-            "PRCS_DVSN": "00",
-            "CTX_AREA_FK100": "",
-            "CTX_AREA_NK100": "",
-        }
+        async def _fetch():
+            params = {
+                "CANO": self._account_no,
+                "ACNT_PRDT_CD": self._account_product_code,
+                "AFHR_FLPR_YN": "N",
+                "OFL_YN": "",
+                "INQR_DVSN": "02",
+                "UNPR_DVSN": "01",
+                "FUND_STTL_ICLD_YN": "N",
+                "FNCG_AMT_AUTO_RDPT_YN": "N",
+                "PRCS_DVSN": "00",
+                "CTX_AREA_FK100": "",
+                "CTX_AREA_NK100": "",
+            }
 
-        resp = await self._http.get("inquire_balance", params=params)
+            resp = await self._http.get("inquire_balance", params=params)
 
-        if not resp.success:
-            raise BrokerError(f"KIS balance query failed: {resp.msg_cd} {resp.msg1}")
+            if not resp.success:
+                raise BrokerError(f"KIS balance query failed: {resp.msg_cd} {resp.msg1}")
 
-        positions = parse_positions(resp.raw)
-        logger.info(f"보유 포지션 조회: {len(positions)}개")
-        return positions
+            positions = parse_positions(resp.raw)
+            logger.info(f"보유 포지션 조회: {len(positions)}개")
+            return positions
+
+        return await self._cached_balance("positions", _fetch)
 
     async def get_price(self, code: str) -> PriceData:
         """Fetch real-time price for a single stock."""

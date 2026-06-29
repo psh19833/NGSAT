@@ -70,8 +70,9 @@ class RealDataProvider:
     - 지수 데이터: KOSPI 일봉 (FID_COND_MRKT_DIV_CODE=U)
     """
 
-    def __init__(self, codes: list[str] | None = None):
+    def __init__(self, codes: list[str] | None = None, training_days: int = 250):
         self._codes = codes or DEFAULT_UNIVERSE_CODES
+        self._training_days = training_days
         self._adapter: Any = None
         self._universe_cache: list[tuple[StockInfo, list[PriceData]]] | None = None
         self._index_cache: list[PriceData] | None = None
@@ -104,9 +105,9 @@ class RealDataProvider:
             logger.debug(f"데이터 캐시 사용 (날짜: {today})")
             return self._universe_cache, self._index_cache
 
-        logger.info(f"KIS 실데이터 로드 시작: 종목 {len(self._codes)}개")
+        logger.info(f"KIS 실데이터 로드 시작: 종목 {len(self._codes)}개, 기간 {self._training_days}일")
         end = datetime.now(KST)
-        start = end - timedelta(days=250)  # 약 1년
+        start = end - timedelta(days=self._training_days)
 
         # 1. 종목별 일봉 데이터
         universe: list[tuple[StockInfo, list[PriceData]]] = []
@@ -153,7 +154,7 @@ class RealDataProvider:
         KOSPI 지수 코드는 0001, 시장구분코드 U(업종).
         """
         end = datetime.now(KST)
-        start = end - timedelta(days=250)
+        start = end - timedelta(days=self._training_days)
 
         try:
             from data.adapters.kis.mapper import parse_index_history
@@ -182,9 +183,9 @@ class RealDataProvider:
 
     def _synthetic_index(self) -> list[PriceData]:
         """KOSPI 지수 조회 실패 시 합성 지수 반환."""
-        logger.warning("KOSPI 지수 폴백: 합성 지수 사용")
+        logger.warning(f"KOSPI 지수 폴백: 합성 지수 사용 ({self._training_days}일)")
         from backtest.data_loader import generate_synthetic_index
-        return generate_synthetic_index(n_days=250, start_value=2600, seed=100)
+        return generate_synthetic_index(n_days=self._training_days, start_value=2600, seed=100)
 
     async def close(self):
         """Clean up adapter + WebSocket."""

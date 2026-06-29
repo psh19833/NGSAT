@@ -121,8 +121,20 @@ class KisHttpClient:
         try:
             resp = await client.get(url, params=params, headers=headers, timeout=self._timeout)
             resp.raise_for_status()
+        except httpx.HTTPStatusError as e:
+            status = e.response.status_code
+            snippet = (e.response.text or "")[:300]
+            logger.error(
+                f"KIS GET {endpoint_name} HTTP {status}: body={snippet}"
+            )
+            raise BrokerError(
+                f"KIS HTTP error on {endpoint_name}: HTTP {status}"
+            ) from e
+        except httpx.TimeoutException as e:
+            logger.error(f"KIS GET {endpoint_name} 타임아웃: {e}")
+            raise BrokerError(f"KIS HTTP timeout on {endpoint_name}") from e
         except httpx.HTTPError as e:
-            logger.error(f"KIS GET {endpoint_name} HTTP 실패: {type(e).__name__}")
+            logger.error(f"KIS GET {endpoint_name} HTTP 실패: {type(e).__name__}: {e}")
             raise BrokerError(f"KIS HTTP error on {endpoint_name}: {type(e).__name__}") from e
 
         return self._parse_response(resp.json(), endpoint_name)
@@ -155,8 +167,20 @@ class KisHttpClient:
         try:
             resp = await client.post(url, json=json_data, headers=headers, timeout=self._timeout)
             resp.raise_for_status()
+        except httpx.HTTPStatusError as e:
+            status = e.response.status_code
+            snippet = (e.response.text or "")[:300]
+            logger.error(
+                f"KIS POST {endpoint_name} HTTP {status}: body={snippet}"
+            )
+            raise BrokerError(
+                f"KIS HTTP error on {endpoint_name}: HTTP {status}"
+            ) from e
+        except httpx.TimeoutException as e:
+            logger.error(f"KIS POST {endpoint_name} 타임아웃: {e}")
+            raise BrokerError(f"KIS HTTP timeout on {endpoint_name}") from e
         except httpx.HTTPError as e:
-            logger.error(f"KIS POST {endpoint_name} HTTP 실패: {type(e).__name__}")
+            logger.error(f"KIS POST {endpoint_name} HTTP 실패: {type(e).__name__}: {e}")
             raise BrokerError(f"KIS HTTP error on {endpoint_name}: {type(e).__name__}") from e
 
         return self._parse_response(resp.json(), endpoint_name)

@@ -69,10 +69,11 @@ async def run_backtest(config):
     # ── Try KIS real data first ──
     universe = []
     index_prices = []
+    training_days = config.strategy.ml_training_days
     try:
         from data.real_data_provider import RealDataProvider
-        logger.info("KIS 실데이터 로드 시도...")
-        provider = RealDataProvider()
+        logger.info(f"KIS 실데이터 로드 시도 (기간: {training_days}일)...")
+        provider = RealDataProvider(training_days=training_days)
         universe, index_prices = await provider.load()
         if universe:
             logger.info(f"KIS 실데이터 로드 성공: {len(universe)}종목, 지수 {len(index_prices)}일")
@@ -83,9 +84,10 @@ async def run_backtest(config):
 
     # ── Fallback to synthetic ──
     if not universe:
-        logger.info("합성 데이터 생성 중...")
-        universe = generate_synthetic_universe(n_stocks=20, n_days=250, seed=42)
-        index_prices = generate_synthetic_index(n_days=250, seed=100)
+        training_days = config.strategy.ml_training_days
+        logger.info(f"합성 데이터 생성 중... (기간: {training_days}일)")
+        universe = generate_synthetic_universe(n_stocks=20, n_days=training_days, seed=42)
+        index_prices = generate_synthetic_index(n_days=training_days, seed=100)
 
     all_prices = [prices for _, prices in universe]
     codes = [info.code for info, _ in universe]
@@ -232,7 +234,7 @@ async def run_live(config, args):
         """Main trading loop — runs orchestrator cycle with real KIS data."""
         from data.real_data_provider import RealDataProvider
 
-        data_provider = RealDataProvider()
+        data_provider = RealDataProvider(training_days=config.strategy.ml_training_days)
         universe, index_prices = await data_provider.load()
 
         if not universe:

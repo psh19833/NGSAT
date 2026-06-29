@@ -497,6 +497,7 @@ def create_app(orchestrator=None, config=None) -> FastAPI:
 
     async def broadcast(event: dict):
         """Broadcast event to all connected WebSocket clients."""
+        nonlocal connected_ws
         dead: set[WebSocket] = set()
         for ws in connected_ws:
             try:

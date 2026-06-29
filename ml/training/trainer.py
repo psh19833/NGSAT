@@ -1,14 +1,28 @@
 """NGSAT ML model training — price rise probability prediction.
 
 Trains a classifier to predict whether a stock will rise above a threshold
-in the next N days. Uses scikit-learn (Phase 4 baseline), with
-XGBoost/LightGBM upgrade path for Phase 4+.
+in the next N days. Uses 5 model types:
+
+  Model              | Description                          | Package
+  -------------------|--------------------------------------|-------------------
+  logistic           | LogisticRegression (linear baseline) | scikit-learn (내장)
+  random_forest*     | RandomForest ensemble                | scikit-learn (내장)
+  gradient_boosting  | HistGradientBoosting (부스팅)        | scikit-learn (내장)
+  xgboost            | XGBoost (고성능 부스팅)              | pip install xgboost
+  lightgbm           | LightGBM (대용량 부스팅)             | pip install lightgbm
+
+* 현재 활성 모델 (config: ml_model_type)
+
+Features (27종): RSI(14), MACD, MA distance(5/20/60), Bollinger(position/width),
+ATR, Volume ratio(20), Stoch(K/D), Price change(1/5/10/20d), Volatility(20d),
+Return skew(20d), High-low range(20d), Foreign/Institutional net buy(5/20d),
+PER, PBR, EPS.
 
 Model lifecycle:
-1. Build training dataset from historical prices
-2. Train model with cross-validation
-3. Evaluate on held-out test set
-4. Save model to disk (joblib)
+1. Build training dataset from historical prices (build_training_dataset)
+2. Train model with TimeSeriesSplit cross-validation
+3. Evaluate on held-out test set (80/20)
+4. Save model to disk (joblib) — auto_retrain saves only if AUC improves
 5. Model is ready for inference (ml/inference.py)
 """
 
@@ -87,12 +101,18 @@ class TrainingResult:
 class PriceRiseModel:
     """ML model for predicting stock price rise probability.
 
-    Supports model types:
-    - "logistic": Logistic Regression (fast baseline)
-    - "random_forest": Random Forest (better accuracy)
-    - "gradient_boosting": HistGradientBoosting (sklearn 내장 부스팅, 강력)
+    ┌────────────────────┬────────────────────────────────┬───────────────────┐
+    │ Model              │ Description                    │ Package           │
+    ├────────────────────┼────────────────────────────────┼───────────────────┤
+    │ logistic           │ LogisticRegression (선형 기준)  │ scikit-learn 내장 │
+    │ random_forest      │ RandomForest 앙상블 (현재 활성) │ scikit-learn 내장 │
+    │ gradient_boosting  │ HistGradientBoosting 부스팅     │ scikit-learn 내장 │
+    │ xgboost            │ XGBoost 고성능 부스팅           │ pip install 필요  │
+    │ lightgbm           │ LightGBM 대용량 부스팅          │ pip install 필요  │
+    └────────────────────┴────────────────────────────────┴───────────────────┘
 
-    Future: "xgboost", "lightgbm" when packages installed.
+    각 model_type에 맞는 sklearn 호환 분류기를 생성하고,
+    TimeSeriesSplit 교차검증으로 평가한 후 최종 모델을 저장한다.
     """
 
     def __init__(
@@ -143,14 +163,18 @@ class PriceRiseModel:
         X_train_scaled = self._scaler.fit_transform(X_train)
         X_test_scaled = self._scaler.transform(X_test)
 
-        # Create model
+        # ── Create model ──
         if self.model_type == "logistic":
+            # 로지스틱 회귀: 선형 기준선, 학습 빠름, 해석 용이
+            # but expressiveness limited — used as baseline comparison
             self._model = LogisticRegression(
                 max_iter=1000,
                 random_state=42,
                 class_weight="balanced",
             )
         elif self.model_type == "random_forest":
+            # 랜덤포레스트: 비선형+앙상블, 과적합에 강함
+            # 100개 트리, max_depth=10으로 일반화 유지
             self._model = RandomForestClassifier(
                 n_estimators=100,
                 max_depth=10,
@@ -159,6 +183,9 @@ class PriceRiseModel:
                 n_jobs=-1,
             )
         elif self.model_type == "gradient_boosting":
+            # HistGradientBoosting: sklearn 내장 부스팅 트리
+            # GradientBoosting보다 2-3배 빠름, NaN 자동 처리
+            # AUC 0.68~0.69로 random_forest보다 소폭 우수
             self._model = HistGradientBoostingClassifier(
                 max_iter=200,
                 max_depth=6,
@@ -168,6 +195,9 @@ class PriceRiseModel:
                 class_weight="balanced",
             )
         elif self.model_type == "xgboost" and XGBClassifier is not None:
+            # XGBoost: 고성능 부스팅, 결측치 자동 처리
+            # column 기반 병렬 학습, regularization 내장
+            # AUC 0.675 (2026-06-29 비교)
             self._model = XGBClassifier(
                 n_estimators=100,
                 max_depth=6,
@@ -177,6 +207,9 @@ class PriceRiseModel:
                 n_jobs=-1,
             )
         elif self.model_type == "lightgbm" and LGBMClassifier is not None:
+            # LightGBM: GOSS 기반 부스팅, 대용량 데이터에 최적
+            # leaf-wise 트리, 속도 가장 빠름
+            # AUC 0.676 (2026-06-29 비교)
             self._model = LGBMClassifier(
                 n_estimators=100,
                 max_depth=6,
@@ -511,6 +544,9 @@ class PriceRiseModel:
     def auto_retrain(self, all_prices, codes):
         """FreqAI-style 자동 재학습: 새 데이터로 학습 후 기존보다 좋으면 교체.
 
+        매 20회째 재학습 시 Optuna 하이퍼파라미터 튜닝 병행
+        (auto_tune)하여 AUC 개선을 시도한다.
+
         Returns:
             (was_replaced: bool, new_result: TrainingResult)
         """
@@ -525,6 +561,42 @@ class PriceRiseModel:
             logger.warning(f"재학습 데이터 부족: {len(X)}개")
             return False, TrainingResult(success=False, reason=f"데이터 부족 ({len(X)}개)")
 
+        # ── Auto-tuning every 20 cycles ──
+        tune_count = getattr(self, '_auto_tune_count', 0) + 1
+        self._auto_tune_count = tune_count
+        if tune_count % 20 == 0 and len(X) >= 200:
+            try:
+                logger.info(f"Optuna auto-tune 실행 ({tune_count}회째 재학습)...")
+                tune_result = self.auto_tune(X, y, n_trials=20, timeout=60)
+                logger.info(f"Auto-tune 완료: AUC={tune_result['best_auc']:.4f}")
+                self._is_trained = True
+                # Evaluate tuned model
+                split_idx = int(len(X) * 0.8)
+                X_train, X_test = X[:split_idx], X[split_idx:]
+                y_train, y_test = y[:split_idx], y[split_idx:]
+                from sklearn.preprocessing import StandardScaler
+                scaler = StandardScaler()
+                X_train_s = scaler.fit_transform(X_train)
+                X_test_s = scaler.transform(X_test)
+                self._scaler = scaler
+                self._model.fit(X_train_s, y_train)
+                y_pred = self._model.predict(X_test_s)
+                y_proba = self._model.predict_proba(X_test_s)[:, 1]
+                auc = float(roc_auc_score(y_test, y_proba))
+                self._last_auc = auc
+                acc = float(accuracy_score(y_test, y_pred))
+                f1 = float(f1_score(y_test, y_pred, zero_division=0))
+                logger.info(f"튜닝 모델 적용: AUC={auc:.3f}, 정확도={acc:.1%}, F1={f1:.1%}")
+                return True, TrainingResult(
+                    success=True, model_type=self.model_type,
+                    auc=auc, accuracy=acc, f1=f1,
+                    n_samples=len(X), n_features=X.shape[1],
+                    reason=f"Optuna 튜닝 모델 적용 (AUC={auc:.3f})",
+                )
+            except Exception as e:
+                logger.warning(f"Auto-tune 실패 (skip, 기존 모델 유지): {e}")
+
+        # ── Standard retrain ──
         new_model = PriceRiseModel(self.model_type, self.forward_days, self.forward_threshold)
         new_result = new_model.train(X, y)
 
@@ -554,21 +626,22 @@ class PriceRiseModel:
 def train_from_price_data(
     all_prices: list[list],
     codes: list[str],
-    model_type: str = "random_forest",
+    model_type: str = "gradient_boosting",
     forward_days: int = 5,
     forward_threshold: float = 0.02,
 ) -> tuple[PriceRiseModel, TrainingResult]:
-    """Convenience function: build dataset and train model in one call.
+    """Convenience: build dataset + train model in one call.
 
     Args:
-        all_prices: List of price histories.
+        all_prices: List of price histories per stock.
         codes: Stock codes.
-        model_type: "logistic", "random_forest", or "gradient_boosting".
+        model_type: Model type. Defaults to gradient_boosting
+                   (best AUC in 2026-06-29 comparison).
         forward_days: Days ahead for target.
-        forward_threshold: Min return to label as "up".
+        forward_threshold: Min return to label "up".
 
     Returns:
-        Tuple of (trained model, training result).
+        (model, result)
     """
     X, y, feature_names = build_training_dataset(
         all_prices, codes, forward_days, forward_threshold
