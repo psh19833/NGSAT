@@ -183,6 +183,14 @@ class RealDataProvider:
         # 2. KOSPI 지수 데이터
         index_prices = await self._fetch_index(adapter)
 
+        # KOSPI 지수 API가 부족하면 종목군 평균으로 시장 지수 계산
+        if len(index_prices) < 20 and universe:
+            logger.warning(
+                f"KOSPI 지수 부족 ({len(index_prices)}일) — "
+                f"종목 {len(universe)}개 평균으로 시장 지수 계산"
+            )
+            index_prices = self._compute_market_index(universe)
+
         self._universe_cache = universe
         self._index_cache = index_prices
         self._cache_date = today
@@ -245,6 +253,52 @@ class RealDataProvider:
         logger.warning(f"KOSPI 지수 폴백: 합성 지수 사용 ({self._training_days}일)")
         from backtest.data_loader import generate_synthetic_index
         return generate_synthetic_index(n_days=self._training_days, start_value=2600, seed=100)
+
+    def _compute_market_index(
+        self, universe: list[tuple[Any, list[PriceData]]]
+    ) -> list[PriceData]:
+        """종목군 평균 종가로 시장 지수 계산.
+
+        KOSPI 지수 API가 부족할 때 종목 37개 평균으로 대체.
+        실제 시장 상황을 반영하며, refresh_prices()로 업데이트 시 변동.
+        """
+        from collections import defaultdict
+        from zoneinfo import ZoneInfo
+        KST = ZoneInfo("Asia/Seoul")
+
+        daily_closes: dict[str, list[float]] = defaultdict(list)
+        daily_volumes: dict[str, list[float]] = defaultdict(list)
+
+        for _, prices in universe:
+            for p in prices:
+                k = p.timestamp.strftime("%Y%m%d")
+                daily_closes[k].append(p.close)
+                daily_volumes[k].append(p.volume)
+
+        if not daily_closes:
+            return self._synthetic_index()
+
+        result: list[PriceData] = []
+        for day_key in sorted(daily_closes.keys()):
+            closes = daily_closes[day_key]
+            avg_close = sum(closes) / len(closes)
+            avg_volume = sum(daily_volumes[day_key]) / len(daily_volumes[day_key])
+            dt = datetime.strptime(day_key, "%Y%m%d").replace(tzinfo=KST)
+            result.append(PriceData(
+                code="MARKET_INDEX",
+                timestamp=dt,
+                open=avg_close,
+                high=avg_close * 1.005,
+                low=avg_close * 0.995,
+                close=avg_close,
+                volume=int(avg_volume),
+            ))
+
+        logger.info(
+            f"시장 지수 계산 완료: {len(result)}일 "
+            f"({len(universe)}종목 평균)"
+        )
+        return result
 
     async def close(self):
         """Clean up adapter + WebSocket."""
@@ -337,6 +391,13 @@ class RealDataProvider:
 
         # Refresh index
         new_index = await self._fetch_index(adapter)
+        if not new_index or len(new_index) < 20:
+            # KOSPI 지수 API 부족 → 종목군 평균으로 재계산
+            if self._universe_cache:
+                new_index = self._compute_market_index(self._universe_cache)
+            else:
+                new_index = self._synthetic_index()
+
         if new_index:
             # Update last bar or append
             if self._index_cache and self._index_cache[-1].timestamp.date() == new_index[-1].timestamp.date():
