@@ -8,6 +8,7 @@ import {
   Search,
   SlidersHorizontal,
   RotateCcw,
+  Menu, X,
 } from 'lucide-react'
 
 const TABS = [
@@ -21,87 +22,117 @@ const TABS = [
   { id: 'backtest', label: '백테스트', icon: BarChart3 },
 ]
 
-export default function Sidebar({ activeTab, onTabChange, onRestart, status }) {
+export default function Sidebar({ activeTab, onTabChange, onRestart, status, mobileOpen, onToggleMobile }) {
   const state = status?.state || 'idle'
   const isRunning = status?.is_running || false
   const serverConnected = status?.connected !== false
 
   return (
-    <aside className="w-60 bg-ngsat-card border-r border-ngsat-border flex flex-col">
-      {/* Logo */}
-      <div className="px-6 py-5 border-b border-ngsat-border">
-        <div className="flex items-center gap-2.5">
-          <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-ngsat-accent to-ngsat-purple flex items-center justify-center">
-            <span className="text-white font-bold text-sm">N</span>
-          </div>
-          <div>
-            <h2 className="text-sm font-semibold text-ngsat-text">NGSAT</h2>
-            <p className="text-xs text-ngsat-muted">Stock Auto Trader</p>
-          </div>
-        </div>
-      </div>
-
-      {/* Server Control */}
-      <div className="px-5 py-3 border-b border-ngsat-border">
-        <div className="flex items-center justify-between mb-2">
+    <>
+      {/* Mobile backdrop */}
+      {mobileOpen && (
+        <div
+          className="fixed inset-0 z-30 bg-black/50 md:hidden"
+          onClick={onToggleMobile}
+          aria-hidden="true"
+        />
+      )}
+      <aside className={`fixed md:relative z-40 h-full
+        w-60 bg-ngsat-card border-r border-ngsat-border flex flex-col
+        transition-transform duration-200
+        ${mobileOpen ? 'translate-x-0' : '-translate-x-full'}
+        md:translate-x-0
+      `}>
+        {/* Mobile close button */}
+        <div className="flex items-center justify-between px-4 py-3 border-b border-ngsat-border md:hidden">
           <div className="flex items-center gap-2">
-            <div className={`w-2 h-2 rounded-full ${serverConnected ? 'bg-ngsat-green' : 'bg-ngsat-red'}`} />
-            <span className="text-xs text-ngsat-muted">서버</span>
+            <div className="w-7 h-7 rounded-lg bg-gradient-to-br from-ngsat-accent to-ngsat-purple flex items-center justify-center">
+              <span className="text-white font-bold text-xs">N</span>
+            </div>
+            <span className="text-sm font-semibold text-ngsat-text">NGSAT</span>
           </div>
-          <span className={`text-xs font-medium ${serverConnected ? 'text-ngsat-green' : 'text-ngsat-red'}`}>
-            {serverConnected ? '연결됨' : '미연결'}
-          </span>
+          <button onClick={onToggleMobile} aria-label="사이드바 닫기" className="text-ngsat-muted hover:text-ngsat-text">
+            <X className="w-5 h-5" />
+          </button>
         </div>
-        <button
-          onClick={onRestart}
-          disabled={!serverConnected}
-          className="w-full py-1.5 rounded text-xs font-medium transition-all
-            bg-ngsat-border/50 text-ngsat-muted hover:bg-ngsat-border hover:text-ngsat-text
-            disabled:opacity-30 disabled:cursor-not-allowed"
-        >
-          <RotateCcw className="inline-block w-3 h-3 mr-1.5 -mt-0.5" />
-          서버 재시작
-        </button>
-      </div>
 
-      {/* Navigation */}
-      <nav className="flex-1 py-4">
-        {TABS.map(tab => {
-          const Icon = tab.icon
-          return (
-            <button
-              key={tab.id}
-              onClick={() => onTabChange(tab.id)}
-              className={`
-                w-full flex items-center gap-3 px-6 py-3 text-sm transition-all
-                ${activeTab === tab.id
-                  ? 'text-ngsat-text bg-ngsat-accent/10 border-r-2 border-ngsat-accent'
-                  : 'text-ngsat-muted hover:text-ngsat-text hover:bg-ngsat-border/30'
-                }
-              `}
-            >
-              <Icon className="w-4 h-4" />
-              {tab.label}
-            </button>
-          )
-        })}
-      </nav>
-
-      {/* Status Indicator */}
-      <div className="px-6 py-4 border-t border-ngsat-border">
-        <div className="flex items-center gap-2 mb-1">
-          <div className={`w-2 h-2 rounded-full ${isRunning ? 'bg-ngsat-green animate-pulse' : 'bg-ngsat-muted'}`} />
-          <span className={`text-sm font-medium ${stateColor(state)}`}>
-            {stateLabel(state)}
-          </span>
+        {/* Logo (desktop) */}
+        <div className="hidden md:block px-6 py-5 border-b border-ngsat-border">
+          <div className="flex items-center gap-2.5">
+            <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-ngsat-accent to-ngsat-purple flex items-center justify-center">
+              <span className="text-white font-bold text-sm">N</span>
+            </div>
+            <div>
+              <h2 className="text-sm font-semibold text-ngsat-text">NGSAT</h2>
+              <p className="text-xs text-ngsat-muted">Stock Auto Trader</p>
+            </div>
+          </div>
         </div>
-        {status?.risk_halted && (
-          <p className="text-xs text-ngsat-red mt-1">⚠ 리스크 자동중단</p>
-        )}
-        <p className="text-xs text-ngsat-muted mt-1">
-          사이클 #{status?.cycle_count || 0}
-        </p>
-      </div>
-    </aside>
+
+        {/* Server Control */}
+        <div className="px-5 py-3 border-b border-ngsat-border">
+          <div className="flex items-center justify-between mb-2">
+            <div className="flex items-center gap-2">
+              <div className={`w-2 h-2 rounded-full ${serverConnected ? 'bg-ngsat-green' : 'bg-ngsat-red'}`} />
+              <span className="text-xs text-ngsat-muted">서버</span>
+            </div>
+            <span className={`text-xs font-medium ${serverConnected ? 'text-ngsat-green' : 'text-ngsat-red'}`}>
+              {serverConnected ? '연결됨' : '미연결'}
+            </span>
+          </div>
+          <button
+            onClick={onRestart}
+            disabled={!serverConnected}
+            className="w-full py-1.5 rounded text-xs font-medium transition-all
+              bg-ngsat-border/50 text-ngsat-muted hover:bg-ngsat-border hover:text-ngsat-text
+              disabled:opacity-30 disabled:cursor-not-allowed"
+          >
+            <RotateCcw className="inline-block w-3 h-3 mr-1.5 -mt-0.5" />
+            서버 재시작
+          </button>
+        </div>
+
+        {/* Navigation */}
+        <nav className="flex-1 py-4">
+          {TABS.map(tab => {
+            const Icon = tab.icon
+            const isActive = activeTab === tab.id
+            return (
+              <button
+                key={tab.id}
+                onClick={() => { onTabChange(tab.id); onToggleMobile?.() }}
+                aria-current={isActive ? 'page' : undefined}
+                className={`
+                  w-full flex items-center gap-3 px-6 py-3 text-sm transition-all
+                  ${isActive
+                    ? 'text-ngsat-text bg-ngsat-accent/10 border-r-2 border-ngsat-accent'
+                    : 'text-ngsat-muted hover:text-ngsat-text hover:bg-ngsat-border/30'
+                  }
+                `}
+              >
+                <Icon className="w-4 h-4" />
+                {tab.label}
+              </button>
+            )
+          })}
+        </nav>
+
+        {/* Status Indicator */}
+        <div className="px-6 py-4 border-t border-ngsat-border">
+          <div className="flex items-center gap-2 mb-1">
+            <div className={`w-2 h-2 rounded-full ${isRunning ? 'bg-ngsat-green animate-pulse' : 'bg-ngsat-muted'}`} />
+            <span className={`text-sm font-medium ${stateColor(state)}`}>
+              {stateLabel(state)}
+            </span>
+          </div>
+          {status?.risk_halted && (
+            <p className="text-xs text-ngsat-red mt-1">⚠ 리스크 자동중단</p>
+          )}
+          <p className="text-xs text-ngsat-muted mt-1">
+            사이클 #{status?.cycle_count || 0}
+          </p>
+        </div>
+      </aside>
+    </>
   )
 }

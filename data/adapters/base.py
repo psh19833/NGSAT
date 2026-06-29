@@ -11,7 +11,7 @@ from abc import ABC, abstractmethod
 from datetime import datetime
 from typing import Optional
 
-from core.types import AccountSummary, OrderSide, Position, PriceData, StockInfo
+from core.types import AccountSummary, OrderSide, OrderStatus, Position, PriceData, StockInfo
 
 
 class BrokerAdapter(ABC):
@@ -98,6 +98,22 @@ class BrokerAdapter(ABC):
 
         Raises:
             BrokerError: If order submission fails.
+        """
+        ...
+
+    @abstractmethod
+    async def get_order_status(self, order_id: str) -> OrderStatus:
+        """Check the current status of a submitted order.
+
+        Args:
+            order_id: Broker-assigned order ID to check.
+
+        Returns:
+            OrderStatus enum value (SUBMITTED, FILLED, PARTIALLY_FILLED,
+            CANCELLED, or REJECTED).
+
+        Raises:
+            BrokerError: If status inquiry fails or order_id is unknown.
         """
         ...
 

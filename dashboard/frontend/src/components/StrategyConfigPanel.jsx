@@ -236,6 +236,8 @@ function FieldRow({ field, value, onChange }) {
           <label className="text-sm font-medium text-ngsat-text">{field.label}</label>
           <button
             onClick={() => onChange(field.key, !value)}
+            role="switch"
+            aria-checked={value}
             className={`relative w-10 h-5 rounded-full transition-colors ${
               value ? 'bg-ngsat-green' : 'bg-ngsat-border'
             }`}
@@ -292,7 +294,7 @@ function FieldRow({ field, value, onChange }) {
           step={field.step}
           value={value ?? field.min}
           onChange={e => onChange(field.key, parseFloat(e.target.value) || field.min)}
-          className="w-16 px-2 py-1 text-xs text-right font-mono bg-ngsat-bg border border-ngsat-border rounded 
+          className="w-16 px-2 py-1 text-xs text-right font-mono bg-ngsat-bg border border-ngsat-border rounded
             text-ngsat-text focus:outline-none focus:border-ngsat-accent/50 tabular-nums"
         />
       </div>
@@ -334,7 +336,7 @@ function PresetButtons({ onSelect, current }) {
 }
 
 // ── Main Panel ──
-export default function StrategyConfigPanel({ api }) {
+export default function StrategyConfigPanel({ api, onDirtyChange }) {
   const [config, setConfig] = useState(null)
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
@@ -373,6 +375,7 @@ export default function StrategyConfigPanel({ api }) {
   const handleChange = (key, value) => {
     setConfig(prev => prev ? { ...prev, [key]: value } : prev)
     setActivePreset('')
+    onDirtyChange?.(true)
   }
 
   const handleRetrain = async () => {
@@ -392,6 +395,7 @@ export default function StrategyConfigPanel({ api }) {
 
   const handlePreset = (values) => {
     setConfig(prev => prev ? { ...prev, ...values } : prev)
+    onDirtyChange?.(true)
     // find matching preset name
     for (const [name, p] of Object.entries(PRESETS)) {
       if (Object.entries(p.values).every(([k, v]) => Math.abs(v - values[k]) < 0.001)) {
@@ -408,6 +412,7 @@ export default function StrategyConfigPanel({ api }) {
     const resp = await api.updateStrategyConfig(config)
     if (resp?.connected) {
       setMessage(resp.message || '저장 완료')
+      onDirtyChange?.(false)
       if (resp.restart_required) {
         setMessage(m => m + ' — 서버 재시작 중...')
         setTimeout(async () => {
@@ -429,6 +434,7 @@ export default function StrategyConfigPanel({ api }) {
     if (resp?.config) {
       setConfig(resp.config)
       setActivePreset('균형형')
+      onDirtyChange?.(false)
       setMessage(resp.message || '기본값 복원 완료')
       if (resp.restart_required) {
         setTimeout(async () => {
@@ -462,7 +468,7 @@ export default function StrategyConfigPanel({ api }) {
           <button
             onClick={handleReset}
             disabled={saving}
-            className="px-3 py-1.5 text-xs text-ngsat-muted border border-ngsat-border rounded-lg 
+            className="px-3 py-1.5 text-xs text-ngsat-muted border border-ngsat-border rounded-lg
               hover:text-ngsat-red hover:border-ngsat-red/30 transition-all disabled:opacity-50"
           >
             기본값 복원
@@ -470,7 +476,7 @@ export default function StrategyConfigPanel({ api }) {
           <button
             onClick={handleSave}
             disabled={saving}
-            className="px-4 py-1.5 text-sm text-white bg-ngsat-accent rounded-lg 
+            className="px-4 py-1.5 text-sm text-white bg-ngsat-accent rounded-lg
               hover:bg-ngsat-accent/80 transition-all disabled:opacity-50"
           >
             {saving ? '저장 중...' : '설정 저장'}
@@ -529,7 +535,7 @@ export default function StrategyConfigPanel({ api }) {
                 <button
                   onClick={handleRetrain}
                   disabled={retraining}
-                  className="w-full px-4 py-2 text-sm font-medium text-white bg-ngsat-accent rounded-lg 
+                  className="w-full px-4 py-2 text-sm font-medium text-white bg-ngsat-accent rounded-lg
                     hover:bg-ngsat-accent/80 transition-all disabled:opacity-50 disabled:cursor-wait"
                 >
                   {retraining ? '재학습 중... (1~2분)' : '⚡ 지금 재학습 실행'}

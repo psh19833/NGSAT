@@ -4,8 +4,8 @@ Connects to KIS WebSocket server for real-time stock prices.
 Falls back to REST API polling when WebSocket is unavailable.
 
 WebSocket endpoints:
-  Real: wss://openapi.koreainvestment.com:21000
-  Demo: wss://openapi.koreainvestment.com:21001
+  Real: ws://ops.koreainvestment.com:21000
+  Demo: ws://ops.koreainvestment.com:31000
 
 Protocol:
   1. Get approval_key via REST POST /oauth2/Approval
@@ -29,8 +29,8 @@ from core.logger import logger
 TR_REALTIME_PRICE = "H0UCNT0"    # 주식체결가 (실시간 현재가)
 TR_REALTIME_ASKING = "H0UNCN0"   # 주식호가 (10단계)
 
-WS_URL_REAL = "wss://openapi.koreainvestment.com:21000"
-WS_URL_DEMO = "wss://openapi.koreainvestment.com:21001"
+WS_URL_REAL = "ws://ops.koreainvestment.com:21000"
+WS_URL_DEMO = "ws://ops.koreainvestment.com:31000"
 
 
 class KisWebSocketClient:

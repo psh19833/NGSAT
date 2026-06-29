@@ -16,18 +16,18 @@ from typing import Any
 
 from core.exceptions import BrokerError, ConfigError
 from core.logger import logger
-from core.types import AccountSummary, OrderSide, Position, PriceData, StockInfo
+from core.types import AccountSummary, OrderSide, OrderStatus, Position, PriceData, StockInfo
 from data.adapters.base import BrokerAdapter
 from data.adapters.kis.client import KisHttpClient
 from data.adapters.kis.endpoints import BUY_TR_ID, SELL_TR_ID
 from data.adapters.kis.mapper import (
     build_order_payload,
     parse_account_summary,
+    parse_minute_history,
+    parse_order_status,
     parse_positions,
     parse_price,
     parse_price_history,
-    parse_minute_history,
-    parse_stock_info,
 )
 from data.adapters.kis.token_manager import KisTokenManager
 
@@ -324,6 +324,45 @@ class KisAdapter(BrokerAdapter):
         """
         logger.warning(f"cancel_order not yet fully implemented for order_id={order_id}")
         return False
+
+    async def get_order_status(self, order_id: str) -> OrderStatus:
+        """Check current status of a submitted order via KIS inquire-order.
+
+        Args:
+            order_id: KIS order number (ODNO) to check.
+
+        Returns:
+            OrderStatus enum.
+
+        Raises:
+            BrokerError: If inquiry fails.
+        """
+        from datetime import datetime
+
+        now = datetime.now()
+        params = {
+            "CANO": self._account_no,
+            "ACNT_PRDT_CD": self._account_product_code,
+            "ORD_STR_DT": now.strftime("%Y%m%d"),
+            "ORD_GNO_BRNO": "",
+            "ODNO": order_id,
+            "CCLD_NCCS_DVSN": "00",
+            "SLL_BUY_DVSN_CD": "00",
+            "CTX_AREA_FK100": "",
+            "CTX_AREA_NK100": "",
+        }
+
+        resp = await self._http.get("inquire_order", params=params)
+
+        if not resp.success:
+            raise BrokerError(
+                f"KIS order status inquiry failed for {order_id}: "
+                f"{resp.msg_cd} {resp.msg1}"
+            )
+
+        status = parse_order_status(resp.raw, order_id)
+        logger.info(f"주문 상태 조회: {order_id} → {status.value}")
+        return status
 
     async def is_market_open(self) -> bool:
         """Check if the stock market is currently open.

@@ -73,6 +73,15 @@ _ORDER_CASH = KisEndpoint(
     description="현금 주문 (매수/매도)",
 )
 
+_ORDER_INQUIRY = KisEndpoint(
+    name="inquire_order",
+    category=KisCategory.TRADING,
+    path="/uapi/domestic-stock/v1/trading/inquire-order",
+    method="GET",
+    tr_id="TTTC8036R",
+    description="주식 주문 조회 (ODNO로 단일 주문 상태 확인)",
+)
+
 # ── 시세 (Quotation) ──
 _CURRENT_PRICE = KisEndpoint(
     name="inquire_price",
@@ -168,7 +177,7 @@ _ENDPOINTS: dict[str, KisEndpoint] = {
     ep.name: ep
     for ep in [
         _TOKEN_ISSUE,
-        _BALANCE, _DAILY_FILLS, _ORDER_CASH,
+        _BALANCE, _DAILY_FILLS, _ORDER_CASH, _ORDER_INQUIRY,
         _CURRENT_PRICE, _DAILY_CHART, _MINUTE_CHART, _ORDERBOOK,
         _INDEX_DAILY,
         _STOCK_BASIC,

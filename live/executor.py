@@ -85,6 +85,8 @@ class OrderExecutor:
         self._controller = controller
         self._account_no = account_no
         self._account_product_code = account_product_code
+        # BE-1: idempotency — track successfully submitted orders to prevent duplicates
+        self._submitted_orders: dict[tuple[str, str], str] = {}  # (code, side) -> order_id
 
     async def _submit_with_retry(
         self,
@@ -92,32 +94,75 @@ class OrderExecutor:
         side: OrderSide,
         quantity: int,
         price: float | None,
+        idempotency_key: str = "",
         max_retries: int = 3,
     ) -> str:
-        """Submit order with exponential backoff retry.
+        """Submit order with idempotency and exponential backoff retry.
 
         Args:
             code: Stock code.
             side: Buy or sell.
             quantity: Number of shares.
             price: Limit price (None for market).
+            idempotency_key: Unique key for this order attempt (prevents duplicates).
             max_retries: Max retry attempts (default 3).
 
         Returns:
             Order ID string.
 
         Raises:
-            BrokerError: If all retries fail.
+            BrokerError: If all retries fail (transient) or order is rejected (permanent).
         """
+        # Check if this (code, side) was already submitted successfully
+        prev_order_id = self._submitted_orders.get((code, side.value))
+        if prev_order_id:
+            try:
+                status = await self._broker.get_order_status(prev_order_id)
+                logger.info(
+                    f"중복 주문 방지: {code} {side.value} "
+                    f"기존 주문={prev_order_id} 상태={status.value}"
+                )
+                return prev_order_id
+            except BrokerError:
+                logger.warning(
+                    f"기존 주문 상태 조회 실패, 재시도 진행: {code} {side.value}"
+                )
+
         base_delay = 1.0
         last_error = None
         for attempt in range(max_retries):
             try:
-                return await self._broker.submit_order(
+                order_id = await self._broker.submit_order(
                     code=code, side=side, quantity=quantity, price=price,
                 )
+                # Store successful submission for idempotency
+                self._submitted_orders[(code, side.value)] = order_id
+                return order_id
             except BrokerError as e:
                 last_error = e
+                err_str = str(e)
+
+                # Permanent rejection (4xx-equivalent: KIS rt_cd != "0"):
+                # insufficient balance, invalid params, etc. — do NOT retry
+                if "rejected" in err_str.lower() or "거절" in err_str:
+                    logger.error(
+                        f"주문 거절(재시도 안함): {code} {side.value} — {e}"
+                    )
+                    raise
+
+                # Check if a previous attempt's order was actually accepted
+                prev_id = self._submitted_orders.get((code, side.value))
+                if prev_id:
+                    try:
+                        existing_status = await self._broker.get_order_status(prev_id)
+                        logger.info(
+                            f"재시도 전 기존 주문 확인: {code} {prev_id} "
+                            f"상태={existing_status.value} — 재시도 중단"
+                        )
+                        return prev_id
+                    except BrokerError:
+                        pass  # couldn't verify — retry below
+
                 if attempt < max_retries - 1:
                     delay = base_delay * (2 ** attempt)
                     logger.warning(

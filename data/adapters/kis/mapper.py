@@ -14,7 +14,7 @@ from __future__ import annotations
 from datetime import datetime
 from typing import Any
 
-from core.types import AccountSummary, Market, OrderSide, Position, PriceData, StockInfo
+from core.types import AccountSummary, Market, OrderSide, OrderStatus, Position, PriceData, StockInfo
 
 
 def _int(value: Any, default: int = 0) -> int:
@@ -341,3 +341,53 @@ def parse_index_history(raw: dict[str, Any], code: str = "KOSPI") -> list[PriceD
         ))
 
     return result
+
+
+def parse_order_status(raw: dict[str, Any], order_id: str) -> OrderStatus:
+    """KIS 주문조회(inquire_order) 응답 → OrderStatus.
+
+    KIS inquire-order 응답의 output 필드에서 주문 상태를 판단:
+      - odno: 주문번호
+      - ord_qty: 주문수량
+      - ccld_qty: 체결수량
+      - rjpg_yn: 거절여부 (Y/N)
+      - cncl_yn: 취소여부 (Y/N)
+
+    Args:
+        raw: KIS 원본 응답 dict.
+        order_id: 확인할 주문번호.
+
+    Returns:
+        OrderStatus enum.
+    """
+    output = raw.get("output")
+    if not isinstance(output, dict):
+        output = raw.get("output1") or raw.get("output2") or {}
+
+    odno = str(output.get("odno") or "")
+    if odno and odno != order_id:
+        for key in ("output1", "output2"):
+            items = raw.get(key)
+            if isinstance(items, list):
+                for item in items:
+                    if isinstance(item, dict) and str(item.get("odno") or "") == order_id:
+                        output = item
+                        break
+
+    if not output.get("odno"):
+        output = raw.get("output2") or raw.get("output1") or output
+
+    rjpg_yn = str(output.get("rjpg_yn") or "N")
+    cncl_yn = str(output.get("cncl_yn") or "N")
+    ccld_qty = _float(output.get("ccld_qty") or 0)
+    ord_qty = _float(output.get("ord_qty") or 1)
+
+    if rjpg_yn == "Y":
+        return OrderStatus.REJECTED
+    if cncl_yn == "Y":
+        return OrderStatus.CANCELLED
+    if ccld_qty >= ord_qty and ord_qty > 0:
+        return OrderStatus.FILLED
+    if ccld_qty > 0:
+        return OrderStatus.PARTIALLY_FILLED
+    return OrderStatus.SUBMITTED

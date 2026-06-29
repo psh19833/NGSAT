@@ -322,7 +322,7 @@ class TradingOrchestrator:
                 target_vol_pct = 1.5  # 기준 변동성(%): 이 값에서 base_pct = full position
                 min_pct = base_budget_pct * 0.3
                 max_pct = base_budget_pct * 2.0
-                vol_pct = max(vol * 100, 0.5)  # vol은 0~1 범위, 백분율로 변환
+                vol_pct = max(vol, 0.5)  # vol은 이미 백분율 (std/mean*100)
                 adjusted_pct = base_budget_pct * (target_vol_pct / vol_pct)
                 adjusted_pct = max(min_pct, min(adjusted_pct, max_pct))
                 budget = account.deposit * adjusted_pct

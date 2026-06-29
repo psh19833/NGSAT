@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback, useRef } from 'react'
+import { Menu } from 'lucide-react'
 import { api } from './api.js'
 import {
   formatNumber, formatPercent, formatWon,
@@ -28,6 +29,8 @@ export default function App() {
   const [activeTab, setActiveTab] = useState('overview')
   const [toast, setToast] = useState(null)
   const [confirmAction, setConfirmAction] = useState(null)
+  const [mobileSidebarOpen, setMobileSidebarOpen] = useState(false)
+  const [strategyDirty, setStrategyDirty] = useState(false)
 
   const showToast = (message, type = 'info') => {
     setToast({ message, type })
@@ -98,6 +101,17 @@ export default function App() {
     refreshAll()
   }
 
+  const handleTabChange = (tabId) => {
+    if (activeTab === 'strategy' && strategyDirty && tabId !== 'strategy') {
+      if (!window.confirm('저장하지 않은 변경사항이 있습니다. 이동하시겠습니까?')) {
+        return
+      }
+      setStrategyDirty(false)
+    }
+    setActiveTab(tabId)
+    setMobileSidebarOpen(false)
+  }
+
   const handleRestart = async () => {
     showToast('서버 재시작 중...', 'info')
     await api.restart()
@@ -121,17 +135,27 @@ export default function App() {
     <div className="flex h-screen bg-ngsat-bg">
       {/* Sidebar */}
       <Sidebar
-        onTabChange={setActiveTab}
+        onTabChange={handleTabChange}
         onRestart={handleRestart}
         status={status}
+        mobileOpen={mobileSidebarOpen}
+        onToggleMobile={() => setMobileSidebarOpen(v => !v)}
       />
 
       {/* Main Content */}
       <div className="flex-1 overflow-auto">
         {/* Header */}
-        <header className="flex items-center justify-between px-8 py-5 border-b border-ngsat-border">
-          <div>
-            <h1 className="text-xl font-semibold text-ngsat-text">
+        <header className="flex items-center justify-between px-4 md:px-8 py-5 border-b border-ngsat-border">
+          <div className="flex items-center gap-3">
+            <button
+              onClick={() => setMobileSidebarOpen(v => !v)}
+              className="md:hidden text-ngsat-muted hover:text-ngsat-text"
+              aria-label="메뉴 열기"
+            >
+              <Menu className="w-5 h-5" />
+            </button>
+            <div>
+              <h1 className="text-xl font-semibold text-ngsat-text">
               {activeTab === 'overview' && '운영 요약'}
               {activeTab === 'account' && '계좌 현황'}
               {activeTab === 'positions' && '보유 포지션'}
@@ -141,6 +165,7 @@ export default function App() {
               {activeTab === 'strategy' && '전략 설정'}
             </h1>
             <p className="text-sm text-ngsat-muted mt-0.5">NGSAT Dashboard</p>
+            </div>
           </div>
           <div className="flex items-center gap-3">
             <div className={`w-2 h-2 rounded-full ${connected ? 'bg-ngsat-green' : 'bg-ngsat-red'} animate-pulse`} />
@@ -161,8 +186,14 @@ export default function App() {
           </div>
         </header>
 
+        {strategyDirty && activeTab === 'strategy' && (
+          <div className="px-4 md:px-8 py-2 bg-yellow-900/30 border-b border-yellow-700/30">
+            <p className="text-xs text-yellow-400">● 변경사항이 저장되지 않았습니다</p>
+          </div>
+        )}
+
         {/* Content */}
-        <main className="p-8">
+        <main className="p-4 md:p-8">
           {!connected && (
             <div className="ngsat-card p-8 text-center">
               <p className="text-ngsat-red text-lg font-medium">거래 시스템에 연결되지 않았습니다</p>
@@ -211,7 +242,7 @@ export default function App() {
           )}
 
           {connected && activeTab === 'strategy' && (
-            <StrategyConfigPanel api={api} />
+            <StrategyConfigPanel api={api} onDirtyChange={setStrategyDirty} />
           )}
 
           {connected && activeTab === 'backtest' && (
