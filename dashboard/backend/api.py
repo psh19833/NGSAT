@@ -55,6 +55,7 @@ CONFIG_FIELD_MAP: dict[str, str] = {
     "NGSAT_MODE_SHORT_DAILY_LOSS": "mode_short_daily_loss_pct",
     "NGSAT_MODE_SHORT_POSITION_SIZE": "mode_short_position_size",
     "NGSAT_MAX_HOLDINGS": "max_holdings",
+    "NGSAT_ML_TRAINING_DAYS": "ml_training_days",
 }
 
 
@@ -97,6 +98,7 @@ class StrategyUpdateRequest(BaseModel):
     max_holdings: int | None = Field(None, ge=1, le=100)
     ml_model_type: str | None = None
     ml_auto_retrain: bool | None = None
+    ml_training_days: int | None = Field(None, ge=30, le=1000)
     mode_high_volatility_atr_pct: float | None = Field(None, ge=0.1, le=10)
     mode_low_volatility_atr_pct: float | None = Field(None, ge=0.1, le=5)
     reset: bool = False

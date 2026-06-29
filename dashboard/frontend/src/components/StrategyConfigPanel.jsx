@@ -109,6 +109,8 @@ const SECTIONS = [
         hint: 'AI 모델을 선택합니다. XGBoost·LightGBM이 일반적으로 더 높은 성능을 냅니다. 변경 후 모델 재학습이 필요합니다.' },
       { key: 'ml_auto_retrain', label: '자동 재학습', type: 'toggle',
         hint: '켜면 매일 장 마감 후 새로운 데이터로 AI가 스스로 재학습합니다. 더 나은 성능이 나오면 자동으로 교체됩니다.' },
+      { key: 'ml_training_days', label: '학습 기간', unit: '일', min: 30, max: 1000, step: 10,
+        hint: 'AI가 학습할 데이터 기간입니다. 250일=약 1년 치 데이터로 학습합니다. 숫자가 클수록 더 많은 과거 데이터를 보고 패턴을 학습하지만 학습 시간이 늘어납니다.' },
       { key: 'ml_swing_forward_days', label: '스윙 예측 기간', unit: '일', min: 1, max: 10, step: 1,
         hint: '스윙 모드: N일 뒤 +2% 상승을 예측합니다. 3일이면 "3일 뒤 오를까?"를 학습합니다.' },
       { key: 'ml_short_forward_minutes', label: '단타 예측 기간', unit: '분', min: 10, max: 240, step: 10,
