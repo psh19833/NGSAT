@@ -148,11 +148,7 @@ class KisAdapter(BrokerAdapter):
         return await self._cached_balance("summary", _fetch)
 
     async def get_positions(self) -> list[Position]:
-        """Fetch all currently held positions.
-
-        Uses the same cached balance call as get_account_summary
-        to avoid duplicate inquire_balance API calls (rate limit).
-        """
+        """Fetch all currently held positions."""
         async def _fetch():
             params = {
                 "CANO": self._account_no,
@@ -177,7 +173,7 @@ class KisAdapter(BrokerAdapter):
             logger.info(f"보유 포지션 조회: {len(positions)}개")
             return positions
 
-        return await self._cached_balance("summary", _fetch)
+        return await self._cached_balance("positions", _fetch)
 
     async def get_price(self, code: str) -> PriceData:
         """Fetch real-time price for a single stock."""
