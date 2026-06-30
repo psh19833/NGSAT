@@ -234,7 +234,7 @@ def multi_model_retrain(model: PriceRiseModel, X: np.ndarray, y: np.ndarray):
 
     return False, TrainingResult(
         success=True,
-        model_type=model.model_type,
-        auc=model._last_auc,
-        reason=f"기존 모델 유지 ({model.model_type}, AUC={model._last_auc:.3f})",
+        model_type=best_mt,
+        auc=best_result.auc,
+        reason=f"기존 모델 유지 (현재 {model._last_auc:.3f}, 최고 {best_result.auc:.3f}, {best_mt})",
     )
