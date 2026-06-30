@@ -317,6 +317,7 @@ def create_app(orchestrator=None, config=None) -> FastAPI:
                 "regime": "unknown",
                 "score": 0,
                 "reason": "아직 레짐 평가가 실행되지 않았습니다",
+                "regime_skipped": orch._regime_skipped,
             }
 
         regime = orch._last_regime
@@ -333,6 +334,7 @@ def create_app(orchestrator=None, config=None) -> FastAPI:
             "score": regime.score,
             "reason": regime.reason,
             "evidence": regime.evidence,
+            "regime_skipped": orch._regime_skipped,
         }
 
     # ── Control: Start ──

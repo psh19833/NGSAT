@@ -22,6 +22,7 @@ class MockOrchestrator:
         self._cycle_count = 5
         self._current_mode = "swing"
         self._last_regime = None
+        self._regime_skipped = False
 
         from unittest.mock import AsyncMock
         self._broker = AsyncMock()

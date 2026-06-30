@@ -74,6 +74,7 @@ class CycleResult:
     predictions: list = field(default_factory=list)    # ML 예측 결과
     deferred_entries: list = field(default_factory=list) # 진입 보류
     mode_decision: dict | None = None                  # 모드 선택 정보
+    regime_skipped: bool = False                       # 장 종료로 레짐 스킵
 
 
 class TradingOrchestrator:
@@ -147,6 +148,7 @@ class TradingOrchestrator:
         self._current_mode: str = "swing"
         self._last_diagnosis: dict | None = None  # 진단 현황
         self._cycle_count: int = 0
+        self._regime_skipped: bool = False         # 장 종료 시 레짐 미평가
         # TR-13: 일일 거래 횟수 제한
         self._daily_trade_date: str = ""
         self._daily_trade_count: int = 0
@@ -287,78 +289,88 @@ class TradingOrchestrator:
             result.reason = f"리스크 자동 중단: {risk_check.reason}"
             return result
 
-        # ── Step 3: Regime evaluation ──
-        if len(index_prices) < 20:
-            result.reason = "인덱스 데이터 부족 — 레짐 평가 불가"
-            return result
-
-        regime_result = evaluate_regime(
-            [p.close for p in index_prices],
-            [p.volume for p in index_prices],
-            [p.high for p in index_prices],
-            [p.low for p in index_prices],
-            config=self._strategy,
-            prev_regime=self._last_regime.regime if self._last_regime else None,
-        )
-        self._last_regime = regime_result
-        result.regime = regime_result.regime
-
-        logger.info(f"레짐 평가: {regime_result.regime.value} ({regime_result.score:.1f}점)")
-
-        # ── Step 4A: Mode selection (하이브리드 2단계) ──
-        vol = estimate_volatility_from_prices(
-            [p.close for p in index_prices],
-            [p.high for p in index_prices],
-            [p.low for p in index_prices],
-        )
-        mode_decision = select_mode(regime_result, atr_pct=vol, config=self._strategy)
-        self._current_mode = mode_decision.mode.value
-        result.mode_decision = {
-            "mode": mode_decision.mode.value,
-            "confidence": mode_decision.confidence,
-            "reason": mode_decision.reason,
-            "forward_days": mode_decision.forward_days,
-        }
-        self._risk.set_mode(self._current_mode)
-        result.mode = self._current_mode
-
-        logger.info(f"모드 선택: {mode_decision.mode.value} (신뢰도 {mode_decision.confidence:.0%}) — {mode_decision.reason}")
-
-        # HOLD 모드: 신규 진입 금지, 청산만 실행
-        if mode_decision.mode == StrategyMode.HOLD:
-            logger.info("HOLD 모드 — 신규 진입 없이 기존 포지션 청산만 실행")
-
-        # ── Step 5: Screen stocks ──
-        screen_result = screen_stocks(stock_universe, regime_result, config=self._strategy)
-        result.candidates_found = len(screen_result.candidates)
-        result.screened = [
-            {"code": c.code, "name": c.name, "score": round(c.score, 1),
-             "reason": c.reason}
-            for c in screen_result.candidates
-        ]
-        logger.info(f"스크리닝: {screen_result.total_scanned}개 → {result.candidates_found}개 후보")
-
-        # ── Step 6: ML predictions & buy execution (모드별 라우팅) ──
+        # ── Step 3-6: Regime → Mode → Screening → Entry (장중만 실행) ──
+        market_open = is_market_hours()
         current_positions = await self._fetch_positions()
         held_codes = {p.code for p in current_positions}
-        market_open = is_market_hours()
+        regime_result = None
+        is_short_term = False
+        screen_result = None
         if not market_open:
-            logger.info("장 운영 시간 아님 — 신규 진입 생략 (매도만 실행)")
+            result.regime_skipped = True
+            self._regime_skipped = True
+            logger.info("장 운영 시간 아님 — 레짐/스크리닝/진입 생략, 청산만 실행")
+        else:
+            self._regime_skipped = False
+            # ── Step 3: Regime evaluation ──
+            if len(index_prices) < 20:
+                result.reason = "인덱스 데이터 부족 — 레짐 평가 불가"
+                return result
 
-        is_short_term = self._current_mode == "short_term"
+            regime_result = evaluate_regime(
+                [p.close for p in index_prices],
+                [p.volume for p in index_prices],
+                [p.high for p in index_prices],
+                [p.low for p in index_prices],
+                config=self._strategy,
+                prev_regime=self._last_regime.regime if self._last_regime else None,
+            )
+            self._last_regime = regime_result
+            result.regime = regime_result.regime
 
-        # ── TR-5: 섹터 집중도 체크를 위한 섹터 룩업 ──
-        sector_lookup: dict[str, str] = {}
-        for info, _ in stock_universe:
-            sector_lookup[info.code] = info.sector
+            logger.info(f"레짐 평가: {regime_result.regime.value} ({regime_result.score:.1f}점)")
 
-        held_sector_counts: dict[str, int] = {}
-        for p in current_positions:
-            sec = p.sector or sector_lookup.get(p.code, "")
-            if sec:
-                held_sector_counts[sec] = held_sector_counts.get(sec, 0) + 1
+            # ── Step 4A: Mode selection (하이브리드 2단계) ──
+            vol = estimate_volatility_from_prices(
+                [p.close for p in index_prices],
+                [p.high for p in index_prices],
+                [p.low for p in index_prices],
+            )
+            mode_decision = select_mode(regime_result, atr_pct=vol, config=self._strategy)
+            self._current_mode = mode_decision.mode.value
+            result.mode_decision = {
+                "mode": mode_decision.mode.value,
+                "confidence": mode_decision.confidence,
+                "reason": mode_decision.reason,
+                "forward_days": mode_decision.forward_days,
+            }
+            self._risk.set_mode(self._current_mode)
+            result.mode = self._current_mode
 
-        for candidate in screen_result.candidates:
+            logger.info(f"모드 선택: {mode_decision.mode.value} (신뢰도 {mode_decision.confidence:.0%}) — {mode_decision.reason}")
+
+            # HOLD 모드: 신규 진입 금지, 청산만 실행
+            if mode_decision.mode == StrategyMode.HOLD:
+                logger.info("HOLD 모드 — 신규 진입 없이 기존 포지션 청산만 실행")
+
+            # ── Step 5: Screen stocks ──
+            screen_result = screen_stocks(stock_universe, regime_result, config=self._strategy)
+            result.candidates_found = len(screen_result.candidates)
+            result.screened = [
+                {"code": c.code, "name": c.name, "score": round(c.score, 1),
+                 "reason": c.reason}
+                for c in screen_result.candidates
+            ]
+            logger.info(f"스크리닝: {screen_result.total_scanned}개 → {result.candidates_found}개 후보")
+
+            # ── Step 6: ML predictions & buy execution (모드별 라우팅) ──
+            # market_open은 이미 True — 진입 진행
+            is_short_term = self._current_mode == "short_term"
+
+            # ── TR-5: 섹터 집중도 체크를 위한 섹터 룩업 ──
+            sector_lookup: dict[str, str] = {}
+            for info, _ in stock_universe:
+                sector_lookup[info.code] = info.sector
+
+            held_sector_counts: dict[str, int] = {}
+            for p in current_positions:
+                sec = p.sector or sector_lookup.get(p.code, "")
+                if sec:
+                    held_sector_counts[sec] = held_sector_counts.get(sec, 0) + 1
+
+            logger.info("장 운영 시간 — 정상 진입 실행")
+
+        for candidate in (screen_result.candidates if screen_result else []):
             if not market_open:
                 break
             if candidate.code in held_codes:
@@ -596,10 +608,15 @@ class TradingOrchestrator:
                 )
 
         # ── Build summary ──
+        regime_str = (
+            f"레짐=스킵(장종료)"
+            if result.regime_skipped
+            else f"레짐={regime_result.regime.value}({regime_result.score:.0f}점)"
+        )
         result.reason = (
             f"사이클 #{self._cycle_count} 완료: "
             f"모드={self._current_mode}, "
-            f"레짐={regime_result.regime.value}({regime_result.score:.0f}점), "
+            f"{regime_str}, "
             f"후보={result.candidates_found}개, "
             f"매수={result.buys_executed}건(보류 {result.entries_deferred}건), "
             f"매도={result.sells_executed}건"
