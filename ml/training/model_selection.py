@@ -164,8 +164,8 @@ def single_model_retrain(model: PriceRiseModel, X: np.ndarray, y: np.ndarray):
         return False, TrainingResult(
             success=True,
             model_type=model.model_type,
-            auc=model._last_auc,
-            reason=f"기존 모델 유지 (AUC {model._last_auc:.3f} ≥ {new_result.auc:.3f})",
+            auc=new_result.auc,
+            reason=f"기존 모델 유지 (AUC {model._last_auc:.3f} ≥ 새 {new_result.auc:.3f})",
         )
 
 

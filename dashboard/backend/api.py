@@ -439,6 +439,11 @@ def create_app(orchestrator=None, config=None) -> FastAPI:
 
             logger.info(f"수동 재학습 시작: {len(codes)}개 종목, 모델={model.model_type}")
 
+            # Config의 auto_select_model을 모델에 반영
+            cfg = _get_app_config()
+            if cfg and hasattr(cfg, 'ml_auto_select_model'):
+                model.auto_select_model = cfg.ml_auto_select_model
+
             changed, result = model.auto_retrain(prices_list, codes)
 
             if changed:
