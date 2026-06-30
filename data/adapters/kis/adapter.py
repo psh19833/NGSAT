@@ -9,6 +9,7 @@ All credentials come from .env via core.config — never hardcoded.
 
 from __future__ import annotations
 
+import asyncio
 import os
 import time
 from datetime import datetime
@@ -69,6 +70,7 @@ class KisAdapter(BrokerAdapter):
         )
         self._balance_cache: dict[str, tuple[float, Any]] = {}
         self._balance_raw_cache: dict[str, tuple[float, dict]] = {}
+        self._balance_lock = asyncio.Lock()
 
     @staticmethod
     def _normalize_account_no(account_no: str) -> str:
@@ -87,15 +89,16 @@ class KisAdapter(BrokerAdapter):
         return digits
 
     async def _cached_balance(self, key: str, fetcher):
-        """1.5초 TTL 캐시로 inquire_balance 중복 호출 방지."""
-        now = time.monotonic()
-        if key in self._balance_cache:
-            ts, data = self._balance_cache[key]
-            if now - ts < _BALANCE_CACHE_TTL:
-                return data
-        data = await fetcher()
-        self._balance_cache[key] = (now, data)
-        return data
+        """TTL 캐시로 inquire_balance 중복 호출 방지. asyncio.Lock 직렬화."""
+        async with self._balance_lock:
+            now = time.monotonic()
+            if key in self._balance_cache:
+                ts, data = self._balance_cache[key]
+                if now - ts < _BALANCE_CACHE_TTL:
+                    return data
+            data = await fetcher()
+            self._balance_cache[key] = (now, data)
+            return data
 
     @classmethod
     def from_env(cls) -> "KisAdapter":
