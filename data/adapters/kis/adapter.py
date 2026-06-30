@@ -68,6 +68,7 @@ class KisAdapter(BrokerAdapter):
             token_manager=self._token_manager,
         )
         self._balance_cache: dict[str, tuple[float, Any]] = {}
+        self._balance_raw_cache: dict[str, tuple[float, dict]] = {}
 
     @staticmethod
     def _normalize_account_no(account_no: str) -> str:
@@ -137,6 +138,9 @@ class KisAdapter(BrokerAdapter):
             if not resp.success:
                 raise BrokerError(f"KIS balance query failed: {resp.msg_cd} {resp.msg1}")
 
+            # Cache raw response for get_positions() to reuse (rate limit 방지)
+            self._balance_raw_cache["summary"] = (time.monotonic(), resp.raw)
+
             # The raw response contains both account summary (output2) and positions (output)
             summary = parse_account_summary(resp.raw)
             logger.info(
@@ -148,7 +152,21 @@ class KisAdapter(BrokerAdapter):
         return await self._cached_balance("summary", _fetch)
 
     async def get_positions(self) -> list[Position]:
-        """Fetch all currently held positions."""
+        """Fetch all currently held positions.
+
+        Reuses get_account_summary()'s cached raw response to avoid
+        duplicate inquire_balance API calls (KIS rate limit 방지).
+        """
+        # Try to reuse cached raw response from get_account_summary
+        now = time.monotonic()
+        if "summary" in self._balance_raw_cache:
+            ts, raw = self._balance_raw_cache["summary"]
+            if now - ts < _BALANCE_CACHE_TTL:
+                positions = parse_positions(raw)
+                logger.debug(f"보유 포지션 조회(캐시): {len(positions)}개")
+                return positions
+
+        # Fallback: own cache (첫 호출 or 캐시 만료)
         async def _fetch():
             params = {
                 "CANO": self._account_no,
