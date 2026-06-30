@@ -340,6 +340,8 @@ def parse_index_history(raw: dict[str, Any], code: str = "KOSPI") -> list[PriceD
             volume=_int(item.get("acml_vol")),
         ))
 
+    # 오름차순 정렬 (오래된→최신) — regime 평가가 closes[-1]를 최신으로 가정
+    result.sort(key=lambda p: p.timestamp)
     return result
 
 

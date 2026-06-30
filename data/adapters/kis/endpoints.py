@@ -135,7 +135,7 @@ _INDEX_DAILY = KisEndpoint(
     category=KisCategory.QUOTATION,
     path="/uapi/domestic-stock/v1/quotations/inquire-daily-indexchartprice",
     method="GET",
-    tr_id="FHPUP02110000",
+    tr_id="FHKUP03500100",
     description="업종 일자별 지수 (KOSPI/KOSDAQ 일봉)",
 )
 
