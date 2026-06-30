@@ -154,10 +154,15 @@ class KisAdapter(BrokerAdapter):
     async def get_positions(self) -> list[Position]:
         """Fetch all currently held positions.
 
-        Reuses get_account_summary()'s cached raw response to avoid
-        duplicate inquire_balance API calls (KIS rate limit 방지).
+        Delegates to get_account_summary() for the API call (1회만 호출),
+        then parses positions from the cached raw response.
+        NEVER makes its own inquire_balance call — KIS rate limit 방지.
         """
-        # Try to reuse cached raw response from get_account_summary
+        # get_account_summary()를 먼저 호출하여 raw 응답 캐싱 보장
+        # (이미 캐시되어 있으면 즉시 반환, 없으면 1회 API 호출)
+        await self.get_account_summary()
+
+        # 캐시된 raw 응답에서 포지션 파싱 — API 호출 0회
         now = time.monotonic()
         if "summary" in self._balance_raw_cache:
             ts, raw = self._balance_raw_cache["summary"]
@@ -166,32 +171,10 @@ class KisAdapter(BrokerAdapter):
                 logger.debug(f"보유 포지션 조회(캐시): {len(positions)}개")
                 return positions
 
-        # Fallback: own cache (첫 호출 or 캐시 만료)
-        async def _fetch():
-            params = {
-                "CANO": self._account_no,
-                "ACNT_PRDT_CD": self._account_product_code,
-                "AFHR_FLPR_YN": "N",
-                "OFL_YN": "",
-                "INQR_DVSN": "02",
-                "UNPR_DVSN": "01",
-                "FUND_STTL_ICLD_YN": "N",
-                "FNCG_AMT_AUTO_RDPT_YN": "N",
-                "PRCS_DVSN": "00",
-                "CTX_AREA_FK100": "",
-                "CTX_AREA_NK100": "",
-            }
-
-            resp = await self._http.get("inquire_balance", params=params)
-
-            if not resp.success:
-                raise BrokerError(f"KIS balance query failed: {resp.msg_cd} {resp.msg1}")
-
-            positions = parse_positions(resp.raw)
-            logger.info(f"보유 포지션 조회: {len(positions)}개")
-            return positions
-
-        return await self._cached_balance("positions", _fetch)
+        # Fallback 제거 — 이 경로에 도달하는 것은 비정상 상태
+        # (get_account_summary()가 정상 종료되었다면 _balance_raw_cache는 항상 존재)
+        logger.error("get_positions: _balance_raw_cache 누락 — 비정상 상태")
+        return []
 
     async def get_price(self, code: str) -> PriceData:
         """Fetch real-time price for a single stock."""
