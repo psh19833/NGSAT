@@ -320,6 +320,36 @@ class TradingOrchestrator:
 
             logger.info(f"레짐 평가: {regime_result.regime.value} ({regime_result.score:.1f}점)")
 
+            # ── TR-16: 장중 KOSPI 등락률 보정 (B안) ──
+            # intraday: fetch current KOSPI index, compare to yesterday close
+            try:
+                index_price = await self._broker.get_index_price()
+            except Exception:
+                index_price = None
+            if index_price is not None and len(index_prices) >= 2:
+                prev_close = index_prices[-1].close
+                intraday_change_pct = ((index_price.close - prev_close) / prev_close) * 100
+                # Map to ±5 point correction, capped
+                correction = intraday_change_pct * 1.67  # ±3% → ±5점
+                correction = max(-5.0, min(5.0, correction))
+                if abs(correction) >= 1.0:
+                    old_score = regime_result.score
+                    new_score = max(0.0, min(100.0, old_score + correction))
+                    regime_result = RegimeResult(
+                        regime=regime_result.regime,
+                        score=new_score,
+                        reason=regime_result.reason + (
+                            f" | 장중보정: KOSPI {intraday_change_pct:+.1f}% "
+                            f"({correction:+.0f}점, {old_score:.0f}→{new_score:.0f})"
+                        ),
+                        evidence={**regime_result.evidence, "intraday_correction": correction},
+                    )
+                    self._last_regime = regime_result
+                    result.regime = regime_result.regime
+                    logger.info(f"장중 KOSPI {intraday_change_pct:+.1f}% — 레짐 보정 {correction:+.0f}점")
+            else:
+                logger.debug("장중 레짐 보정: KOSPI 현재가 미조회, 생략")
+
             # ── Step 4A: Mode selection (하이브리드 2단계) ──
             vol = estimate_volatility_from_prices(
                 [p.close for p in index_prices],

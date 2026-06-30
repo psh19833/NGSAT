@@ -171,3 +171,11 @@ class BrokerAdapter(ABC):
             List of PriceData minute bars.
         """
         raise NotImplementedError("이 어댑터는 분봉 조회를 지원하지 않습니다")
+
+    async def get_index_price(self) -> PriceData | None:
+        """Fetch current KOSPI index price (optional capability).
+
+        Used for intraday regime correction (TR-16).
+        Default returns None — override in adapter that supports it.
+        """
+        return None
