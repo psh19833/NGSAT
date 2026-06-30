@@ -82,8 +82,6 @@ class KisWebSocketClient:
         try:
             self._ws = await websockets.connect(
                 self._ws_url,
-                ping_interval=30,
-                ping_timeout=10,
                 max_size=2 ** 20,  # 1MB
             )
             self._running = True
