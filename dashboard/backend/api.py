@@ -546,6 +546,121 @@ def create_app(orchestrator=None, config=None) -> FastAPI:
 
         return {"connected": True, "message": f"{updated}개 저장 완료", "config": asdict(cfg), "restart_required": True}
 
+    # ── Presets ──
+    @app.get("/api/strategy/presets")
+    async def get_presets():
+        """설정 프리셋 목록 반환 (config/presets.json)."""
+        import json as _json
+        from pathlib import Path
+        presets_path = Path(__file__).resolve().parent.parent.parent.parent / "config" / "presets.json"
+        if presets_path.exists():
+            try:
+                data = _json.loads(presets_path.read_text(encoding="utf-8"))
+                return {"connected": True, "presets": data}
+            except Exception as e:
+                return {"connected": False, "message": f"프리셋 파일 읽기 실패: {e}"}
+        return {"connected": False, "message": "프리셋 파일이 없습니다"}
+
+    @app.post("/api/strategy/apply-preset")
+    async def apply_preset(data: dict):
+        """프리셋 적용: DB 저장 + 재학습 + 텔레그램 알림."""
+        preset_name = data.get("name", "")
+        retrain = data.get("retrain", True)
+        if not preset_name:
+            return {"connected": False, "message": "프리셋 이름이 필요합니다"}
+
+        # 1) Load presets file
+        import json as _json
+        from pathlib import Path
+        presets_path = Path(__file__).resolve().parent.parent.parent.parent / "config" / "presets.json"
+        if not presets_path.exists():
+            return {"connected": False, "message": "프리셋 파일이 없습니다"}
+        all_presets = _json.loads(presets_path.read_text(encoding="utf-8"))
+        preset = all_presets.get(preset_name)
+        if not preset:
+            return {"connected": False, "message": f"프리셋 '{preset_name}'을 찾을 수 없습니다"}
+
+        vals = preset["values"]
+        cfg = _get_app_config()
+        cs: ConfigService | None = getattr(app.state, 'config_service', None)
+        if cfg is None:
+            return {"connected": False, "message": "설정이 로드되지 않았습니다"}
+
+        # 2) Apply values to in-memory config + DB
+        applied = 0
+        for key, value in vals.items():
+            if hasattr(cfg, key):
+                setattr(cfg, key, value)
+                if cs:
+                    db_key = next((k for k, v in CONFIG_FIELD_MAP.items() if v == key), None)
+                    if db_key:
+                        cs.set(db_key, value)
+                applied += 1
+
+        logger.info(f"프리셋 '{preset_name}' 적용: {applied}개 값 변경")
+
+        # 3) Trigger retrain if requested
+        retrain_result = None
+        if retrain:
+            try:
+                model = getattr(app.state, 'model', None)
+                data_provider = getattr(app.state, 'data_provider', None)
+                universe = getattr(app.state, 'latest_universe', None)
+                if model and data_provider and universe:
+                    if hasattr(cfg, 'ml_auto_select_model'):
+                        model.auto_select_model = cfg.ml_auto_select_model
+                    data_provider.update_date_range(
+                        start_date=getattr(cfg, 'ml_training_start_date', None),
+                        end_date=getattr(cfg, 'ml_training_end_date', None),
+                        training_days=getattr(cfg, 'ml_training_days', None),
+                    )
+                    new_universe, _ = await data_provider.load()
+                    if new_universe:
+                        codes = [info.code for info, _ in new_universe]
+                        prices_list = [prices for _, prices in new_universe]
+                        changed, result = model.auto_retrain(prices_list, codes)
+                        retrain_result = {
+                            "changed": changed,
+                            "auc": result.auc if result.success else None,
+                            "model_type": result.model_type if result.success else None,
+                        }
+                        if changed:
+                            model.save()
+                            orch = _get_orchestrator()
+                            if orch and hasattr(orch, '_inference') and orch._inference is not None:
+                                orch._inference._model = model
+                        logger.info(f"프리셋 재학습: {result.reason}")
+            except Exception as e:
+                logger.warning(f"프리셋 재학습 실패 (skip): {e}")
+                retrain_result = {"error": str(e)}
+
+        # 4) Send Telegram notification
+        telegram_bot = getattr(app.state, 'telegram_bot', None)
+        if telegram_bot:
+            try:
+                msg = (
+                    f"🔄 프리셋 변경: {preset['label']}\n"
+                    f"──────────\n"
+                    f"{preset['desc']}\n"
+                    f"변경 항목: {applied}개\n"
+                )
+                if retrain_result and retrain_result.get("auc"):
+                    direction = "✅ 향상" if retrain_result.get("changed") else "➖ 유지"
+                    msg += (
+                        f"재학습 완료: {direction}\n"
+                        f"AUC: {retrain_result['auc']:.3f}"
+                    )
+                await telegram_bot.send_system_event("info", msg)
+            except Exception as e:
+                logger.warning(f"프리셋 텔레그램 전송 실패: {e}")
+
+        return {
+            "connected": True,
+            "message": f"프리셋 '{preset['label']}' 적용 완료 ({applied}개)",
+            "applied": applied,
+            "retrain": retrain_result,
+        }
+
     # ── Diagnosis ──
     @app.get("/api/diagnosis")
     async def get_diagnosis():

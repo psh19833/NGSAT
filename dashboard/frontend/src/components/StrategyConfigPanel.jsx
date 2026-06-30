@@ -407,33 +407,71 @@ function FieldRow({ field, value, onChange }) {
 }
 
 function PresetButtons({ onSelect, current }) {
+  const [presets, setPresets] = React.useState(null);
+  const [applying, setApplying] = React.useState(null);
+
+  React.useEffect(() => {
+    fetch('/api/strategy/presets')
+      .then(r => r.json())
+      .then(d => { if (d.connected) setPresets(d.presets); })
+      .catch(() => {});
+  }, []);
+
+  if (!presets) return null;
+
+  const handleApply = async (name) => {
+    if (!confirm(`"${name}" 스타일로 모든 값을 변경하시겠습니까?\n현재 설정은 사라집니다.`)) return;
+    setApplying(name);
+    try {
+      const resp = await fetch('/api/strategy/apply-preset', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({name, retrain: true}),
+      });
+      const data = await resp.json();
+      if (data.connected) {
+        // Apply values to local form, trigger parent refresh
+        const p = presets[name];
+        if (p) onSelect(p.values);
+        alert(`✅ "${name}" 적용 완료\n변경: ${data.applied}개 항목\n${data.retrain?.auc ? `AUC: ${(data.retrain.auc*100).toFixed(1)}%${data.retrain.changed ? ' ✅ 향상' : ' ➖ 유지'}` : ''}`);
+      } else {
+        alert(`❌ 적용 실패: ${data.message}`);
+      }
+    } catch (e) {
+      alert(`❌ 적용 오류: ${e.message}`);
+    } finally {
+      setApplying(null);
+    }
+  };
+
+  const entries = Object.entries(presets);
+
   return (
     <div className="ngsat-card p-4">
       <div className="text-xs text-ngsat-muted mb-3">
-        💡 처음이시면 아래 세 가지 스타일 중 하나를 골라보세요. 선택하면 모든 값이 자동으로 조정됩니다.
+        💡 처음이시면 아래 스타일 중 하나를 골라보세요. 선택하면 모든 값이 자동으로 조정됩니다.
       </div>
-      <div className="flex gap-2">
-        {Object.entries(PRESETS).map(([name, preset]) => (
+      <div className="flex flex-wrap gap-2">
+        {entries.map(([name, preset]) => (
           <button
             key={name}
-            onClick={() => {
-              if (confirm(`"${name}" 스타일로 모든 값을 변경하시겠습니까?\n현재 설정은 사라집니다.`)) {
-                onSelect(preset.values)
-              }
-            }}
-            className={`flex-1 p-3 rounded-lg border text-sm transition-all
+            onClick={() => handleApply(name)}
+            disabled={applying !== null}
+            className={`flex-1 min-w-[120px] p-3 rounded-lg border text-sm transition-all
               ${current === name
                 ? 'border-ngsat-accent bg-ngsat-accent/10 text-ngsat-text'
                 : 'border-ngsat-border bg-ngsat-card hover:border-ngsat-accent/30 text-ngsat-muted hover:text-ngsat-text'
-              }`}
+              }
+              ${applying === name ? 'opacity-50 cursor-wait' : ''}
+            `}
           >
-            <div className="text-base mb-1">{preset.label}</div>
-            <div className="text-xs leading-relaxed">{preset.desc}</div>
+            <div className="font-bold">{preset.label}</div>
+            <div className="text-[10px] mt-1 opacity-70">{preset.desc}</div>
           </button>
         ))}
       </div>
     </div>
-  )
+  );
 }
 
 function CollapsibleSection({ section, config, onChange, defaultOpen }) {
