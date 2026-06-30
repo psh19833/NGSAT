@@ -15,6 +15,12 @@ try:
     from dotenv import load_dotenv
 except ImportError:
     load_dotenv = None
+    import warnings
+    warnings.warn(
+        "python-dotenv 미설치 — .env 파일이 로드되지 않습니다. "
+        "환경변수가 직접 설정된 경우에만 정상 동작합니다. "
+        "설치: pip install python-dotenv"
+    )
 
 
 class Environment(str, Enum):

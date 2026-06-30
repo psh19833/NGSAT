@@ -217,6 +217,11 @@ class OrderExecutor:
                         f"{code} {side.value} — {e} ({delay:.0f}초 후 재시도)"
                     )
                     await asyncio.sleep(delay)
+        if last_error is None:
+            raise BrokerError(
+                f"주문 제출 실패: {code} {side.value} — "
+                f"max_retries({max_retries})가 0 이하입니다"
+            )
         raise last_error  # type: ignore[misc]
 
     async def execute_buy(

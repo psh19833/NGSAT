@@ -17,14 +17,15 @@ main.py의 합성 데이터를 대체하여 실제 KIS 데이터를
 from __future__ import annotations
 
 import asyncio
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, timedelta
 from typing import Any
+from zoneinfo import ZoneInfo
 
 from core.config import load_config
 from core.logger import logger
 from core.types import Market, PriceData, StockInfo
 
-KST = timezone(timedelta(hours=9))
+KST = ZoneInfo("Asia/Seoul")
 
 # ── KOSPI / KOSDAQ 종목코드 (명시적 매핑) ──
 # 설계: KOSPI 70% · KOSDAQ 30%
@@ -173,7 +174,6 @@ class RealDataProvider:
                 logger.info(f"  진행: {i + 1}/{len(self._codes)} 종목")
 
             # KIS rate limit: 50ms 간격
-            import asyncio
             await asyncio.sleep(0.05)
 
         if not universe:
@@ -266,8 +266,6 @@ class RealDataProvider:
         실제 시장 상황을 반영하며, refresh_prices()로 업데이트 시 변동.
         """
         from collections import defaultdict
-        from zoneinfo import ZoneInfo
-        KST = ZoneInfo("Asia/Seoul")
 
         daily_closes: dict[str, list[float]] = defaultdict(list)
         daily_volumes: dict[str, list[float]] = defaultdict(list)
@@ -372,7 +370,6 @@ class RealDataProvider:
         start = now - timedelta(days=5)  # 주말/공휴일 커버
 
         # Refresh each stock's latest bar
-        import asyncio
 
         for i, (info, prices) in enumerate(self._universe_cache):
             try:

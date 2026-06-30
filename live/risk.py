@@ -202,7 +202,12 @@ class RiskManager:
         if new_stop_loss_pct > max_stop:
             return False, f"최대 손절선 초과: {new_stop_loss_pct:.1f}% > {max_stop:.1f}%"
 
-        if new_stop_loss_pct <= (position.stop_loss_pct or self._config.default_stop_loss_pct):
+        current_stop = (
+            position.stop_loss_pct
+            if position.stop_loss_pct is not None
+            else self._config.default_stop_loss_pct
+        )
+        if new_stop_loss_pct <= current_stop:
             return False, "새 손절선이 기존 손절선보다 작거나 같음 — 연장 아님"
 
         if not reason or not reason.strip():

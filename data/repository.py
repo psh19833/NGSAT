@@ -255,22 +255,23 @@ class MinuteDataRepository:
     def save_minute_bars(self, bars: list[dict]) -> int:
         """여러 분봉을 한 번에 저장. 중복은 건너뜀.
 
+        SQLite INSERT OR IGNORE를 사용하여 대량 삽입.
+        루프 기반 flush/rollback보다 수십 배 빠름.
+
         Returns:
             실제 저장된 개수 (중복 제외).
         """
-        saved = 0
-        for bar in bars:
-            try:
-                record = MinuteDataCache(**bar)
-                self._session.add(record)
-                self._session.flush()
-                saved += 1
-            except IntegrityError:
-                self._session.rollback()
-                # 중복 = 정상, 다음으로
-        if saved > 0:
-            self._session.commit()
-        return saved
+        if not bars:
+            return 0
+        from sqlalchemy.dialects.sqlite import insert as sqlite_insert
+
+        stmt = sqlite_insert(MinuteDataCache).values(bars)
+        stmt = stmt.on_conflict_do_nothing(
+            index_elements=["code", "date", "time"]
+        )
+        result = self._session.execute(stmt)
+        self._session.commit()
+        return result.rowcount
 
     def get_minute_bars(
         self, code: str, date: str,

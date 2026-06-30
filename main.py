@@ -249,6 +249,7 @@ async def run_live(config, args):
             dashboard_app.state.latest_index_prices = index_prices
 
         _refresh_counter = 0
+        _consecutive_errors = 0
         _last_retrain_date = ""  # yyyy-mm-dd tracking for daily retrain
 
         def _is_after_market_close_kst() -> bool:
@@ -308,16 +309,37 @@ async def run_live(config, args):
                             "mode": result.mode,
                         })
 
+                # Reset consecutive error counter on successful cycle
+                _consecutive_errors = 0
                 await asyncio.sleep(tick_interval)
 
             except asyncio.CancelledError:
                 logger.info("매매 루프 종료")
                 break
             except Exception as e:
-                logger.error(f"매매 루프 오류: {type(e).__name__}: {e}")
+                _consecutive_errors += 1
+                logger.error(
+                    f"매매 루프 오류 ({_consecutive_errors}/5): "
+                    f"{type(e).__name__}: {e}"
+                )
                 if telegram_bot:
-                    await telegram_bot.send_system_event("error", str(e))
-                await asyncio.sleep(tick_interval)
+                    await telegram_bot.send_system_event(
+                        "error",
+                        f"매매 루프 오류 ({_consecutive_errors}회): {e}"
+                    )
+                if _consecutive_errors >= 5:
+                    logger.critical(
+                        "연속 에러 5회 — 매매 루프 중단"
+                    )
+                    if telegram_bot:
+                        await telegram_bot.send_system_event(
+                            "critical",
+                            "연속 오류 5회로 시스템 중단"
+                        )
+                    break
+                # 지수 백오프: 에러 반복 시 대기 시간 증가
+                backoff = min(tick_interval * (2 ** _consecutive_errors), 300)
+                await asyncio.sleep(backoff)
 
     # ── 7. Start everything ──
     tasks: list[asyncio.Task] = []
