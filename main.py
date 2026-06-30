@@ -227,6 +227,7 @@ async def run_live(config, args):
     async def trading_loop():
         """Main trading loop — runs orchestrator cycle with real KIS data."""
         from data.real_data_provider import RealDataProvider
+        from live.session_tracker import MarketSessionTracker
 
         data_provider = RealDataProvider(
             training_days=config.strategy.ml_training_days,
@@ -251,6 +252,7 @@ async def run_live(config, args):
         _refresh_counter = 0
         _consecutive_errors = 0
         _last_retrain_date = ""  # yyyy-mm-dd tracking for daily retrain
+        session_tracker = MarketSessionTracker()
 
         def _is_after_market_close_kst() -> bool:
             """KST 기준 장 마감 여부 (15:30 이후)."""
@@ -259,6 +261,68 @@ async def run_live(config, args):
 
         while True:
             try:
+                # ── Market session tracking (장 시작/종료 감지) ──
+                from core.types import is_market_hours
+                session_result = session_tracker.update(is_market_hours())
+                if session_result.get("changed"):
+                    if telegram_bot:
+                        state = session_result["state"]
+                        if state == "open":
+                            # 장 시작 — 계좌/레짐 정보 포함
+                            try:
+                                account = await orchestrator._broker.get_account_summary()
+                                regime_info = f"레짐: {orchestrator._last_regime.regime.value}({orchestrator._last_regime.score:.0f}점)" if orchestrator._last_regime else "레짐: 미평가"
+                                msg = (
+                                    f"🌅 장 시작 (09:00)\n"
+                                    f"──────────\n"
+                                    f"{regime_info}\n"
+                                    f"모드: {orchestrator._current_mode}\n"
+                                    f"예수금: {account.deposit:,.0f}원\n"
+                                    f"보유: {len(orchestrator._last_positions) if hasattr(orchestrator, '_last_positions') else '?'}개 종목"
+                                )
+                            except Exception:
+                                msg = "🌅 장 시작 (09:00)"
+                            await telegram_bot.send_system_event("market_open", msg)
+                        else:
+                            await telegram_bot.send_system_event("market_close", "🌇 장 종료 (15:30)")
+
+                # ── 일일 보고서 전송 (장 마감 감지 후 1회) ──
+                if telegram_bot and session_tracker.should_send_daily_report:
+                    try:
+                        from data.repository import TradeRepository
+                        from core.models import TradeRecord
+                        from sqlalchemy.orm import Session as SASession
+                        from core.db import SessionLocal
+                        db_session: SASession = SessionLocal()
+                        try:
+                            trade_repo = TradeRepository(db_session)
+                            today = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+                            trades = trade_repo.get_trades_by_date(today)
+                            buy_count = sum(1 for t in trades if t.side == "buy")
+                            sell_count = sum(1 for t in trades if t.side == "sell")
+                            total_trades = len(trades)
+                            account = await orchestrator._broker.get_account_summary()
+                            positions = await orchestrator._broker.get_positions()
+                            pos_summary = "\n".join(
+                                f"{p.name} {p.quantity}주 ({p.profit_loss_pct:+.1f}%)"
+                                for p in positions[:10]
+                            ) if positions else "없음"
+                            await telegram_bot.send_daily_report(
+                                date=today,
+                                total_trades=total_trades,
+                                buy_count=buy_count,
+                                sell_count=sell_count,
+                                total_pnl=account.total_profit_loss,
+                                win_rate=0.0,  # 별도 계산 로직 필요시 추가
+                                current_capital=account.total_asset,
+                                positions_summary=pos_summary,
+                            )
+                        finally:
+                            db_session.close()
+                    except Exception as e:
+                        logger.error(f"일일 보고서 전송 실패: {e}")
+                    session_tracker.mark_daily_report_sent()
+
                 # Rate-limit friendly: full refresh every 30 cycles (5min @ 10s tick)
                 # Between full refreshes, cached data is used (much better than hitting
                 # KIS rate limit and getting no data at all)

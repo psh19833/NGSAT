@@ -109,6 +109,8 @@ def build_system_event_notification(
         "start": ("🚀", "success", "매매 시작"),
         "stop": ("⏸️", "info", "매매 일시정지"),
         "shutdown": ("🛑", "info", "시스템 종료"),
+        "market_open": ("🌅", "success", "장 시작"),
+        "market_close": ("🌇", "info", "장 종료"),
         "halt": ("⚠️", "warning", "자동 중단"),
         "error": ("❌", "error", "오류 발생"),
         "warning": ("⚠️", "warning", "경고"),
