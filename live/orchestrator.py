@@ -332,7 +332,7 @@ class TradingOrchestrator:
                 # Map to ±5 point correction, capped
                 correction = intraday_change_pct * 1.67  # ±3% → ±5점
                 correction = max(-5.0, min(5.0, correction))
-                if abs(correction) >= 1.0:
+                if abs(correction) >= 0.5:
                     old_score = regime_result.score
                     new_score = max(0.0, min(100.0, old_score + correction))
                     regime_result = RegimeResult(

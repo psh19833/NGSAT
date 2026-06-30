@@ -123,12 +123,12 @@ def parse_price(raw: dict[str, Any], code: str = "") -> PriceData:
     return PriceData(
         code=code or str(raw.get("stck_shrn_iscd") or raw.get("pdno") or ""),
         timestamp=now,
-        open=_float(raw.get("stck_oprc") or raw.get("oprc")),
-        high=_float(raw.get("stck_hgpr") or raw.get("hgpr")),
-        low=_float(raw.get("stck_lwpr") or raw.get("lwpr")),
-        close=_float(raw.get("stck_prpr") or raw.get("prpr") or raw.get("current_price")),
+        open=_float(raw.get("stck_oprc") or raw.get("oprc") or raw.get("bstp_nmix_oprc")),
+        high=_float(raw.get("stck_hgpr") or raw.get("hgpr") or raw.get("bstp_nmix_hgpr")),
+        low=_float(raw.get("stck_lwpr") or raw.get("lwpr") or raw.get("bstp_nmix_lwpr")),
+        close=_float(raw.get("stck_prpr") or raw.get("prpr") or raw.get("bstp_nmix_prpr") or raw.get("current_price")),
         volume=_int(raw.get("acml_vol") or raw.get("accumulated_volume")),
-        change_pct=_float(raw.get("prdy_ctrt") or raw.get("change_rate") or raw.get("chg_rate")),
+        change_pct=_float(raw.get("prdy_ctrt") or raw.get("bstp_nmix_prdy_ctrt") or raw.get("change_rate") or raw.get("chg_rate")),
     )
 
 
