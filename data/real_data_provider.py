@@ -388,7 +388,7 @@ class RealDataProvider:
             except Exception as e:
                 logger.debug(f"[{info.code}] 시세 갱신 실패: {type(e).__name__}")
 
-            await asyncio.sleep(0.05)
+            await asyncio.sleep(0.1)
             if (i + 1) % 10 == 0:
                 logger.debug(f"  시세 갱신 진행: {i + 1}/{len(self._universe_cache)}")
 

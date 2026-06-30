@@ -92,7 +92,10 @@ def parse_positions(raw: dict[str, Any]) -> list[Position]:
         buy_amount = _float(item.get("pchs_amt") or item.get("buy_amt") or (buy_price * qty))
         eval_amount = _float(item.get("evlu_amt") or (current_price * qty))
         profit_loss = _float(item.get("evlu_pl") or (eval_amount - buy_amount))
-        profit_loss_pct = _float(item.get("evlu_pl_pct") or item.get("prdy_ctrt"))
+        profit_loss_pct = _float(item.get("evlu_pl_pct"))
+        # KIS가 evlu_pl_pct를 제공하지 않으면 직접 계산
+        if profit_loss_pct == 0.0 and buy_amount > 0:
+            profit_loss_pct = (profit_loss / buy_amount) * 100
 
         # Determine market from code pattern
         market = _infer_market(code)
