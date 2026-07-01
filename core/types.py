@@ -146,4 +146,17 @@ class AccountSummary:
     total_profit_loss_pct: float       # 총 평가 손익률 (%)
     daily_loss: float = 0.0            # 당일 손실액
     daily_loss_pct: float = 0.0        # 당일 손실률 (%)
+
+
+@dataclass
+class UnfilledOrder:
+    """미체결 주문 정보."""
+    code: str                          # 종목코드
+    name: str                          # 종목명
+    side: str                          # buy / sell
+    quantity: int                      # 미체결 수량
+    price: float                       # 주문 가격
+    order_id: str                      # KIS 주문번호
+    order_time: str                    # 주문 시각 (HHMMSS)
+    order_dvsn: str = "00"             # 00=지정가, 01=시장가
     is_trading_halted: bool = False    # 매매 중단 여부

@@ -170,6 +170,8 @@ const SECTIONS = [
     fields: [
       { key: 'max_holdings', label: '최대 보유 종목', unit: '개', min: 1, max: 20, step: 1,
         hint: '동시 보유 최대 종목 수. 10이면 최대 10개까지 동시 보유. 0=무제한.' },
+      { key: 'max_total_exposure_pct', label: '최대 총 노출 한도', unit: '%', min: 10, max: 200, step: 5,
+        hint: '총 자산 대비 최대 투자 비중. 50=자산의 50%까지만 투자. 100=전액 투자 가능.' },
     ],
   },
 ]

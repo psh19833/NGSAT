@@ -221,3 +221,27 @@ def is_order_endpoint(name: str) -> bool:
     """Check if an endpoint is an order (trading) endpoint."""
     ep = _ENDPOINTS.get(name)
     return ep is not None and ep.is_order
+
+
+# ── 미체결 주문 조회 / 취소 ──
+
+_UNFILLED = KisEndpoint(
+    name="inquire_unfilled",
+    category=KisCategory.QUOTATION,
+    path="/uapi/domestic-stock/v1/quotations/inquire-daily-unfilled",
+    method="GET",
+    tr_id="CTSC9117R",
+    description="미체결 주문 목록 조회(지정가/시장가)",
+)
+
+_CANCEL_ORDER = KisEndpoint(
+    name="cancel_order",
+    category=KisCategory.TRADING,
+    path="/uapi/domestic-stock/v1/order/CancelOrderCash",
+    method="POST",
+    tr_id="TTTC0803U",
+    description="주문 취소 (지정가/시장가 전량)",
+)
+
+_ENDPOINTS["inquire_unfilled"] = _UNFILLED
+_ENDPOINTS["cancel_order"] = _CANCEL_ORDER

@@ -473,3 +473,21 @@ class KisAdapter(BrokerAdapter):
     async def close(self) -> None:
         """Clean up resources."""
         await self._http.close()
+
+    async def get_unfilled_orders(self) -> list:
+        """Get currently unfilled orders from KIS."""
+        try:
+            resp = await self._http.get("inquire_unfilled", params={
+                "CANO": self._account_no,
+                "ACNT_PRDT_CD": self._account_product_code,
+                "INQR_STRT_DT": datetime.now().strftime("%Y%m%d"),
+                "INQR_END_DT": datetime.now().strftime("%Y%m%d"),
+                "SLL_BUY_DVSN_CD": "00",
+                "INQR_DVSN": "00",
+            })
+            if resp.success:
+                from data.adapters.kis.mapper import parse_unfilled_orders
+                return parse_unfilled_orders(resp.raw)
+        except Exception as e:
+            logger.warning(f"미체결 주문 조회 실패: {e}")
+        return []

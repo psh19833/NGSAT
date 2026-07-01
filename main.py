@@ -355,6 +355,14 @@ async def run_live(config, args):
                 if orchestrator.controller.is_running:
                     result = await orchestrator.run_cycle(index_prices, universe)
 
+                    # 미체결 주문 취소 (지정가 30초 경과 시)
+                    cancelled = await orchestrator.cancel_unfilled_orders(max_age_seconds=30)
+                    if cancelled > 0 and telegram_bot:
+                        await telegram_bot.send_system_event(
+                            "info",
+                            f"미체결 주문 {cancelled}건 자동 취소",
+                        )
+
                     # Send telegram notification for trades
                     if telegram_bot and (result.buys_executed > 0 or result.sells_executed > 0):
                         await telegram_bot.send_system_event(

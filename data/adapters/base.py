@@ -141,6 +141,13 @@ class BrokerAdapter(ABC):
         """
         ...
 
+    async def get_unfilled_orders(self) -> list:
+        """Get currently unfilled orders (미체결 주문 목록).
+
+        Default returns empty list. Override in adapter that supports it.
+        """
+        return []
+
     @abstractmethod
     async def is_market_open(self) -> bool:
         """Check if the stock market is currently open.

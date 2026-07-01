@@ -794,3 +794,56 @@ class TradingOrchestrator:
                 self._db_engine.dispose()
             except Exception as e:
                 logger.warning(f"DB 엔진 종료 중 오류: {e}")
+
+    async def cancel_unfilled_orders(self, max_age_seconds: int = 30) -> int:
+        """미체결 주문 중 일정 시간 경과한 주문을 취소.
+
+        매 사이클마다 실행:
+        1. KIS 미체결 주문 목록 조회
+        2. 주문 시각과 현재 시각 비교
+        3. max_age_seconds 초과 시 주문 취소
+
+        Args:
+            max_age_seconds: 취소 기준 시간(초). 기본 30초.
+
+        Returns:
+            취소한 주문 개수.
+        """
+        from datetime import timedelta
+        now = datetime.now()
+        cancelled = 0
+
+        try:
+            unfilled = await self._broker.get_unfilled_orders()
+        except Exception as e:
+            logger.warning(f"미체결 주문 조회 실패: {e}")
+            return 0
+
+        for order in unfilled:
+            try:
+                # 주문 시각 파싱 (HHMMSS 형식)
+                ot = order.order_time
+                if len(ot) >= 6:
+                    order_dt = now.replace(
+                        hour=int(ot[:2]), minute=int(ot[2:4]),
+                        second=int(ot[4:6]),
+                    )
+                    age = (now - order_dt).total_seconds()
+                    if age < 0:
+                        age += 86400  # 자정 넘김 처리
+
+                    if age >= max_age_seconds:
+                        ok = await self._broker.cancel_order(order.order_id)
+                        if ok:
+                            cancelled += 1
+                            logger.info(
+                                f"미체결 취소: {order.name}({order.code}) "
+                                f"{order.side} {order.quantity}주 "
+                                f"{order.price:,.0f}원 (경과 {age:.0f}초)"
+                            )
+            except Exception as e:
+                logger.warning(f"주문 취소 중 오류: {order.order_id}: {e}")
+
+        if cancelled > 0:
+            logger.info(f"미체결 주문 {cancelled}건 취소 완료")
+        return cancelled

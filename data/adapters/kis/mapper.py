@@ -396,3 +396,71 @@ def parse_order_status(raw: dict[str, Any], order_id: str) -> OrderStatus:
     if ccld_qty > 0:
         return OrderStatus.PARTIALLY_FILLED
     return OrderStatus.SUBMITTED
+
+
+def parse_unfilled_orders(raw: dict[str, Any]) -> list:
+    """Parse KIS 미체결 주문 목록 응답.
+
+    KIS 응답 형식:
+    {
+        "output": [...],  # 각 주문의 배열
+        "output1": {"총주문수": "..."},
+        "rt_cd": "0",
+    }
+
+    output 각 항목:
+        odno: 주문번호
+        pdno: 종목코드
+        prdt_name: 종목명
+        ord_qty: 주문수량
+        ord_unpr: 주문가격
+        ord_tmd: 주문시각(HHMMSS)
+        sll_buy_dvsn_cd: 01=매도, 02=매수
+        ord_dvsn_cd: 00=지정가, 01=시장가
+        ord_psbl_qty: 주문가능수량(미체결수량)
+    """
+    from core.types import UnfilledOrder
+
+    items = raw.get("output") or raw.get("output2") or []
+    if not isinstance(items, list):
+        return []
+
+    result = []
+    for item in items:
+        try:
+            side_str = item.get("sll_buy_dvsn_cd", "")
+            side = "buy" if side_str == "02" else "sell"
+            order_dvsn = item.get("ord_dvsn_cd", "00")
+            result.append(UnfilledOrder(
+                code=item.get("pdno", ""),
+                name=item.get("prdt_name", ""),
+                side=side,
+                quantity=int(float(item.get("ord_psbl_qty", "0"))),
+                price=float(item.get("ord_unpr", "0")),
+                order_id=item.get("odno", ""),
+                order_time=item.get("ord_tmd", ""),
+                order_dvsn=order_dvsn,
+            ))
+        except (ValueError, TypeError):
+            continue
+    return result
+
+
+def build_cancel_payload(
+    code: str,
+    order_id: str,
+    quantity: int,
+    account_no: str,
+    account_product_code: str,
+) -> dict[str, str]:
+    """Build KIS 주문취소 요청 payload."""
+    return {
+        "CANO": account_no,
+        "ACNT_PRDT_CD": account_product_code,
+        "KRX_FWDG_ORD_ORGNO": "",
+        "ORGN_ODNO": order_id,
+        "ORD_DVSN": "00",
+        "QTY_ALL_ORD_YN": "Y",
+        "PDNO": code,
+        "ORD_QTY": str(quantity),
+    }

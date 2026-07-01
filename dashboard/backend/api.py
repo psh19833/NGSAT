@@ -60,6 +60,7 @@ CONFIG_FIELD_MAP: dict[str, str] = {
     "NGSAT_ML_TRAINING_START_DATE": "ml_training_start_date",
     "NGSAT_ML_TRAINING_END_DATE": "ml_training_end_date",
     "NGSAT_ML_AUTO_SELECT_MODEL": "ml_auto_select_model",
+    "NGSAT_MAX_TOTAL_EXPOSURE_PCT": "max_total_exposure_pct",
 }
 
 
@@ -109,6 +110,7 @@ class StrategyUpdateRequest(BaseModel):
     ml_auto_select_model: bool | None = None
     mode_high_volatility_atr_pct: float | None = Field(None, ge=0.1, le=10)
     mode_low_volatility_atr_pct: float | None = Field(None, ge=0.1, le=5)
+    max_total_exposure_pct: float | None = Field(None, ge=10, le=200)
     reset: bool = False
 
 
