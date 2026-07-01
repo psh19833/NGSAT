@@ -408,14 +408,14 @@ function FieldRow({ field, value, onChange }) {
   )
 }
 
-function PresetButtons({ onSelect, current }) {
+function PresetButtons({ onSelect, current, onPresetsLoaded }) {
   const [presets, setPresets] = useState(null);
   const [applying, setApplying] = useState(null);
 
   useEffect(() => {
     fetch('/api/strategy/presets')
       .then(r => r.json())
-      .then(d => { if (d.connected) setPresets(d.presets); })
+      .then(d => { if (d.connected) { setPresets(d.presets); onPresetsLoaded?.(d.presets); } })
       .catch(() => {});
   }, []);
 
@@ -432,9 +432,8 @@ function PresetButtons({ onSelect, current }) {
       });
       const data = await resp.json();
       if (data.connected) {
-        // Apply values to local form, trigger parent refresh
         const p = presets[name];
-        if (p) onSelect(p.values);
+        if (p) onSelect(p.values, name);
         alert(`✅ "${name}" 적용 완료\n변경: ${data.applied}개 항목\n${data.retrain?.auc ? `AUC: ${(data.retrain.auc*100).toFixed(1)}%${data.retrain.changed ? ' ✅ 향상' : ' ➖ 유지'}` : ''}`);
       } else {
         alert(`❌ 적용 실패: ${data.message}`);
@@ -638,6 +637,7 @@ export default function StrategyConfigPanel({ api, onDirtyChange }) {
   const [retrainMsg, setRetrainMsg] = useState(null)
   const [allOpen, setAllOpen] = useState(false)
   const [adjustMsg, setAdjustMsg] = useState(null) // regime weight auto-adjustment toast
+  const [presetsData, setPresetsData] = useState(null) // API-loaded presets for active detection
 
   useEffect(() => {
     loadConfig()
@@ -652,10 +652,13 @@ export default function StrategyConfigPanel({ api, onDirtyChange }) {
         setCurrentModelType(resp.current_model_type)
         setCurrentAuc(resp.current_auc ?? null)
       }
-      for (const [name, p] of Object.entries(PRESETS)) {
-        if (Object.entries(p.values).every(([k, v]) => Math.abs(v - (resp.config[k] ?? 0)) < 0.001)) {
-          setActivePreset(name)
-          break
+      // Detect active preset by comparing all values
+      if (presetsData) {
+        for (const [name, p] of Object.entries(presetsData)) {
+          if (Object.entries(p.values).every(([k, v]) => Math.abs(v - (resp.config[k] ?? 0)) < 0.001)) {
+            setActivePreset(name)
+            break
+          }
         }
       }
     }
@@ -704,16 +707,10 @@ export default function StrategyConfigPanel({ api, onDirtyChange }) {
     setRetraining(false)
   }
 
-  const handlePreset = (values) => {
+  const handlePreset = (values, presetName) => {
     setConfig(prev => prev ? { ...prev, ...values } : prev)
+    if (presetName) setActivePreset(presetName)
     onDirtyChange?.(true)
-    for (const [name, p] of Object.entries(PRESETS)) {
-      if (Object.entries(p.values).every(([k, v]) => Math.abs(v - values[k]) < 0.001)) {
-        setActivePreset(name)
-        return
-      }
-    }
-    setActivePreset('')
   }
 
   const handleSave = async () => {
@@ -828,7 +825,7 @@ export default function StrategyConfigPanel({ api, onDirtyChange }) {
       )}
 
       {/* Presets */}
-      <PresetButtons onSelect={handlePreset} current={activePreset} />
+      <PresetButtons onSelect={handlePreset} current={activePreset} onPresetsLoaded={setPresetsData} />
 
       {/* Sections by group */}
       <div className="space-y-6">
