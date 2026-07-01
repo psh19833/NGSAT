@@ -227,11 +227,11 @@ def is_order_endpoint(name: str) -> bool:
 
 _UNFILLED = KisEndpoint(
     name="inquire_unfilled",
-    category=KisCategory.QUOTATION,
-    path="/uapi/domestic-stock/v1/quotations/inquire-daily-unfilled",
+    category=KisCategory.TRADING,
+    path="/uapi/domestic-stock/v1/trading/inquire-daily-ccld",
     method="GET",
-    tr_id="CTSC9117R",
-    description="미체결 주문 목록 조회(지정가/시장가)",
+    tr_id="CTSC9115R",
+    description="일별 주문체결 조회 (ccld_dvsn=02: 미체결)",
 )
 
 _CANCEL_ORDER = KisEndpoint(

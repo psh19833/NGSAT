@@ -483,7 +483,9 @@ class KisAdapter(BrokerAdapter):
                 "INQR_STRT_DT": datetime.now().strftime("%Y%m%d"),
                 "INQR_END_DT": datetime.now().strftime("%Y%m%d"),
                 "SLL_BUY_DVSN_CD": "00",
+                "CCLD_DVSN": "02",
                 "INQR_DVSN": "00",
+                "INQR_DVSN_3": "00",
             })
             if resp.success:
                 from data.adapters.kis.mapper import parse_unfilled_orders
