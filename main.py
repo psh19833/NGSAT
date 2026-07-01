@@ -325,8 +325,9 @@ async def run_live(config, args):
 
                 # 일봉 데이터는 장 마감 후에만 변경되므로 300사이클(50분) 간격으로 충분
                 _refresh_counter += 1
-                if _refresh_counter == 2 or _refresh_counter % 300 == 0:
+                if _refresh_counter == 2 or _refresh_counter % 300 == 0 or _refresh_counter == 35:
                     # 2번째 사이클에서 최초 1회 즉시 refresh, 이후 50분마다
+                    # _refresh_counter == 35: 재학습 후 fresh 데이터 적용
                     universe, index_prices = await data_provider.refresh_prices()
                     # Update app.state for manual retrain API
                     if dashboard_app:
