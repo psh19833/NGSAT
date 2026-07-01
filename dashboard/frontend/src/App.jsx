@@ -53,7 +53,10 @@ export default function App() {
     if (results[2].status === 'fulfilled') setPositions(results[2].value)
     if (results[3].status === 'fulfilled') setRegime(results[3].value)
     if (results[4].status === 'fulfilled') setTrades(results[4].value)
-    if (results[5].status === 'fulfilled') setStrategyConfig(results[5].value?.config ? {...results[5].value.config} : null)
+    if (results[5].status === 'fulfilled') {
+      const d = results[5].value
+      setStrategyConfig(d?.config ? { ...d.config, active_preset: d.active_preset } : null)
+    }
     setRefreshing(false)
   }, [])
 

@@ -527,6 +527,24 @@ def create_app(orchestrator=None, config=None) -> FastAPI:
         if cfg is None:
             return {"connected": False}
         result = {"connected": True, "config": asdict(cfg)}
+        # Detect active preset by comparing config values
+        try:
+            import json
+            from pathlib import Path
+            presets_path = Path(__file__).resolve().parent.parent.parent / "config" / "presets.json"
+            if presets_path.exists():
+                with open(presets_path, encoding="utf-8") as f:
+                    presets = json.load(f)
+                cfg_dict = asdict(cfg)
+                for name, p in presets.items():
+                    if all(
+                        abs(cfg_dict.get(k, 0) - v) < 0.001
+                        for k, v in p.get("values", {}).items()
+                    ):
+                        result["active_preset"] = name
+                        break
+        except Exception:
+            pass
         orch = _get_orchestrator()
         if orch and hasattr(orch, '_inference') and orch._inference is not None:
             m = getattr(orch._inference, '_model', None)

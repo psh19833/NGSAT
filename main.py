@@ -20,6 +20,7 @@ from __future__ import annotations
 import asyncio
 import argparse
 import signal
+import time
 from datetime import datetime, timezone, timedelta
 from pathlib import Path
 
@@ -249,9 +250,10 @@ async def run_live(config, args):
             dashboard_app.state.latest_universe = universe
             dashboard_app.state.latest_index_prices = index_prices
 
-        _refresh_counter = 1  # Start at 1 so first % 30 check happens at cycle 30 // CHANGED TO 300 (50min)
+        _refresh_counter = 1
         _consecutive_errors = 0
-        _last_retrain_date = ""  # yyyy-mm-dd tracking for daily retrain
+        _last_retrain_date = ""
+        _last_status_time = 0.0  # 마지막 정기 Status 발송 시간 (timestamp)
         session_tracker = MarketSessionTracker()
 
         def _is_after_market_close_kst() -> bool:
@@ -391,6 +393,58 @@ async def run_live(config, args):
 
                 # Reset consecutive error counter on successful cycle
                 _consecutive_errors = 0
+
+                # ── 정기 Status 메시지 (30분마다) ──
+                if telegram_bot:
+                    now_ts = time.time()
+                    if now_ts - _last_status_time >= 1800:  # 30min
+                        _last_status_time = now_ts
+                        try:
+                            tokens = []
+                            # Cycle info
+                            tokens.append(f"🔄 사이클 #{result.timestamp.strftime('%H:%M')}")
+                            # Mode + preset
+                            preset_name = getattr(orchestrator, '_preset_router', None)
+                            preset_name = getattr(preset_name, 'current_preset', None) if preset_name else None
+                            mode_label = {"swing": "스윙", "short_term": "단타", "hold": "홀드"}.get(result.mode, result.mode)
+                            tokens.append(f"🏷️ {mode_label}" + (f" · {preset_name}" if preset_name else ""))
+                            # Regime
+                            regime_kr = {"bull": "강세장", "neutral": "중립장", "bear": "약세장"}.get(
+                                result.regime.value if result.regime else "", "?")
+                            rs = getattr(orchestrator, '_last_regime', None)
+                            rs_score = rs.score if rs else 0
+                            tokens.append(f"📈 {regime_kr} ({rs_score:.0f}점)")
+                            # Candidates
+                            tokens.append(f"🎯 후보 {result.candidates_found}개")
+                            # ML BUY count
+                            buy_preds = sum(1 for p in result.predictions if p.get('action') == 'buy')
+                            if buy_preds > 0:
+                                tokens.append(f"🤖 ML BUY {buy_preds}건")
+                            # Trades today
+                            if result.buys_executed > 0 or result.sells_executed > 0:
+                                tokens.append(f"🟢 매수 {result.buys_executed}건")
+                                tokens.append(f"🔴 매도 {result.sells_executed}건")
+                            # Account summary
+                            acc = await orchestrator._broker.get_account_summary()
+                            if acc:
+                                tokens.append(f"💰 {acc.deposit:,.0f}원 / {acc.total_asset:,.0f}원")
+                            # Positions
+                            positions = await orchestrator._fetch_positions()
+                            if positions:
+                                pos_str = " · ".join(
+                                    f"{p.name} {p.quantity}주 ({p.profit_loss_pct:+.1f}%)"
+                                    for p in positions[:3]
+                                )
+                                tokens.append(f"📊 {pos_str}")
+                                if len(positions) > 3:
+                                    tokens[-1] += f" 외 {len(positions)-3}종목"
+
+                            msg = "\n".join(tokens)
+                            await telegram_bot.send_system_event("info", msg)
+                            logger.info("정기 Status 메시지 발송 완료")
+                        except Exception as e:
+                            logger.warning(f"정기 Status 발송 실패: {e}")
+
                 await asyncio.sleep(tick_interval)
 
             except asyncio.CancelledError:

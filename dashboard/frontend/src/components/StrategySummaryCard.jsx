@@ -14,9 +14,9 @@ const PRESET_ICONS = {
 
 function detectPreset(config) {
   if (!config) return { name: '균형형', icon: '⚖️' }
-  // Try to match from the config presets (loaded via PresetButtons)
-  // Fall back to '사용자 정의' if no match
-  return { name: config.active_preset || '사용자 정의', icon: '✏️' }
+  const name = config.active_preset
+  if (name && PRESET_ICONS[name]) return { name, icon: PRESET_ICONS[name] }
+  return { name: '사용자 정의', icon: '✏️' }
 }
 
 export default function StrategySummaryCard({ config, regime }) {
