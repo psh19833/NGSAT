@@ -643,6 +643,19 @@ export default function StrategyConfigPanel({ api, onDirtyChange }) {
     loadConfig()
   }, [])
 
+  // presetData 로드 후 활성 프리셋 재감지
+  useEffect(() => {
+    if (presetsData && config) {
+      for (const [name, p] of Object.entries(presetsData)) {
+        if (Object.entries(p.values).every(([k, v]) => Math.abs(v - (config[k] ?? 0)) < 0.001)) {
+          setActivePreset(name)
+          return
+        }
+      }
+      setActivePreset('')
+    }
+  }, [presetsData, config])
+
   const loadConfig = async () => {
     setLoading(true)
     const resp = await api.getStrategyConfig()
@@ -651,15 +664,6 @@ export default function StrategyConfigPanel({ api, onDirtyChange }) {
       if (resp.current_model_type) {
         setCurrentModelType(resp.current_model_type)
         setCurrentAuc(resp.current_auc ?? null)
-      }
-      // Detect active preset by comparing all values
-      if (presetsData) {
-        for (const [name, p] of Object.entries(presetsData)) {
-          if (Object.entries(p.values).every(([k, v]) => Math.abs(v - (resp.config[k] ?? 0)) < 0.001)) {
-            setActivePreset(name)
-            break
-          }
-        }
       }
     }
     setLoading(false)
