@@ -158,7 +158,13 @@ class RealDataProvider:
         period_label = f"{start.strftime('%Y-%m-%d')}~{end.strftime('%Y-%m-%d')}"
         logger.info(f"KIS 실데이터 로드 시작: 종목 {len(self._codes)}개, 기간 {period_label}")
 
-        # 1. 종목별 일봉 데이터
+        # 1. 먼저 KOSPI 지수 조회 (Rate Limit 버킷이 가득 찬 상태에서 1번째 호출)
+        index_prices = await self._fetch_index(adapter)
+        if len(index_prices) < 20:
+            logger.warning(f"KOSPI 지수 부족 ({len(index_prices)}일) — 종목 로드 후 재계산")
+        await asyncio.sleep(0.05)  # Rate Limit 버킷 리필 대기
+
+        # 2. 종목별 일봉 데이터 (KOSPI 후 0.05s 간격으로 안전)
         universe: list[tuple[StockInfo, list[PriceData]]] = []
         for i, code in enumerate(self._codes):
             try:
@@ -179,9 +185,6 @@ class RealDataProvider:
         if not universe:
             logger.error("KIS 실데이터 로드 실패 — 모든 종목 조회 실패")
             return [], []
-
-        # 2. KOSPI 지수 데이터
-        index_prices = await self._fetch_index(adapter)
 
         # KOSPI 지수 API가 부족하면 종목군 평균으로 시장 지수 계산
         if len(index_prices) < 20:
@@ -369,8 +372,16 @@ class RealDataProvider:
         now = datetime.now(KST)
         start = now - timedelta(days=5)  # 주말/공휴일 커버
 
-        # Refresh each stock's latest bar
+        # Refresh index first (Rate Limit 버킷 Full 상태에서 1번째 호출)
+        new_index = await self._fetch_index(adapter)
+        if not new_index or len(new_index) < 20:
+            if self._universe_cache:
+                new_index = self._compute_market_index(self._universe_cache)
+            else:
+                new_index = self._synthetic_index()
+        await asyncio.sleep(0.1)
 
+        # Refresh each stock's latest bar
         for i, (info, prices) in enumerate(self._universe_cache):
             try:
                 new_bars = await adapter.get_price_history(info.code, start, now)
@@ -388,15 +399,6 @@ class RealDataProvider:
             await asyncio.sleep(0.1)
             if (i + 1) % 10 == 0:
                 logger.debug(f"  시세 갱신 진행: {i + 1}/{len(self._universe_cache)}")
-
-        # Refresh index
-        new_index = await self._fetch_index(adapter)
-        if not new_index or len(new_index) < 20:
-            # KOSPI 지수 API 부족 → 종목군 평균으로 재계산
-            if self._universe_cache:
-                new_index = self._compute_market_index(self._universe_cache)
-            else:
-                new_index = self._synthetic_index()
 
         if new_index:
             # Update last bar or append

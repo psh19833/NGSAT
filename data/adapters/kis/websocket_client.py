@@ -85,7 +85,7 @@ class KisWebSocketClient:
                 max_size=2 ** 20,  # 1MB
             )
             self._running = True
-            self._reconnect_delay = 1.0
+            # _reconnect_delay는 listen()에서만 관리 (connect에서 리셋 금지)
 
             # Resubscribe previous codes
             for code in self._subscribed:
@@ -117,6 +117,7 @@ class KisWebSocketClient:
         Callbacks on_price and on_error are invoked from this coroutine.
         Auto-reconnects with backoff on unexpected disconnects.
         """
+        self._reconnect_delay = 1.0  # listen 시작 시 1회 초기화
         while self._running:
             try:
                 if not self._ws:
@@ -124,9 +125,13 @@ class KisWebSocketClient:
                         break
                     continue
 
-                raw = await self._ws.recv()
+                raw = await asyncio.wait_for(self._ws.recv(), timeout=35)
                 await self._handle_message(raw)
                 self._reconnect_delay = 1.0  # reset on successful receive
+
+            except asyncio.TimeoutError:
+                # KIS 핑 간격(30초)보다 길게 타임아웃 — 연결 생존 확인
+                continue
 
             except websockets.ConnectionClosed:
                 logger.warning("KIS WebSocket 연결 종료 — 재연결 시도")
