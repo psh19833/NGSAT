@@ -76,6 +76,7 @@ class CycleResult:
     mode_decision: dict | None = None                  # 모드 선택 정보
     regime_skipped: bool = False                       # 장 종료로 레짐 스킵
     preset_change: str | None = None                   # 자동 프리셋 변경 (preset name)
+    minute_screened: list = field(default_factory=list) # 분봉 스크리닝 결과
 
 
 class TradingOrchestrator:
@@ -394,6 +395,34 @@ class TradingOrchestrator:
             ]
             logger.info(f"스크리닝: {screen_result.total_scanned}개 → {result.candidates_found}개 후보")
 
+            # ── Step 5b: Minute screening (분봉 기반 실시간 점수) ──
+            if market_open and screen_result.candidates:
+                try:
+                    from strategy.minute_screener import screen_by_minute
+                    # Fetch minute data for top candidates
+                    minute_data = {}
+                    names = {}
+                    for c in screen_result.candidates[:15]:  # Top 15만
+                        mp = await self._fetch_minute_prices(c.code)
+                        if mp and len(mp) >= 20:
+                            minute_data[c.code] = mp
+                            names[c.code] = c.name
+                    if minute_data:
+                        minute_scores = screen_by_minute(minute_data)
+                        # Merge names
+                        for ms in minute_scores:
+                            if ms.code in names and not ms.name:
+                                ms.name = names[ms.code]
+                        result.minute_screened = [
+                            {"code": s.code, "name": s.name, "score": s.score,
+                             "rsi": s.minute_rsi, "momentum": s.momentum_5m,
+                             "volume": s.volume_spike, "volatility": s.volatility_pct}
+                            for s in minute_scores[:10]
+                        ]
+                        logger.info(f"분봉 스크리닝: {len(minute_scores)}개 점수 산출")
+                except Exception as e:
+                    logger.warning(f"분봉 스크리닝 실패 (skip): {e}")
+
             # ── Step 6: ML predictions & buy execution (모드별 라우팅) ──
             # market_open은 이미 True — 진입 진행
             is_short_term = self._current_mode == "short_term"
@@ -681,6 +710,7 @@ class TradingOrchestrator:
             "screened": result.screened,
             "predictions": result.predictions,
             "deferred_entries": result.deferred_entries,
+            "minute_screened": result.minute_screened,
             "summary": result.reason,
         }
         return result

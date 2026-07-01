@@ -160,3 +160,16 @@ class UnfilledOrder:
     order_time: str                    # 주문 시각 (HHMMSS)
     order_dvsn: str = "00"             # 00=지정가, 01=시장가
     is_trading_halted: bool = False    # 매매 중단 여부
+
+
+@dataclass
+class MinuteScore:
+    """분봉 스크리닝 결과 (단일 종목)."""
+    code: str
+    name: str
+    score: float                       # 0~100 종합 점수
+    minute_rsi: float = 50.0           # 분봉 RSI (14)
+    momentum_5m: float = 0.0           # 5분 등락률 (%)
+    volume_spike: float = 1.0          # 거래량 급등 비율
+    volatility_pct: float = 0.0        # 분봉 변동성 (%)
+    reasons: list[str] = field(default_factory=list)
