@@ -407,10 +407,10 @@ function FieldRow({ field, value, onChange }) {
 }
 
 function PresetButtons({ onSelect, current }) {
-  const [presets, setPresets] = React.useState(null);
-  const [applying, setApplying] = React.useState(null);
+  const [presets, setPresets] = useState(null);
+  const [applying, setApplying] = useState(null);
 
-  React.useEffect(() => {
+  useEffect(() => {
     fetch('/api/strategy/presets')
       .then(r => r.json())
       .then(d => { if (d.connected) setPresets(d.presets); })
