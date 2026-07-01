@@ -21,6 +21,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from datetime import datetime
 from typing import Any
+import asyncio
 
 from core.config import RiskConfig, StrategyConfig
 from core.logger import logger
@@ -150,6 +151,7 @@ class TradingOrchestrator:
         self._current_mode: str = "swing"
         self._last_diagnosis: dict | None = None  # 진단 현황
         self._preset_router: Any = None  # lazy init in run_cycle
+        self._minute_cache: dict[str, list[PriceData]] = {}  # per-cycle 분봉 캐시
         self._cycle_count: int = 0
         self._regime_skipped: bool = False         # 장 종료 시 레짐 미평가
         # TR-13: 일일 거래 횟수 제한
@@ -399,13 +401,16 @@ class TradingOrchestrator:
             if market_open and screen_result.candidates:
                 try:
                     from strategy.minute_screener import screen_by_minute
-                    # Fetch minute data for top candidates
+                    # Fetch minute data for top candidates + 캐시 저장
                     minute_data = {}
                     names = {}
+                    self._minute_cache.clear()
                     for c in screen_result.candidates[:15]:  # Top 15만
                         mp = await self._fetch_minute_prices(c.code)
+                        await asyncio.sleep(0.1)  # ★ Rate Limit 보호
                         if mp and len(mp) >= 20:
                             minute_data[c.code] = mp
+                            self._minute_cache[c.code] = mp  # 캐시 저장
                             names[c.code] = c.name
                     if minute_data:
                         minute_scores = screen_by_minute(minute_data)
@@ -476,8 +481,8 @@ class TradingOrchestrator:
                 continue
 
             if is_short_term:
-                # 단타 모드: 분봉 ML로 진입 예측
-                minute_prices = await self._fetch_minute_prices(candidate.code)
+                # 단타 모드: 분봉 ML로 진입 예측 (캐시 우선)
+                minute_prices = self._minute_cache.get(candidate.code) or await self._fetch_minute_prices(candidate.code)
                 if minute_prices and len(minute_prices) >= 60:
                     pred = self._inference.predict_minute_entry(candidate, minute_prices)
                 else:
@@ -737,7 +742,10 @@ class TradingOrchestrator:
     async def _refine_entry(self, code: str, use_minute: bool = True) -> EntryDecision:
         """분봉으로 진입 타이밍/가격을 정밀화. 분봉 미가용 시 시장가 진입 폴백."""
         try:
-            minute_prices = await self._broker.get_minute_history(code)
+            # 캐시 우선, 없으면 API 호출
+            minute_prices = self._minute_cache.get(code)
+            if minute_prices is None:
+                minute_prices = await self._broker.get_minute_history(code)
         except NotImplementedError:
             return EntryDecision(
                 timing=EntryTiming.ENTER_NOW, should_enter=True, limit_price=None,
