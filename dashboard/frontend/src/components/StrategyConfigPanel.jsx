@@ -176,55 +176,6 @@ const SECTIONS = [
   },
 ]
 
-// ── Presets ──
-const PRESETS = {
-  안정형: {
-    label: '🛡️ 안정형',
-    desc: '손실을 최소화. 매매 횟수는 적지만 큰 손실은 거의 없습니다.',
-    values: {
-      buy_threshold: 0.75, sell_threshold: 0.30,
-      mode_swing_stop_loss_pct: 2.0, mode_swing_daily_loss_pct: 3.0, mode_swing_position_size: 0.05,
-      mode_short_stop_loss_pct: 1.0, mode_short_daily_loss_pct: 2.0, mode_short_position_size: 0.03,
-      mode_hold_stop_loss_pct: 2.0, mode_hold_daily_loss_pct: 3.0, mode_hold_position_size: 0.0,
-      regime_bull_threshold: 70, regime_bear_threshold: 30,
-      screener_bull_min_score: 70, screener_neutral_min_score: 80, screener_bear_min_score: 90,
-      screener_bull_max_candidates: 8, screener_neutral_max_candidates: 5, screener_bear_max_candidates: 2,
-      mode_high_volatility_atr_pct: 2.0,
-      ml_swing_forward_days: 3, ml_short_forward_minutes: 60, mode_low_volatility_atr_pct: 0.7,
-    },
-  },
-  균형형: {
-    label: '⚖️ 균형형',
-    desc: '기본 설정. 적당한 위험과 수익을 추구합니다. (권장)',
-    values: {
-      buy_threshold: 0.65, sell_threshold: 0.35,
-      mode_swing_stop_loss_pct: 3.0, mode_swing_daily_loss_pct: 5.0, mode_swing_position_size: 0.10,
-      mode_short_stop_loss_pct: 1.5, mode_short_daily_loss_pct: 3.0, mode_short_position_size: 0.05,
-      mode_hold_stop_loss_pct: 3.0, mode_hold_daily_loss_pct: 5.0, mode_hold_position_size: 0.0,
-      regime_bull_threshold: 65, regime_bear_threshold: 35,
-      screener_bull_min_score: 60, screener_neutral_min_score: 70, screener_bear_min_score: 80,
-      screener_bull_max_candidates: 15, screener_neutral_max_candidates: 10, screener_bear_max_candidates: 5,
-      mode_high_volatility_atr_pct: 1.5,
-      ml_swing_forward_days: 3, ml_short_forward_minutes: 60, mode_low_volatility_atr_pct: 0.5,
-    },
-  },
-  공격형: {
-    label: '🚀 공격형',
-    desc: '기회를 많이 잡습니다. 수익이 클 수 있지만 손실도 커질 수 있습니다.',
-    values: {
-      buy_threshold: 0.55, sell_threshold: 0.40,
-      mode_swing_stop_loss_pct: 5.0, mode_swing_daily_loss_pct: 8.0, mode_swing_position_size: 0.20,
-      mode_short_stop_loss_pct: 2.5, mode_short_daily_loss_pct: 5.0, mode_short_position_size: 0.10,
-      mode_hold_stop_loss_pct: 5.0, mode_hold_daily_loss_pct: 8.0, mode_hold_position_size: 0.0,
-      regime_bull_threshold: 55, regime_bear_threshold: 40,
-      screener_bull_min_score: 50, screener_neutral_min_score: 60, screener_bear_min_score: 70,
-      screener_bull_max_candidates: 25, screener_neutral_max_candidates: 15, screener_bear_max_candidates: 8,
-      mode_high_volatility_atr_pct: 1.0,
-      ml_swing_forward_days: 3, ml_short_forward_minutes: 60, mode_low_volatility_atr_pct: 0.3,
-    },
-  },
-}
-
 // ── Group display config ──
 const GROUP_ICONS = {
   trade: '📊',
