@@ -97,6 +97,10 @@ export default function DiagnosisPanel({ api }) {
           <h4 className="text-sm font-medium text-ngsat-text mb-3">
             🤖 ML 예측 ({predictions.length}건)
           </h4>
+          <div className="text-[10px] text-ngsat-muted mb-2 flex items-center gap-3">
+            <span>🟢 매수</span><span>🟡 홀드</span><span>🔴 관망</span>
+            <span className="ml-auto">% = 상승 확률</span>
+          </div>
           {predictions.length === 0 ? (
             <p className="text-xs text-ngsat-muted">예측 결과 없음</p>
           ) : (

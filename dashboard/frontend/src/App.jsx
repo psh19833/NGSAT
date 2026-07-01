@@ -19,6 +19,7 @@ import Toast from './components/Toast.jsx'
 import ErrorBoundary from './components/ErrorBoundary.jsx'
 import ConfirmModal from './components/ConfirmModal.jsx'
 import BacktestPanel from './components/BacktestPanel.jsx'
+import StrategySummaryCard from './components/StrategySummaryCard.jsx'
 
 export default function App() {
   const [status, setStatus] = useState(null)
@@ -26,6 +27,7 @@ export default function App() {
   const [positions, setPositions] = useState(null)
   const [regime, setRegime] = useState(null)
   const [trades, setTrades] = useState(null)
+  const [strategyConfig, setStrategyConfig] = useState(null)
   const [activeTab, setActiveTab] = useState('overview')
   const [toast, setToast] = useState(null)
   const [confirmAction, setConfirmAction] = useState(null)
@@ -41,7 +43,7 @@ export default function App() {
     // Use allSettled so one failure doesn't block all; keep stale data on error
     const results = await Promise.allSettled([
       api.getStatus(), api.getAccount(), api.getPositions(),
-      api.getRegime(), api.getTrades(),
+      api.getRegime(), api.getTrades(), api.getStrategyConfig(),
     ])
     // Only update state on success — stale data persists on failure
     if (results[0].status === 'fulfilled') setStatus(results[0].value)
@@ -49,6 +51,7 @@ export default function App() {
     if (results[2].status === 'fulfilled') setPositions(results[2].value)
     if (results[3].status === 'fulfilled') setRegime(results[3].value)
     if (results[4].status === 'fulfilled') setTrades(results[4].value)
+    if (results[5].status === 'fulfilled') setStrategyConfig(results[5].value?.config || null)
   }, [])
 
   useEffect(() => {
@@ -188,6 +191,9 @@ export default function App() {
 
               {/* Middle Row: Account */}
               <AccountCard account={account} />
+
+              {/* Strategy Summary */}
+              <StrategySummaryCard config={strategyConfig} regime={regime} />
 
               {/* Bottom: Positions */}
               <PositionsTable positions={positions} onAction={handleControl} />
