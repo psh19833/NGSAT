@@ -514,10 +514,9 @@ class TradingOrchestrator:
 
                 ref_price = entry.limit_price or prices[-1].close
                 base_budget_pct = self._risk.position_size_pct
-                # ATR-based dynamic position sizing
-                # High volatility → reduce position, Low volatility → increase (within limits)
-                target_vol_pct = 1.5  # 기준 변동성(%): 이 값에서 base_pct = full position
-                min_pct = base_budget_pct * 0.3
+                # ATR-based dynamic position sizing (최소 = base 보장)
+                target_vol_pct = 1.5
+                min_pct = base_budget_pct * 1.0
                 max_pct = base_budget_pct * 2.0
                 vol_pct = max(vol, 0.5)  # vol은 이미 백분율 (std/mean*100)
                 adjusted_pct = base_budget_pct * (target_vol_pct / vol_pct)
