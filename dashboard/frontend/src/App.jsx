@@ -28,6 +28,7 @@ export default function App() {
   const [regime, setRegime] = useState(null)
   const [trades, setTrades] = useState(null)
   const [strategyConfig, setStrategyConfig] = useState(null)
+  const [refreshing, setRefreshing] = useState(false)
   const [activeTab, setActiveTab] = useState('overview')
   const [toast, setToast] = useState(null)
   const [confirmAction, setConfirmAction] = useState(null)
@@ -40,6 +41,7 @@ export default function App() {
   }
 
   const refreshAll = useCallback(async () => {
+    setRefreshing(true)
     // Use allSettled so one failure doesn't block all; keep stale data on error
     const results = await Promise.allSettled([
       api.getStatus(), api.getAccount(), api.getPositions(),
@@ -52,6 +54,7 @@ export default function App() {
     if (results[3].status === 'fulfilled') setRegime(results[3].value)
     if (results[4].status === 'fulfilled') setTrades(results[4].value)
     if (results[5].status === 'fulfilled') setStrategyConfig(results[5].value?.config || null)
+    setRefreshing(false)
   }, [])
 
   useEffect(() => {
@@ -151,9 +154,14 @@ export default function App() {
             )}
             <button
               onClick={refreshAll}
-              className="px-3 py-1.5 text-sm text-ngsat-muted hover:text-ngsat-text border border-ngsat-border rounded-lg hover:border-ngsat-accent/30 transition-all"
+              disabled={refreshing}
+              className={`px-3 py-1.5 text-sm transition-all rounded-lg border ${
+                refreshing
+                  ? 'text-ngsat-muted/50 border-ngsat-border/50 cursor-wait'
+                  : 'text-ngsat-muted hover:text-ngsat-text border-ngsat-border hover:border-ngsat-accent/30'
+              }`}
             >
-              ↻ 새로고침
+              {refreshing ? '⟳' : '↻'} 새로고침
             </button>
           </div>
         </header>
