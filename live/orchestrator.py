@@ -75,6 +75,7 @@ class CycleResult:
     deferred_entries: list = field(default_factory=list) # 진입 보류
     mode_decision: dict | None = None                  # 모드 선택 정보
     regime_skipped: bool = False                       # 장 종료로 레짐 스킵
+    preset_change: str | None = None                   # 자동 프리셋 변경 (preset name)
 
 
 class TradingOrchestrator:
@@ -147,6 +148,7 @@ class TradingOrchestrator:
         self._last_regime: RegimeResult | None = None
         self._current_mode: str = "swing"
         self._last_diagnosis: dict | None = None  # 진단 현황
+        self._preset_router: Any = None  # lazy init in run_cycle
         self._cycle_count: int = 0
         self._regime_skipped: bool = False         # 장 종료 시 레짐 미평가
         # TR-13: 일일 거래 횟수 제한
@@ -368,6 +370,15 @@ class TradingOrchestrator:
             result.mode = self._current_mode
 
             logger.info(f"모드 선택: {mode_decision.mode.value} (신뢰도 {mode_decision.confidence:.0%}) — {mode_decision.reason}")
+
+            # ── Step 4b: Auto preset selection ──
+            if self._preset_router is None:
+                from strategy.preset_router import PresetRouter
+                self._preset_router = PresetRouter()
+            new_preset = self._preset_router.select_preset(regime_result, atr_pct=vol)
+            if new_preset:
+                logger.info(f"프리셋 자동 전환: {self._preset_router.current_preset} → {new_preset}")
+                result.preset_change = new_preset
 
             # HOLD 모드: 신규 진입 금지, 청산만 실행
             if mode_decision.mode == StrategyMode.HOLD:

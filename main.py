@@ -355,6 +355,13 @@ async def run_live(config, args):
                 if orchestrator.controller.is_running:
                     result = await orchestrator.run_cycle(index_prices, universe)
 
+                    # 자동 프리셋 변경 시 텔레그램 알림
+                    if telegram_bot and result.preset_change:
+                        await telegram_bot.send_system_event(
+                            "info",
+                            f"🔄 프리셋 자동 전환: {result.preset_change}",
+                        )
+
                     # 미체결 주문 취소 (지정가 30초 경과 시)
                     cancelled = await orchestrator.cancel_unfilled_orders(max_age_seconds=30)
                     if cancelled > 0 and telegram_bot:

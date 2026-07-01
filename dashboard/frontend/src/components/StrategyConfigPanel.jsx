@@ -362,6 +362,7 @@ function FieldRow({ field, value, onChange }) {
 function PresetButtons({ onSelect, current, onPresetsLoaded }) {
   const [presets, setPresets] = useState(null);
   const [applying, setApplying] = useState(null);
+  const [autoEnabled, setAutoEnabled] = useState(true);
 
   useEffect(() => {
     fetch('/api/strategy/presets')
@@ -432,6 +433,29 @@ function PresetButtons({ onSelect, current, onPresetsLoaded }) {
             <div className="text-[10px] mt-1 opacity-70">{preset.desc}</div>
           </button>
         ))}
+      </div>
+      <div className="mt-3 flex items-center gap-2 text-xs text-ngsat-muted">
+        <label className="flex items-center gap-2 cursor-pointer">
+          <input
+            type="checkbox"
+            checked={autoEnabled}
+            onChange={async (e) => {
+              const enabled = e.target.checked;
+              try {
+                await fetch('/api/strategy/auto-preset', {
+                  method: 'POST',
+                  headers: {'Content-Type': 'application/json'},
+                  body: JSON.stringify({enabled}),
+                });
+                setAutoEnabled(enabled);
+              } catch (err) {
+                alert('자동 프리셋 설정 실패');
+              }
+            }}
+            className="accent-ngsat-accent"
+          />
+          <span>🤖 자동 프리셋 — 시장 상황에 맞게 프리셋 자동 전환</span>
+        </label>
       </div>
     </div>
   );

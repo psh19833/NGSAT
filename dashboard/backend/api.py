@@ -203,6 +203,27 @@ def create_app(orchestrator=None, config=None) -> FastAPI:
             return None
         return app.state.config.strategy
 
+    # ── Auto-preset toggle ──
+    @app.post("/api/strategy/auto-preset")
+    async def set_auto_preset(data: dict):
+        enabled = data.get("enabled", True)
+        orch = _get_orchestrator()
+        if orch:
+            router = getattr(orch, '_preset_router', None)
+            if router:
+                router.set_auto_enabled(enabled)
+        return {"connected": True, "enabled": enabled}
+
+    @app.get("/api/strategy/auto-preset")
+    async def get_auto_preset():
+        orch = _get_orchestrator()
+        enabled = True
+        if orch:
+            router = getattr(orch, '_preset_router', None)
+            if router:
+                enabled = router.auto_enabled
+        return {"connected": True, "enabled": enabled}
+
     # ── Status ──
     @app.get("/api/status")
     async def get_status():
