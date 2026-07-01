@@ -174,6 +174,38 @@ const SECTIONS = [
         hint: '총 자산 대비 최대 투자 비중. 50=자산의 50%까지만 투자. 100=전액 투자 가능.' },
     ],
   },
+  {
+    id: 'trailing_stop',
+    title: '⑩ 트레일링 스탑',
+    desc: '수익이 나면 손절선을 따라 올립니다. 주가가 오를 때만 손절선이 올라가, 내려가지 않습니다.',
+    group: 'risk',
+    fields: [
+      { key: 'trailing_stop_enabled', label: '트레일링 스탑 사용', type: 'toggle',
+        hint: '켜면 수익 발생시 손절선을 따라 올립니다. 끄면 기존 고정 손절선 사용.' },
+      { key: 'trailing_stop_atr_multiplier', label: '트레일링 폭 (ATR 배수)', unit: '배', min: 0.5, max: 5, step: 0.5,
+        hint: '높을수록 넓게 추적(느슨한 손절), 낮을수록 타이트(빠른 청산). 2배=평균 변동폭의 2배 아래에서 손절.' },
+      { key: 'trailing_stop_activate_pct', label: '활성화 수익률', unit: '%', min: 0.1, max: 10, step: 0.5,
+        hint: '수익이 이 값 이상일 때부터 트레일링 스탑 작동. 1%면 수익 +1%부터 시작.' },
+    ],
+  },
+  {
+    id: 'partial_tp',
+    title: '⑪ 부분 익절',
+    desc: '수익 목표 도달시 일부만 매도하고 나머지는 추세 추종합니다. 1차+2차로 나누어 매도합니다.',
+    group: 'risk',
+    fields: [
+      { key: 'partial_tp_enabled', label: '부분 익절 사용', type: 'toggle',
+        hint: '켜면 수익 목표 도달시 일부만 매도. 끄면 전량 매도.' },
+      { key: 'partial_tp1_pct', label: '1차 익절 수익률', unit: '%', min: 0.5, max: 20, step: 0.5,
+        hint: '수익이 이 값에 도달하면 1차 매도. 3%면 수익 +3%시 매도 시작.' },
+      { key: 'partial_tp1_ratio', label: '1차 매도 비율', unit: '%', min: 10, max: 90, step: 5,
+        hint: '1차 매도시 팔 비율. 50%면 보유 수량의 절반 매도.' },
+      { key: 'partial_tp2_pct', label: '2차 익절 수익률', unit: '%', min: 1, max: 50, step: 1,
+        hint: '수익이 더 오르면 2차 매도. 6%면 수익 +6%시 추가 매도.' },
+      { key: 'partial_tp2_ratio', label: '2차 매도 비율', unit: '%', min: 10, max: 50, step: 5,
+        hint: '2차 매도시 팔 비율 (원래 수량 기준). 30%면 원래 수량의 30% 추가 매도.' },
+    ],
+  },
 ]
 
 // ── Group display config ──

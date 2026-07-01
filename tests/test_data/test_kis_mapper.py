@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import pytest
 
 from core.types import Market, OrderSide
 from data.adapters.kis.mapper import (
@@ -229,3 +228,60 @@ class TestBuildOrderPayload:
         )
         assert payload["ORD_DVSN"] == "00"  # limit
         assert payload["ORD_UNPR"] == "72000"
+
+
+class TestParseInvestorData:
+    """외국인/기관 투자자 매매동향 파싱 (P1-3)."""
+
+    def test_parse_foreign_buy(self):
+        """외국인 순매수 데이터 파싱."""
+        raw = {
+            "output": [
+                {"invst_cd": "8000", "ntby_qty": "100000", "ntby_tr_pbmn": "7000000000"},
+                {"invst_cd": "7000", "ntby_qty": "-50000", "ntby_tr_pbmn": "-3500000000"},
+            ]
+        }
+        from data.adapters.kis.mapper import parse_investor_data
+        result = parse_investor_data(raw)
+        assert result["foreign_net_buy_qty"] == 100000
+        assert result["foreign_net_buy_amt"] == 7000000000
+        assert result["institution_net_buy_qty"] == -50000
+        assert result["institution_net_buy_amt"] == -3500000000
+
+    def test_parse_empty_output(self):
+        """빈 응답시 0값."""
+        from data.adapters.kis.mapper import parse_investor_data
+        result = parse_investor_data({"output": []})
+        assert result["foreign_net_buy_qty"] == 0.0
+        assert result["institution_net_buy_qty"] == 0.0
+
+    def test_parse_missing_output(self):
+        """output 키 없는 응답시 0값."""
+        from data.adapters.kis.mapper import parse_investor_data
+        result = parse_investor_data({})
+        assert result["foreign_net_buy_amt"] == 0.0
+
+
+class TestParseFinancialRatio:
+    """재무비율 파싱 (P1-3)."""
+
+    def test_parse_per_pbr_eps(self):
+        """PER/PBR/EPS 파싱."""
+        raw = {
+            "output": [
+                {"per": "15.5", "pbr": "1.2", "eps": "4500"},
+            ]
+        }
+        from data.adapters.kis.mapper import parse_financial_ratio
+        result = parse_financial_ratio(raw)
+        assert result["per"] == 15.5
+        assert result["pbr"] == 1.2
+        assert result["eps"] == 4500
+
+    def test_parse_empty_financial(self):
+        """빈 응답시 0값."""
+        from data.adapters.kis.mapper import parse_financial_ratio
+        result = parse_financial_ratio({"output": []})
+        assert result["per"] == 0.0
+        assert result["pbr"] == 0.0
+        assert result["eps"] == 0.0

@@ -177,14 +177,30 @@ _MARKET_HOURS = KisEndpoint(
     description="장운영 시간 조회",
 )
 
-# ── 수급 (외국인/기관) ──
+# ── 수급 (외국인/기관 투자자 매매동향) ──
+# TR_ID: FHKST01010900 — KIS 공식 예제 (inquire_investor.py)에서 확인
+# URL: /uapi/domestic-stock/v1/quotations/inquire-investor
+# 응답: 개인/외국인/기관 순매수/순매도 수량 및 금액
 _FOREIGN_INVESTOR = KisEndpoint(
-    name="inquire_foreign_investor",
+    name="inquire_investor",
     category=KisCategory.QUOTATION,
-    path="/uapi/domestic-stock/v1/quotations/inquire-foreign-investor",
+    path="/uapi/domestic-stock/v1/quotations/inquire-investor",
     method="GET",
-    tr_id="FHKST01011000",
-    description="외국인 순매수 조회",
+    tr_id="FHKST01010900",
+    description="주식현재가 투자자 (개인/외국인/기관 매매동향)",
+)
+
+# ── 재무비율 (PER/PBR/EPS 등) ──
+# TR_ID: FHKST66430300 — KIS 공식 예제 (finance_financial_ratio.py)에서 확인
+# URL: /uapi/domestic-stock/v1/finance/financial-ratio
+# 응답: PER, PBR, EPS, ROE, 유동비율 등 재무비율
+_FINANCIAL_RATIO = KisEndpoint(
+    name="inquire_financial_ratio",
+    category=KisCategory.STOCK_INFO,
+    path="/uapi/domestic-stock/v1/finance/financial-ratio",
+    method="GET",
+    tr_id="FHKST66430300",
+    description="국내주식 재무비율 (PER/PBR/EPS/ROE 등)",
 )
 
 # ── Order TR IDs (매수/매도 구분) ──
@@ -202,6 +218,7 @@ _ENDPOINTS: dict[str, KisEndpoint] = {
         _STOCK_BASIC,
         _MARKET_HOLIDAY, _MARKET_HOURS,
         _FOREIGN_INVESTOR,
+        _FINANCIAL_RATIO,
     ]
 }
 

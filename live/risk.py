@@ -12,9 +12,8 @@ from dataclasses import dataclass
 from typing import Optional
 
 from core.config import RiskConfig
-from core.exceptions import RiskLimitHit
 from core.logger import logger
-from core.types import AccountSummary, DecisionAction, DecisionReason, Position
+from core.types import AccountSummary, DecisionAction, Position
 
 
 @dataclass
@@ -220,3 +219,178 @@ class RiskManager:
         self._halted = False
         self._halt_reason = None
         logger.info("매매 중단 상태 해제 — 새 거래일 시작")
+
+    # ── 트레일링 스탑 (P1-1) ──────────────────────────────────────────────
+
+    def update_trailing_stop(
+        self,
+        position: Position,
+        current_price: float,
+        atr_value: float | None = None,
+    ) -> Position:
+        """트레일링 스탑 가격을 업데이트하고 새 Position 반환.
+
+        ratchet 동작: 가격이 오르면 trailing_stop_price도 올라가지만,
+        가격이 내려가면 trailing_stop_price는 내려가지 않는다.
+
+        Args:
+            position: 현재 포지션 (frozen dataclass).
+            current_price: 현재가.
+            atr_value: ATR 값 (None이면 트레일링 스탑 계산 불가 → 스킵).
+
+        Returns:
+            업데이트된 새 Position (dataclasses.replace).
+        """
+        from dataclasses import replace as dc_replace
+
+        # 비활성시 아무 변경 없음
+        if not self._strategy.trailing_stop_enabled:
+            return position
+
+        # 수익이 활성화 기준 미만이면 트레일링 스탑 미활성
+        if position.profit_loss_pct < self._strategy.trailing_stop_activate_pct:
+            return position
+
+        # ATR 데이터 없으면 스킵 (fallback: 기존 손절선 유지)
+        if atr_value is None or atr_value <= 0:
+            return position
+
+        # 최고가 업데이트
+        high_water = position.trailing_stop_high_water or current_price
+        if current_price > high_water:
+            high_water = current_price
+
+        # 트레일링 스탑 가격 계산
+        trail_distance = atr_value * self._strategy.trailing_stop_atr_multiplier
+        new_trail_price = high_water - trail_distance
+
+        # ratchet: 기존 트레일링 스탑보다만 올림 (내리지 않음)
+        old_trail_price = position.trailing_stop_price
+        if old_trail_price is not None and new_trail_price < old_trail_price:
+            new_trail_price = old_trail_price
+
+        logger.debug(
+            f"트레일링 스탑 업데이트: {position.name}({position.code}) "
+            f"최고가 {high_water:.0f}원 → 스탑 {new_trail_price:.0f}원 "
+            f"(ATR {atr_value:.0f} × {self._strategy.trailing_stop_atr_multiplier})"
+        )
+
+        return dc_replace(
+            position,
+            trailing_stop_high_water=high_water,
+            trailing_stop_price=new_trail_price,
+        )
+
+    def check_trailing_stop(self, position: Position) -> RiskCheckResult:
+        """트레일링 스탑 트리거 여부 확인.
+
+        현재가가 trailing_stop_price 이하면 청산 권고.
+
+        Returns:
+            RiskCheckResult (is_safe=False → 청산, is_safe=True → 유지).
+        """
+        if not self._strategy.trailing_stop_enabled:
+            return RiskCheckResult(
+                is_safe=True,
+                reason="트레일링 스탑 비활성",
+                action=DecisionAction.NONE,
+            )
+
+        if position.trailing_stop_price is None:
+            return RiskCheckResult(
+                is_safe=True,
+                reason="트레일링 스탑 미활성 (수익 기준 미달 또는 ATR 부족)",
+                action=DecisionAction.NONE,
+            )
+
+        if position.current_price <= position.trailing_stop_price:
+            trail_drop_pct = (
+                (position.trailing_stop_high_water - position.current_price)
+                / position.trailing_stop_high_water * 100
+                if position.trailing_stop_high_water
+                else 0.0
+            )
+            reason = (
+                f"트레일링 스탑 트리거: {position.name}({position.code}) "
+                f"현재가 {position.current_price:.0f}원 ≤ "
+                f"스탑 {position.trailing_stop_price:.0f}원 "
+                f"(최고가 대비 -{trail_drop_pct:.1f}%)"
+            )
+            logger.warning(reason)
+            return RiskCheckResult(
+                is_safe=False,
+                reason=reason,
+                action=DecisionAction.STOP_LOSS,
+            )
+
+        return RiskCheckResult(
+            is_safe=True,
+            reason=(
+                f"트레일링 스탑 유지: {position.name}({position.code}) "
+                f"현재가 {position.current_price:.0f}원 > "
+                f"스탑 {position.trailing_stop_price:.0f}원"
+            ),
+            action=DecisionAction.NONE,
+        )
+
+    # ── 부분 청산 (P1-2) ──────────────────────────────────────────────
+
+    def check_partial_take_profit(self, position: Position) -> dict:
+        """부분 익절 여부 판단.
+
+        Returns:
+            dict: {
+                should_sell: bool — 부분 매도 권고,
+                sell_quantity: int — 매도할 수량 (0이면 매도 없음),
+                tp_stage: int — 1=1차, 2=2차, 0=해당 없음,
+                reason: str — 판단 근거 (한글),
+            }
+        """
+        if not self._strategy.partial_tp_enabled:
+            return {"should_sell": False, "sell_quantity": 0, "tp_stage": 0, "reason": "부분 청산 비활성"}
+
+        profit_pct = position.profit_loss_pct
+        orig_qty = position.original_quantity or position.quantity
+        result = {"should_sell": False, "sell_quantity": 0, "tp_stage": 0, "reason": ""}
+
+        # 1차 익절
+        if not position.partial_tp1_executed and profit_pct >= self._strategy.partial_tp1_pct:
+            sell_qty = max(1, int(orig_qty * self._strategy.partial_tp1_ratio))
+            sell_qty = min(sell_qty, position.quantity)  # 보유 수량 초과 방지
+            result = {
+                "should_sell": True,
+                "sell_quantity": sell_qty,
+                "tp_stage": 1,
+                "reason": (
+                    f"부분 익절 1차: {position.name}({position.code}) "
+                    f"수익 +{profit_pct:.1f}% >= {self._strategy.partial_tp1_pct:.1f}% "
+                    f"→ {sell_qty}주 매도 (원래 {orig_qty}주 중)"
+                ),
+            }
+            logger.info(result["reason"])
+            return result
+
+        # 2차 익절
+        if not position.partial_tp2_executed and profit_pct >= self._strategy.partial_tp2_pct:
+            sell_qty = max(1, int(orig_qty * self._strategy.partial_tp2_ratio))
+            sell_qty = min(sell_qty, position.quantity)
+            result = {
+                "should_sell": True,
+                "sell_quantity": sell_qty,
+                "tp_stage": 2,
+                "reason": (
+                    f"부분 익절 2차: {position.name}({position.code}) "
+                    f"수익 +{profit_pct:.1f}% >= {self._strategy.partial_tp2_pct:.1f}% "
+                    f"→ {sell_qty}주 매도 (잔여 {position.quantity}주 중)"
+                ),
+            }
+            logger.info(result["reason"])
+            return result
+
+        result["reason"] = (
+            f"부분 익절 대기: {position.name}({position.code}) "
+            f"수익 +{profit_pct:.1f}% "
+            f"(1차 {self._strategy.partial_tp1_pct:.1f}%, "
+            f"2차 {self._strategy.partial_tp2_pct:.1f}%)"
+        )
+        return result

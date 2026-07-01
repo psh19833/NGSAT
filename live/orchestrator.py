@@ -22,6 +22,7 @@ from dataclasses import dataclass, field
 from datetime import datetime
 from typing import Any
 import asyncio
+import numpy as np
 
 from core.config import RiskConfig, StrategyConfig
 from core.logger import logger
@@ -45,6 +46,7 @@ from strategy.screener import screen_stocks
 from strategy.entry_timing import EntryDecision, EntryTiming, refine_entry
 from strategy.exit_timing import ExitDecision, ExitUrgency, refine_exit
 from strategy.mode_selector import select_mode, estimate_volatility_from_prices
+from strategy.indicators import atr as calc_atr
 
 
 @dataclass
@@ -605,6 +607,72 @@ class TradingOrchestrator:
             exit_ref = await self._refine_exit(position.code, position.profit_loss_pct)
             sell_price = None if exit_ref.urgency == ExitUrgency.IMMEDIATE else exit_ref.limit_price
 
+            # 0) 트레일링 스탑 업데이트 + 트리거 검사 (P1-1)
+            try:
+                highs = [p.high for p in prices[-20:]]
+                lows = [p.low for p in prices[-20:]]
+                closes = [p.close for p in prices[-20:]]
+                atr_vals = calc_atr(highs, lows, closes, period=14)
+                atr_val = float(atr_vals[-1]) if len(atr_vals) > 0 and not np.isnan(atr_vals[-1]) else None
+            except Exception:
+                atr_val = None
+
+            position = self._risk.update_trailing_stop(position, position.current_price, atr_val)
+            trail_result = self._risk.check_trailing_stop(position)
+            if not trail_result.is_safe:
+                exec_result = await self._executor.execute_sell(
+                    code=position.code,
+                    name=position.name,
+                    quantity=position.quantity,
+                    price=sell_price,
+                    action=DecisionAction.STOP_LOSS,
+                    reason=(
+                        f"{trail_result.reason} || 청산정밀화: {exit_ref.reason}"
+                    ),
+                )
+                self._record_sell(
+                    result, exec_result, position, sell_price,
+                    action=DecisionAction.STOP_LOSS,
+                    log_label="트레일링스탑",
+                    reason=trail_result.reason,
+                )
+                continue
+
+            # 0.5) 부분 익절 검사 (P1-2) — 손절 전, 수익중인 경우만
+            partial_tp = self._risk.check_partial_take_profit(position)
+            if partial_tp["should_sell"] and partial_tp["sell_quantity"] > 0:
+                exec_result = await self._executor.execute_sell(
+                    code=position.code,
+                    name=position.name,
+                    quantity=partial_tp["sell_quantity"],
+                    price=sell_price,
+                    action=DecisionAction.SELL,
+                    reason=partial_tp["reason"],
+                )
+                if exec_result.success:
+                    from dataclasses import replace as dc_replace_tp
+                    remaining = position.quantity - partial_tp["sell_quantity"]
+                    tp1_done = position.partial_tp1_executed or (partial_tp["tp_stage"] == 1)
+                    tp2_done = position.partial_tp2_executed or (partial_tp["tp_stage"] == 2)
+                    position = dc_replace_tp(
+                        position,
+                        quantity=remaining,
+                        partial_tp1_executed=tp1_done,
+                        partial_tp2_executed=tp2_done,
+                        original_quantity=position.original_quantity or position.quantity + partial_tp["sell_quantity"],
+                    )
+                    result.sells_executed += 1
+                    logger.info(
+                        f"부분 익절 완료: {position.name}({position.code}) "
+                        f"{partial_tp['sell_quantity']}주 매도, 잔여 {remaining}주"
+                    )
+                else:
+                    result.errors.append(f"부분 익절 실패 {position.code}: {exec_result.error}")
+                # 부분 매도 후에도 계속 손절/ML 청산 검사 (잔여 포지션에 대해)
+                # 단, 잔량이 0이면 다음 position으로
+                if position.quantity <= 0:
+                    continue
+
             # 1) 일봉 손절선 도달 → 손절 (분봉 급락이면 시장가 즉시)
             loss_pct = abs(min(position.profit_loss_pct, 0))
             effective_stop = self._risk.effective_stop_loss_pct or position.stop_loss_pct
@@ -857,7 +925,6 @@ class TradingOrchestrator:
         Returns:
             취소한 주문 개수.
         """
-        from datetime import timedelta
         now = datetime.now()
         cancelled = 0
 

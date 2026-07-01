@@ -464,3 +464,74 @@ def build_cancel_payload(
         "PDNO": code,
         "ORD_QTY": str(quantity),
     }
+
+
+# ── 외국인/기관 투자자 매매동향 파싱 (P1-3) ──────────────────────────────
+
+def parse_investor_data(raw: dict[str, Any]) -> dict[str, Any]:
+    """KIS inquire-investor 응답에서 외국인/기관 순매수 데이터 추출.
+
+    KIS 응답의 output은 리스트이며, 각 항목에 투자자별 매매동향이 포함:
+    - 외국인: fgn_ntby_qty (순매수수량), fgn_ntby_tr_pbmn (순매수금액)
+    - 기관: orgn_ntby_qty, orgn_ntby_tr_pbmn
+
+    Returns:
+        dict with keys: foreign_net_buy_qty, foreign_net_buy_amt,
+                        institution_net_buy_qty, institution_net_buy_amt
+    """
+    output = raw.get("output", [])
+    if not isinstance(output, list):
+        output = [output] if output else []
+
+    result = {
+        "foreign_net_buy_qty": 0.0,
+        "foreign_net_buy_amt": 0.0,
+        "institution_net_buy_qty": 0.0,
+        "institution_net_buy_amt": 0.0,
+    }
+
+    for item in output:
+        invst_cd = item.get("invst_cd", "") or item.get("stck_acnt_cd", "")
+        # 외국인 계좌 코드: 8000 (KIS 문서 기준)
+        if invst_cd in ("8000", "81", "FRGN"):
+            result["foreign_net_buy_qty"] += _float(item.get("ntby_qty") or item.get("fgn_ntby_qty"))
+            result["foreign_net_buy_amt"] += _float(item.get("ntby_tr_pbmn") or item.get("fgn_ntby_tr_pbmn"))
+        # 기관: 7000, 81(투신), 82(은행), 83(보험), 84(연기금)
+        elif invst_cd in ("7000", "81", "82", "83", "84", "ORG"):
+            result["institution_net_buy_qty"] += _float(item.get("ntby_qty") or item.get("orgn_ntby_qty"))
+            result["institution_net_buy_amt"] += _float(item.get("ntby_tr_pbmn") or item.get("orgn_ntby_tr_pbmn"))
+
+    return result
+
+
+def parse_financial_ratio(raw: dict[str, Any]) -> dict[str, float]:
+    """KIS 재무비율 응답에서 PER/PBR/EPS 추출.
+
+    KIS 응답의 output은 리스트이며, 각 항목에 연도/분기별 재무비율:
+    - per: fpr_hpr (PER)
+    - pbr: fpr_pbr (PBR)
+    - eps: fpr_eps (EPS)
+
+    Returns:
+        dict with keys: per, pbr, eps (가장 최근 분기 데이터)
+    """
+    output = raw.get("output", [])
+    if not isinstance(output, list):
+        output = [output] if output else []
+
+    result = {"per": 0.0, "pbr": 0.0, "eps": 0.0}
+
+    # 최근 데이터 1개만 사용 (리스트의 첫 번째)
+    if output:
+        item = output[0]
+        result["per"] = _float(
+            item.get("per") or item.get("fpr_hpr") or item.get("stck_per")
+        )
+        result["pbr"] = _float(
+            item.get("pbr") or item.get("fpr_pbr") or item.get("stck_pbr")
+        )
+        result["eps"] = _float(
+            item.get("eps") or item.get("fpr_eps") or item.get("stck_eps")
+        )
+
+    return result

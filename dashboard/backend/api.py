@@ -61,6 +61,14 @@ CONFIG_FIELD_MAP: dict[str, str] = {
     "NGSAT_ML_TRAINING_END_DATE": "ml_training_end_date",
     "NGSAT_ML_AUTO_SELECT_MODEL": "ml_auto_select_model",
     "NGSAT_MAX_TOTAL_EXPOSURE_PCT": "max_total_exposure_pct",
+    "NGSAT_TRAILING_STOP_ENABLED": "trailing_stop_enabled",
+    "NGSAT_TRAILING_STOP_ATR_MULTIPLIER": "trailing_stop_atr_multiplier",
+    "NGSAT_TRAILING_STOP_ACTIVATE_PCT": "trailing_stop_activate_pct",
+    "NGSAT_PARTIAL_TP_ENABLED": "partial_tp_enabled",
+    "NGSAT_PARTIAL_TP1_PCT": "partial_tp1_pct",
+    "NGSAT_PARTIAL_TP1_RATIO": "partial_tp1_ratio",
+    "NGSAT_PARTIAL_TP2_PCT": "partial_tp2_pct",
+    "NGSAT_PARTIAL_TP2_RATIO": "partial_tp2_ratio",
 }
 
 
@@ -111,6 +119,14 @@ class StrategyUpdateRequest(BaseModel):
     mode_high_volatility_atr_pct: float | None = Field(None, ge=0.1, le=10)
     mode_low_volatility_atr_pct: float | None = Field(None, ge=0.1, le=5)
     max_total_exposure_pct: float | None = Field(None, ge=10, le=200)
+    trailing_stop_enabled: bool | None = None
+    trailing_stop_atr_multiplier: float | None = Field(None, ge=0.5, le=10)
+    trailing_stop_activate_pct: float | None = Field(None, ge=0.1, le=20)
+    partial_tp_enabled: bool | None = None
+    partial_tp1_pct: float | None = Field(None, ge=0.5, le=20)
+    partial_tp1_ratio: float | None = Field(None, ge=0.1, le=0.9)
+    partial_tp2_pct: float | None = Field(None, ge=1.0, le=50)
+    partial_tp2_ratio: float | None = Field(None, ge=0.1, le=0.5)
     reset: bool = False
 
 

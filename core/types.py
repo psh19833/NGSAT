@@ -11,7 +11,6 @@ from enum import Enum
 from typing import Any, Optional
 
 # Re-export enums from config for convenience
-from core.config import Environment, MarketRegime, OrderSide, OrderStatus
 
 
 class Market(str, Enum):
@@ -134,6 +133,13 @@ class Position:
     stop_loss_pct: float               # 현재 적용 중인 손절선 (%)
     stop_loss_reason: Optional[str] = None  # 손절선 조정 시 근거
     sector: str = ""                   # 업종 (TR-5: 섹터 집중도 체크용)
+    # ── 트레일링 스탑 (P1-1) ──
+    trailing_stop_price: Optional[float] = None       # 현재 트레일링 스탑 가격
+    trailing_stop_high_water: Optional[float] = None  # 보유 중 최고가
+    # ── 부분 청산 (P1-2) ──
+    partial_tp1_executed: bool = False                 # 1차 익절 완료 여부
+    partial_tp2_executed: bool = False                 # 2차 익절 완료 여부
+    original_quantity: Optional[int] = None            # 최초 매수 수량 (잔량 계산용)
 
 
 @dataclass

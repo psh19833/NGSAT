@@ -157,6 +157,18 @@ class StrategyConfig:
     daily_trade_limit: int = 20           # 일일 최대 거래 횟수 (TR-13)
     max_total_exposure_pct: float = 50.0  # 총 노출 한도 (자산 대비 %, TR-14)
 
+    # ── 트레일링 스탑 (P1-1) ──
+    trailing_stop_enabled: bool = False       # False=고정 손절, True=트레일링 스탑
+    trailing_stop_atr_multiplier: float = 2.0 # ATR × N = 트레일링 폭
+    trailing_stop_activate_pct: float = 1.0   # 수익 +N%부터 트레일링 스탑 활성화
+
+    # ── 부분 청산 (P1-2) ──
+    partial_tp_enabled: bool = False       # False=전량 매도, True=분할 익절
+    partial_tp1_pct: float = 3.0           # 1차 익절 수익률 (%)
+    partial_tp1_ratio: float = 0.5         # 1차 매도 비율 (50%)
+    partial_tp2_pct: float = 6.0           # 2차 익절 수익률 (%)
+    partial_tp2_ratio: float = 0.3         # 2차 매도 비율 (30%)
+
 
 @dataclass
 class TelegramConfig:
@@ -266,6 +278,18 @@ def load_config(env_file: str | None = None) -> Config:
 
     # Portfolio risk
     s.max_holdings = int(os.getenv("NGSAT_MAX_HOLDINGS", "10"))
+
+    # Trailing stop (P1-1)
+    s.trailing_stop_enabled = os.getenv("NGSAT_TRAILING_STOP_ENABLED", "false").lower() == "true"
+    s.trailing_stop_atr_multiplier = float(os.getenv("NGSAT_TRAILING_STOP_ATR_MULTIPLIER", "2.0"))
+    s.trailing_stop_activate_pct = float(os.getenv("NGSAT_TRAILING_STOP_ACTIVATE_PCT", "1.0"))
+
+    # Partial take-profit (P1-2)
+    s.partial_tp_enabled = os.getenv("NGSAT_PARTIAL_TP_ENABLED", "false").lower() == "true"
+    s.partial_tp1_pct = float(os.getenv("NGSAT_PARTIAL_TP1_PCT", "3.0"))
+    s.partial_tp1_ratio = float(os.getenv("NGSAT_PARTIAL_TP1_RATIO", "0.5"))
+    s.partial_tp2_pct = float(os.getenv("NGSAT_PARTIAL_TP2_PCT", "6.0"))
+    s.partial_tp2_ratio = float(os.getenv("NGSAT_PARTIAL_TP2_RATIO", "0.3"))
 
     # Telegram
     config.telegram.bot_token = os.getenv("TELEGRAM_BOT_TOKEN", "")

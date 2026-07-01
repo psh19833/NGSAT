@@ -493,3 +493,57 @@ class KisAdapter(BrokerAdapter):
         except Exception as e:
             logger.warning(f"미체결 주문 조회 실패: {e}")
         return []
+
+    # ── 외국인/기관/재무 데이터 (P1-3) ──────────────────────────────────
+
+    async def get_investor_data(self, code: str) -> dict[str, Any]:
+        """종목별 외국인/기관 투자자 매매동향 조회.
+
+        Args:
+            code: 6-digit stock code.
+
+        Returns:
+            dict: foreign_net_buy_qty, foreign_net_buy_amt,
+                  institution_net_buy_qty, institution_net_buy_amt
+                  (API 실패시 0값)
+        """
+        try:
+            resp = await self._http.get("inquire_investor", params={
+                "FID_COND_MRKT_DIV_CODE": "J",
+                "FID_INPUT_ISCD": code,
+            })
+            await asyncio.sleep(0.1)  # Rate limit
+            if resp.success:
+                from data.adapters.kis.mapper import parse_investor_data
+                return parse_investor_data(resp.raw)
+        except Exception as e:
+            logger.warning(f"투자자 매매동향 조회 실패 ({code}): {e}")
+        return {
+            "foreign_net_buy_qty": 0.0,
+            "foreign_net_buy_amt": 0.0,
+            "institution_net_buy_qty": 0.0,
+            "institution_net_buy_amt": 0.0,
+        }
+
+    async def get_financial_ratio(self, code: str) -> dict[str, float]:
+        """종목별 재무비율 조회 (PER/PBR/EPS).
+
+        Args:
+            code: 6-digit stock code.
+
+        Returns:
+            dict: per, pbr, eps (API 실패시 0값)
+        """
+        try:
+            resp = await self._http.get("inquire_financial_ratio", params={
+                "FID_DIV_CLS_CODE": "1",  # 0: 년, 1: 분기
+                "FID_COND_MRKT_DIV_CODE": "J",
+                "FID_INPUT_ISCD": code,
+            })
+            await asyncio.sleep(0.1)  # Rate limit
+            if resp.success:
+                from data.adapters.kis.mapper import parse_financial_ratio
+                return parse_financial_ratio(resp.raw)
+        except Exception as e:
+            logger.warning(f"재무비율 조회 실패 ({code}): {e}")
+        return {"per": 0.0, "pbr": 0.0, "eps": 0.0}

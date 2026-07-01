@@ -66,3 +66,19 @@ class TestEndpointCatalog:
         assert BUY_TR_ID == "TTTC0802U"
         assert SELL_TR_ID == "TTTC0801U"
         assert BUY_TR_ID != SELL_TR_ID
+
+    # ── P1-3: 외국인/기관/재무 엔드포인트 ──
+
+    def test_investor_endpoint(self):
+        """투자자 매매동향 엔드포인트 등록 확인."""
+        ep = get_endpoint("inquire_investor")
+        assert ep.tr_id == "FHKST01010900"
+        assert ep.category == KisCategory.QUOTATION
+        assert "inquire-investor" in ep.path
+
+    def test_financial_ratio_endpoint(self):
+        """재무비율 엔드포인트 등록 확인."""
+        ep = get_endpoint("inquire_financial_ratio")
+        assert ep.tr_id == "FHKST66430300"
+        assert ep.category == KisCategory.STOCK_INFO
+        assert "financial-ratio" in ep.path

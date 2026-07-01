@@ -10,7 +10,7 @@ Features are normalized/scaled where appropriate.
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import Sequence
+from typing import Any
 
 import numpy as np
 import pandas as pd
@@ -19,7 +19,6 @@ from core.types import PriceData
 from strategy.indicators import (
     atr,
     bollinger_bands,
-    ema,
     macd,
     rsi,
     sma,
@@ -82,6 +81,7 @@ def build_features(
     code: str = "",
     forward_days: int = 5,
     include_target: bool = False,
+    external_data: dict[str, Any] | None = None,
 ) -> FeatureVector | None:
     """Build a feature vector from price history.
 
@@ -91,6 +91,11 @@ def build_features(
         forward_days: Number of days ahead for target calculation.
         include_target: Whether to compute the target (future return).
             True for training, False for inference.
+        external_data: Optional dict with foreign/institution/financial data.
+            Keys: foreign_net_buy_5d, foreign_net_buy_20d,
+                  institution_net_buy_5d, institution_net_buy_20d,
+                  per, pbr, eps
+            If None or missing keys, defaults to 0.0 (backward compatible).
 
     Returns:
         FeatureVector or None if insufficient data.
@@ -199,16 +204,16 @@ def build_features(
         (recent_high - recent_low) / recent_low * 100 if recent_low > 0 else 0.0
     )
 
-    # ── Enhanced features (optional, defaults to 0 if data unavailable) ──
-    # These are filled with 0 when data sources (foreign investor, stock info)
-    # are not available. The fillna(0) approach maintains model compatibility.
-    features["foreign_net_buy_5d"] = 0.0
-    features["foreign_net_buy_20d"] = 0.0
-    features["institution_net_buy_5d"] = 0.0
-    features["institution_net_buy_20d"] = 0.0
-    features["per"] = 0.0
-    features["pbr"] = 0.0
-    features["eps"] = 0.0
+    # ── Enhanced features (외국인/기관/재무 — P1-3 활성화) ──
+    # external_data에서 값을 가져오거나, 없으면 0.0 (backward compatible)
+    ext = external_data or {}
+    features["foreign_net_buy_5d"] = float(ext.get("foreign_net_buy_5d", 0.0))
+    features["foreign_net_buy_20d"] = float(ext.get("foreign_net_buy_20d", 0.0))
+    features["institution_net_buy_5d"] = float(ext.get("institution_net_buy_5d", 0.0))
+    features["institution_net_buy_20d"] = float(ext.get("institution_net_buy_20d", 0.0))
+    features["per"] = float(ext.get("per", 0.0))
+    features["pbr"] = float(ext.get("pbr", 0.0))
+    features["eps"] = float(ext.get("eps", 0.0))
 
     # ── Target (for training) ──
     target = None
@@ -216,7 +221,6 @@ def build_features(
         future_close = float(closes[-1 + forward_days]) if len(closes) > forward_days else None
         # Actually, for training we need to look forward from each point
         # This is handled in build_training_dataset
-        pass
 
     timestamp = str(prices[-1].timestamp) if prices else ""
 
