@@ -11,6 +11,7 @@ from enum import Enum
 from typing import Any, Optional
 
 # Re-export enums from config for convenience
+from core.config import Environment, MarketRegime, OrderSide, OrderStatus
 
 
 class Market(str, Enum):
