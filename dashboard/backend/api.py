@@ -552,7 +552,7 @@ def create_app(orchestrator=None, config=None) -> FastAPI:
         """설정 프리셋 목록 반환 (config/presets.json)."""
         import json as _json
         from pathlib import Path
-        presets_path = Path(__file__).resolve().parent.parent.parent.parent / "config" / "presets.json"
+        presets_path = Path(__file__).resolve().parent.parent.parent / "config" / "presets.json"
         if presets_path.exists():
             try:
                 data = _json.loads(presets_path.read_text(encoding="utf-8"))
@@ -572,7 +572,7 @@ def create_app(orchestrator=None, config=None) -> FastAPI:
         # 1) Load presets file
         import json as _json
         from pathlib import Path
-        presets_path = Path(__file__).resolve().parent.parent.parent.parent / "config" / "presets.json"
+        presets_path = Path(__file__).resolve().parent.parent.parent / "config" / "presets.json"
         if not presets_path.exists():
             return {"connected": False, "message": "프리셋 파일이 없습니다"}
         all_presets = _json.loads(presets_path.read_text(encoding="utf-8"))
