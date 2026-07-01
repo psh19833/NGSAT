@@ -374,6 +374,17 @@ function PresetButtons({ onSelect, current, onPresetsLoaded }) {
 
   const handleApply = async (name) => {
     if (!confirm(`"${name}" 스타일로 모든 값을 변경하시겠습니까?\n현재 설정은 사라집니다.`)) return;
+
+    // 사용자 정의 프리셋: API 호출 없이 로컬 폼만 기본값으로 리셋
+    if (name === '사용자 정의') {
+      const p = presets[name];
+      if (p) {
+        onSelect(p.values, name);
+        alert(`✏️ "${name}" — 모든 값이 기본값으로 초기화되었습니다.\n원하는 대로 변경 후 '설정 저장' 버튼을 눌러주세요.`);
+      }
+      return;
+    }
+
     setApplying(name);
     try {
       const resp = await fetch('/api/strategy/apply-preset', {

@@ -118,5 +118,20 @@
       "mode_high_volatility_atr_pct": 1.5, "mode_low_volatility_atr_pct": 0.5,
       "ml_swing_forward_days": 3, "ml_short_forward_minutes": 60
     }
+  },
+  "사용자 정의": {
+    "label": "✏️ 사용자 정의",
+    "desc": "모든 값을 직접 설정합니다. 프리셋을 선택하면 기본값으로 초기화됩니다.",
+    "values": {
+      "buy_threshold": 0.65, "sell_threshold": 0.35,
+      "mode_swing_stop_loss_pct": 3.0, "mode_swing_daily_loss_pct": 5.0, "mode_swing_position_size": 0.10,
+      "mode_short_stop_loss_pct": 1.5, "mode_short_daily_loss_pct": 3.0, "mode_short_position_size": 0.05,
+      "mode_hold_stop_loss_pct": 3.0, "mode_hold_daily_loss_pct": 5.0, "mode_hold_position_size": 0.0,
+      "regime_bull_threshold": 65, "regime_bear_threshold": 35,
+      "screener_bull_min_score": 60, "screener_neutral_min_score": 70, "screener_bear_min_score": 80,
+      "screener_bull_max_candidates": 15, "screener_neutral_max_candidates": 10, "screener_bear_max_candidates": 5,
+      "mode_high_volatility_atr_pct": 1.5, "mode_low_volatility_atr_pct": 0.5,
+      "ml_swing_forward_days": 3, "ml_short_forward_minutes": 60
+    }
   }
 }
