@@ -249,7 +249,7 @@ async def run_live(config, args):
             dashboard_app.state.latest_universe = universe
             dashboard_app.state.latest_index_prices = index_prices
 
-        _refresh_counter = 0
+        _refresh_counter = 1  # Start at 1 so first % 30 check happens at cycle 30 // CHANGED TO 300 (50min)
         _consecutive_errors = 0
         _last_retrain_date = ""  # yyyy-mm-dd tracking for daily retrain
         session_tracker = MarketSessionTracker()
@@ -323,11 +323,10 @@ async def run_live(config, args):
                         logger.error(f"일일 보고서 전송 실패: {e}")
                     session_tracker.mark_daily_report_sent()
 
-                # Rate-limit friendly: full refresh every 30 cycles (5min @ 10s tick)
-                # Between full refreshes, cached data is used (much better than hitting
-                # KIS rate limit and getting no data at all)
+                # 일봉 데이터는 장 마감 후에만 변경되므로 300사이클(50분) 간격으로 충분
                 _refresh_counter += 1
-                if _refresh_counter % 30 == 0:
+                if _refresh_counter == 2 or _refresh_counter % 300 == 0:
+                    # 2번째 사이클에서 최초 1회 즉시 refresh, 이후 50분마다
                     universe, index_prices = await data_provider.refresh_prices()
                     # Update app.state for manual retrain API
                     if dashboard_app:
@@ -361,15 +360,6 @@ async def run_live(config, args):
                             "info",
                             f"🔄 프리셋 자동 전환: {result.preset_change}",
                         )
-
-                    # 미체결 주문 취소 (지정가 30초 경과 시)
-                    cancelled = await orchestrator.cancel_unfilled_orders(max_age_seconds=30)
-                    if cancelled > 0 and telegram_bot:
-                        await telegram_bot.send_system_event(
-                            "info",
-                            f"미체결 주문 {cancelled}건 자동 취소",
-                        )
-
                     # Send telegram notification for trades
                     if telegram_bot and (result.buys_executed > 0 or result.sells_executed > 0):
                         await telegram_bot.send_system_event(

@@ -33,7 +33,7 @@ from data.adapters.kis.mapper import (
 from data.adapters.kis.token_manager import KisTokenManager
 
 
-_BALANCE_CACHE_TTL = 5.0  # seconds — prevent duplicate inquire_balance calls (KIS rate limit: ~20 req/s)
+_BALANCE_CACHE_TTL = 10.0  # seconds — prevent duplicate inquire_balance calls (KIS rate limit: ~20 req/s)
 
 
 class KisAdapter(BrokerAdapter):

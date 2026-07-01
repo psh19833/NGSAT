@@ -356,7 +356,10 @@ def create_app(orchestrator=None, config=None) -> FastAPI:
             "regime_kr": regime_kr,
             "score": regime.score,
             "reason": regime.reason,
-            "evidence": regime.evidence,
+            "evidence": {
+                k: (None if (isinstance(v, float) and (v != v)) else v)
+                for k, v in regime.evidence.items()
+            },
             "regime_skipped": orch._regime_skipped,
         }
 
