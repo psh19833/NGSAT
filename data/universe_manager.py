@@ -12,7 +12,7 @@ Usage:
 from __future__ import annotations
 
 import asyncio
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from datetime import datetime, timedelta
 from typing import Any, Optional
 
@@ -298,7 +298,6 @@ class UniverseManager:
                     loaded += 1
                     continue
                 if adapter is None:
-                    from data.adapters.kis.adapter import KisAdapter
                     adapter = provider._adapter
                 if adapter:
                     end = datetime.now()

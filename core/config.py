@@ -132,7 +132,9 @@ class StrategyConfig:
     ml_auto_select_model: bool = False        # True: 5개 모델 전부 학습 후 최고 AUC로 자동 교체
     ml_auto_retrain: bool = False          # True: 매일 장 마감 후 자동 재학습
     ml_swing_forward_days: int = 3        # 스윙: N일 뒤 +2% 예측
+    ml_forward_threshold: float = 0.02    # ML 일봉 양성 판정 임계 수익률 (2%)
     ml_short_forward_minutes: int = 60    # 단타: N분 뒤 +1.0% 예측 (분봉 ML threshold=0.01)
+    ml_minute_forward_threshold: float = 0.01  # ML 분봉 양성 판정 임계 수익률 (1%)
 
     # ── 모드 전환 ──
     mode_high_volatility_atr_pct: float = 1.5   # ATR ≥ 1.5% → 고변동성(단타)

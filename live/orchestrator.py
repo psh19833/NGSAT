@@ -28,6 +28,7 @@ from core.config import RiskConfig, StrategyConfig
 from core.logger import logger
 from pathlib import Path
 from core.types import (
+    AccountSummary,
     DecisionAction,
     MarketRegime,
     OrderSide,
@@ -162,6 +163,8 @@ class TradingOrchestrator:
         # TR-13: 일일 거래 횟수 제한
         self._daily_trade_date: str = ""
         self._daily_trade_count: int = 0
+        # C-2: 보유 포지션 코드 캐시 (main.py universe 구성용)
+        self._last_held_codes: set[str] = set()
 
     def refresh_read_session(self) -> None:
         """BE-10: 읽기 전용 세션 갱신 — dashboard 조회 전 호출하여 데이터 신선도 유지."""
@@ -817,7 +820,9 @@ class TradingOrchestrator:
     async def _fetch_positions(self) -> list[Position]:
         """Fetch current positions from broker."""
         try:
-            return await self._broker.get_positions()
+            positions = await self._broker.get_positions()
+            self._last_held_codes = {p.code for p in positions}
+            return positions
         except Exception as e:
             logger.error(f"포지션 조회 실패: {e}")
             return []
@@ -848,7 +853,12 @@ class TradingOrchestrator:
             # 캐시 우선, 없으면 API 호출
             minute_prices = self._minute_cache.get(code)
             if minute_prices is None:
-                minute_prices = await self._broker.get_minute_history(code)
+                minute_prices = await self._fetch_minute_prices(code)
+            if minute_prices is None:
+                return EntryDecision(
+                    timing=EntryTiming.ENTER_NOW, should_enter=True, limit_price=None,
+                    reason="분봉 미지원 어댑터 — 정밀화 생략(시장가 진입)", evidence={},
+                )
         except NotImplementedError:
             return EntryDecision(
                 timing=EntryTiming.ENTER_NOW, should_enter=True, limit_price=None,
@@ -953,6 +963,10 @@ class TradingOrchestrator:
             name=name or pos.name,
             quantity=pos.quantity,
         )
+
+    async def get_account_summary(self) -> AccountSummary:
+        """Public accessor for account summary (bot/UI용)."""
+        return await self._broker.get_account_summary()
 
     async def close(self):
         """Clean up database engine and resources."""

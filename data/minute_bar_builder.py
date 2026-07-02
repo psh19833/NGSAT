@@ -78,6 +78,7 @@ class MinuteBarBuilder:
             "low": low,
             "open": open_price,
             "volume": volume,
+            "timestamp": timestamp,
         })
 
     def get_bars(self, code: str, n: int = 60) -> list[PriceData]:
@@ -132,9 +133,18 @@ class MinuteBarBuilder:
         lows = [t["low"] for t in ticks]
         volumes = [t["volume"] for t in ticks]
 
+        # Use last tick's timestamp instead of datetime.now()
+        last_ts = ticks[-1].get("timestamp", "") if ticks else ""
+        if len(last_ts) >= 4:
+            hour = int(minute[:2])
+            min_min = int(minute[2:4])
+            bar_ts = datetime.now().replace(hour=hour, minute=min_min, second=0, microsecond=0)
+        else:
+            bar_ts = datetime.now()
+
         bar = PriceData(
             code=code,
-            timestamp=datetime.now(),
+            timestamp=bar_ts,
             open=opens[0] if opens else closes[0],
             high=max(highs) if highs else closes[-1],
             low=min(lows) if lows else closes[-1],

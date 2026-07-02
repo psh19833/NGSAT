@@ -56,6 +56,7 @@ class PresetRouter:
         self.auto_enabled: bool = True
         self._override_until: float = 0.0  # timestamp
         self._last_switch: float = 0.0
+        self._last_score: float = 50.0  # hysteresis 비교용 직전 레짐 점수
 
     def select_preset(
         self,
@@ -90,17 +91,19 @@ class PresetRouter:
         if target is None or target == self.current_preset:
             return None
 
-        # 히스테리시스: 점수 차이가 기준 이상일 때만 전환
+        # 히스테리시스: 점수 차이가 HYSTERESIS_POINTS 이상일 때만 전환
         if self.current_preset is not None:
-            # 매핑된 프리셋의 "레짐 점수 범위"가 현재 점수와 충분히 차이나는지
-            pass  # hysteresis는 레짐 점수 기준으로 orElse 단순 비교
+            if abs(regime.score - self._last_score) < self.HYSTERESIS_POINTS:
+                return None
 
         logger.info(
             f"PresetRouter: {regime.regime.value} "
             f"{'고변동' if is_high_vol else '저변동'} "
-            f"→ {target} (기존: {self.current_preset})"
+            f"→ {target} (기존: {self.current_preset}, "
+            f"점수: {self._last_score:.0f}→{regime.score:.0f})"
         )
         self.current_preset = target
+        self._last_score = regime.score
         self._last_switch = time.time()
         return target
 

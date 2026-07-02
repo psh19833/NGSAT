@@ -21,7 +21,7 @@ import asyncio
 import argparse
 import signal
 import time
-from datetime import datetime, timezone, timedelta
+from datetime import datetime, timezone
 from pathlib import Path
 
 from core.config import load_config
@@ -105,7 +105,7 @@ async def run_backtest(config):
         all_prices, codes,
         model_type=config.strategy.ml_model_type,
         forward_days=config.strategy.ml_swing_forward_days,
-        forward_threshold=0.02,
+        forward_threshold=config.strategy.ml_forward_threshold,
     )
     logger.info(train_result.reason)
 
@@ -394,9 +394,11 @@ async def run_live(config, args):
                     # active 유니버스를 stock list로 사용
                     active_codes = um.get_active_codes() if um.initialized else None
                     if active_codes and data_provider._universe_cache:
+                        # 보유 포지션 종목도 universe에 포함 (청산 가격 조회용)
+                        include_codes = set(active_codes) | orchestrator._last_held_codes
                         universe = [
                             (info, prices) for info, prices in data_provider._universe_cache
-                            if info.code in active_codes
+                            if info.code in include_codes
                         ]
                     # universe는 run_cycle에 전달될 stock pool
 
@@ -612,7 +614,7 @@ async def train_model(config):
         all_prices, codes,
         model_type=config.strategy.ml_model_type,
         forward_days=config.strategy.ml_swing_forward_days,
-        forward_threshold=0.02,
+        forward_threshold=config.strategy.ml_forward_threshold,
     )
 
     if result.success:

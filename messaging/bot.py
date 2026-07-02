@@ -255,7 +255,7 @@ class TelegramBot:
         elif command == "account":
             try:
                 import asyncio
-                account = await self._orchestrator._broker.get_account_summary()
+                account = await self._orchestrator.get_account_summary()
                 return (
                     f"계좌 현황\n"
                     f"──────────\n"

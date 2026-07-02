@@ -47,6 +47,9 @@ class MockOrchestrator:
             action="force_sell", reason="강제 매도",
         )
 
+    async def get_account_summary(self):
+        return await self._broker.get_account_summary()
+
 
 @pytest.fixture
 def bot():
