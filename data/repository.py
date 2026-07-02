@@ -86,6 +86,16 @@ class TradeRepository:
             .all()
         )
 
+    def get_win_rate(self, date_str: str) -> float:
+        """Calculate win rate for a date: profitable sells / total sells."""
+        trades = self.get_trades_by_date(date_str)
+        sells = [t for t in trades if t.side == "sell"]
+        if not sells:
+            return 0.0
+        # 승리 매도: STOP_LOSS가 아닌 매도 (익절/일반 매도)
+        wins = sum(1 for t in sells if t.action not in ("stop_loss",))
+        return round(wins / len(sells) * 100, 1)
+
     def get_trades_by_code(self, code: str, limit: int = 50) -> list[TradeRecord]:
         """Get recent trades for a specific stock code."""
         return (

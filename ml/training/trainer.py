@@ -121,11 +121,13 @@ class PriceRiseModel:
         forward_days: int = 5,
         forward_threshold: float = 0.02,
         auto_select_model: bool = False,
-    ):
+        data_source: str = "kis",
+    ) -> None:
         self.model_type = model_type
         self.forward_days = forward_days
         self.forward_threshold = forward_threshold
         self.auto_select_model = auto_select_model
+        self.data_source = data_source
         self._model: Any = None
         self._scaler: StandardScaler | None = None
         self._is_trained = False
@@ -383,6 +385,7 @@ class PriceRiseModel:
             "forward_threshold": self.forward_threshold,
             "feature_names": FEATURE_NAMES,
             "last_auc": self._last_auc,
+            "data_source": self.data_source,
         }
         return save_model(model_data, path)
 
@@ -409,6 +412,7 @@ class PriceRiseModel:
             model_type=data["model_type"],
             forward_days=data["forward_days"],
             forward_threshold=data["forward_threshold"],
+            data_source=data.get("data_source", "kis"),
         )
         instance._model = data["model"]
         instance._scaler = data["scaler"]

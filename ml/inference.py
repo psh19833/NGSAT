@@ -288,7 +288,8 @@ class MLInference:
             MLPrediction 또는 None.
         """
         if not self.has_minute_model:
-            raise RuntimeError("분봉 단타 모델이 설정되지 않았습니다")
+            logger.warning("분봉 단타 모델 미설정 - predict_minute_entry 스킵")
+            return None
 
         from ml.features.minute_builder import (
             MINUTE_FEATURE_NAMES,
@@ -357,7 +358,8 @@ class MLInference:
         - 수익률 + 상승 확률 하락 → 익절
         """
         if not self.has_minute_model:
-            raise RuntimeError("분봉 단타 모델이 설정되지 않았습니다")
+            logger.warning("분봉 단타 모델 미설정 — predict_minute_exit 스킵")
+            return None
 
         from ml.features.minute_builder import (
             MINUTE_FEATURE_NAMES,

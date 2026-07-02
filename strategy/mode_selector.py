@@ -39,7 +39,8 @@ class ModeDecision:
     confidence: float
     reason: str
     evidence: dict[str, float] = field(default_factory=dict)
-    forward_days: int = 3  # ML 예측 기간 (스윙 기본 3일, 단타 60분)
+    forward_days: int = 3  # ML 예측 기간 (스윙 기본 3일)
+    forward_minutes: int | None = None  # 단타 모드 시 분봉 예측 기간 (분)
 
 
 # ── Strategy config injection ──
@@ -124,7 +125,7 @@ def select_mode(
                     f"중립장 · 고변동성: 레짐 점수 {regime_score:.0f}/100, "
                     f"ATR {vol:.1f}%. 방향성 없고 변동 높음 → 단타 모드."
                 ),
-                forward_days=cfg.ml_short_forward_minutes,
+                forward_minutes=cfg.ml_short_forward_minutes,
                 evidence=evidence,
             )
         elif vol <= cfg.mode_low_volatility_atr_pct:

@@ -306,6 +306,7 @@ class TradingOrchestrator:
         market_open = is_market_hours()
         current_positions = await self._fetch_positions()
         held_codes = {p.code for p in current_positions}
+        held_quantities: dict[str, int] = {p.code: p.quantity for p in current_positions}
         regime_result = None
         is_short_term = False
         screen_result = None
@@ -472,8 +473,8 @@ class TradingOrchestrator:
         for candidate in (screen_result.candidates if screen_result else []):
             if not market_open:
                 break
-            if candidate.code in held_codes:
-                continue  # Already holding
+            if candidate.code in held_codes and held_quantities.get(candidate.code, 0) > 0:
+                continue  # Already holding with remaining quantity
 
             # 포지션 리스크: 최대 보유 종목 수 체크 (break = 루프 종료, 청산 루프는 별도)
             if self._strategy.max_holdings > 0 and len(held_codes) >= self._strategy.max_holdings:
