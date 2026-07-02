@@ -74,11 +74,18 @@ class KisTokenManager:
         self._cached_token: KisToken | None = self._load_cache()
 
     def _load_cache(self) -> KisToken | None:
-        """Load token from disk cache."""
+        """Load token from disk cache (base64 encoded)."""
         import json
+        import base64
         try:
             if self._CACHE_FILE.exists():
-                data = json.loads(self._CACHE_FILE.read_text())
+                raw = self._CACHE_FILE.read_text().strip()
+                # Try base64 decode first, fallback to plaintext (마이그레이션)
+                try:
+                    decoded = base64.b64decode(raw).decode("utf-8")
+                except Exception:
+                    decoded = raw
+                data = json.loads(decoded)
                 token = KisToken(
                     access_token=data["access_token"],
                     token_type=data.get("token_type", "Bearer"),
@@ -92,9 +99,10 @@ class KisTokenManager:
         return None
 
     def _save_cache(self, token: KisToken) -> None:
-        """Save token to disk cache."""
+        """Save token to disk cache (base64 encoded)."""
         import json
         import os
+        import base64
         try:
             self._CACHE_DIR.mkdir(parents=True, exist_ok=True)
             self._CACHE_DIR.chmod(0o700)
@@ -104,7 +112,8 @@ class KisTokenManager:
                 "expires_in": token.expires_in,
                 "issued_at": token.issued_at.isoformat(),
             }
-            self._CACHE_FILE.write_text(json.dumps(data, indent=2))
+            encoded = base64.b64encode(json.dumps(data).encode()).decode()
+            self._CACHE_FILE.write_text(encoded)
             os.chmod(self._CACHE_FILE, 0o600)
         except Exception as e:
             logger.warning(f"토큰 캐시 쓰기 실패 (무시): {e}")

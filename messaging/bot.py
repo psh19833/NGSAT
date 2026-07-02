@@ -16,6 +16,7 @@ Commands:
 
 from __future__ import annotations
 
+from pathlib import Path
 from typing import Any
 
 from core.logger import logger
@@ -166,12 +167,24 @@ class TelegramBot:
             telegram_lib = importlib.import_module("telegram")
             self._bot = telegram_lib.Bot(token=self._bot_token)
 
+        # Load last processed offset from file (재시작 후 중복 처리 방지)
+        offset_file = Path(__file__).resolve().parent / ".telegram_offset"
         offset: int = 0
+        try:
+            if offset_file.exists():
+                offset = int(offset_file.read_text().strip()) + 1
+        except (ValueError, OSError):
+            offset = 0
         while True:
             try:
                 updates = await self._bot.get_updates(offset=offset, timeout=30)
                 for update in updates:
                     offset = update.update_id + 1
+                    # Persist offset to file (재시작 후 중복 처리 방지)
+                    try:
+                        offset_file.write_text(str(offset))
+                    except OSError:
+                        pass
                     if not update.message or not update.message.text:
                         continue
                     text = update.message.text.strip()

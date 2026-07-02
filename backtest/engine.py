@@ -184,6 +184,7 @@ class BacktestEngine:
     BUY_FEE_RATE = 0.00015    # 매수 수수료 0.015%
     SELL_FEE_RATE = 0.00015   # 매도 수수료 0.015%
     SELL_TAX_RATE = 0.0023    # 농특세 0.20% + 거래소/청산소 0.03%
+    SLIPPAGE_PCT = 0.001      # 슬리피지 0.1% (호가 스프레드 반영)
 
     def run(
         self,

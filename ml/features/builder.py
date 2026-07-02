@@ -289,8 +289,12 @@ def build_training_dataset(
     X = np.array(X_list, dtype=float)
     y = np.array(y_list, dtype=int)
 
-    # Replace NaN/inf with 0
-    X = np.nan_to_num(X, nan=0.0, posinf=0.0, neginf=0.0)
+    # Replace NaN with per-feature mean, inf with 0
+    col_mean = np.nanmean(X, axis=0)
+    col_mean = np.nan_to_num(col_mean, nan=0.0)  # handle all-NaN columns
+    nan_mask = np.isnan(X)
+    X = np.where(nan_mask, col_mean, X)
+    X = np.nan_to_num(X, posinf=0.0, neginf=0.0)
 
     return X, y, FEATURE_NAMES
 
