@@ -354,6 +354,7 @@ def create_app(orchestrator=None, config=None) -> FastAPI:
             return {
                 "connected": True,
                 "regime": "unknown",
+                "mode": orch._current_mode,
                 "score": 0,
                 "reason": "아직 레짐 평가가 실행되지 않았습니다",
                 "regime_skipped": orch._regime_skipped,
@@ -369,6 +370,7 @@ def create_app(orchestrator=None, config=None) -> FastAPI:
         return {
             "connected": True,
             "regime": regime.regime.value,
+            "mode": orch._current_mode,
             "regime_kr": regime_kr,
             "score": regime.score,
             "reason": regime.reason,

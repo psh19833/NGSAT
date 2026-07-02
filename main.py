@@ -237,6 +237,9 @@ async def run_live(config, args):
         )
         universe, index_prices = await data_provider.load()
 
+        # Connect minute bar builder from live data provider to orchestrator
+        orchestrator._minute_builder = data_provider._minute_builder
+
         if not universe:
             logger.error("실데이터 로드 실패 — 시스템 중단")
             return
@@ -292,7 +295,6 @@ async def run_live(config, args):
                 if telegram_bot and session_tracker.should_send_daily_report:
                     try:
                         from data.repository import TradeRepository
-                        from core.models import TradeRecord
                         from sqlalchemy.orm import Session as SASession
                         from core.db import SessionLocal
                         db_session: SASession = SessionLocal()
@@ -355,6 +357,37 @@ async def run_live(config, args):
                                 logger.exception(f"자동 재학습 실패: {e}")
 
                 if orchestrator.controller.is_running:
+                    # ── 동적 유니버스 교체 (09:09, 1일 1회) ──
+                    kst_now = datetime.now(timezone.utc) + timedelta(hours=9)
+                    if not hasattr(orchestrator.controller, '_universe_swapped'):
+                        orchestrator.controller._universe_swapped = False
+                    if not orchestrator.controller._universe_swapped and kst_now.hour == 9 and kst_now.minute >= 9:
+                        try:
+                            orchestrator._trading_allowed = False
+                            rank_data = await broker.get_volume_rank()
+                            if rank_data:
+                                top_60 = [item["code"] for item in rank_data[:60]]
+                                # 보유 포지션 보호
+                                positions = await broker.get_positions()
+                                held = {p.code for p in positions}
+                                # 거래량 상위 35 + 보유포지션
+                                new_uni = list(dict.fromkeys(top_60))
+                                new_uni = [c for c in new_uni if c not in held][:35]
+                                new_uni = list(held) + new_uni
+                                new_uni = new_uni[:40]
+                                await data_provider.swap_universe(new_uni, held_codes=held)
+                                logger.info(f"유니버스 교체 완료: {len(new_uni)}종목")
+                            orchestrator._trading_allowed = True
+                        except Exception as e:
+                            logger.warning(f"유니버스 교체 실패 (기존 유지): {e}")
+                            orchestrator._trading_allowed = True
+                        finally:
+                            orchestrator.controller._universe_swapped = True
+                    elif kst_now.hour > 9 and not orchestrator.controller._universe_swapped:
+                        # 09시 이후 기동 시 즉시 교체 없이 거래 허용
+                        orchestrator._trading_allowed = True
+                        orchestrator.controller._universe_swapped = True
+
                     result = await orchestrator.run_cycle(index_prices, universe)
 
                     # 자동 프리셋 변경 시 텔레그램 알림
@@ -394,10 +427,10 @@ async def run_live(config, args):
                 # Reset consecutive error counter on successful cycle
                 _consecutive_errors = 0
 
-                # ── 정기 Status 메시지 (30분마다) ──
+                # ── 정기 Status 메시지 (10분마다) ──
                 if telegram_bot:
                     now_ts = time.time()
-                    if now_ts - _last_status_time >= 1800:  # 30min
+                    if now_ts - _last_status_time >= 600:  # 10min
                         _last_status_time = now_ts
                         try:
                             tokens = []

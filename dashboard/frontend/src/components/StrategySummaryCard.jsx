@@ -25,6 +25,11 @@ export default function StrategySummaryCard({ config, regime }) {
   const preset = detectPreset(config)
   const mode = regime?.mode || '—'
   const modeLabel = { swing: '스윙', short_term: '단타', hold: '홀드' }[mode] || mode
+  const modePrefix = { swing: 'swing', short_term: 'short', hold: 'hold' }[mode] || 'short'
+
+  const stopLoss = config[`mode_${modePrefix}_stop_loss_pct`]
+  const dailyLoss = config[`mode_${modePrefix}_daily_loss_pct`]
+  const positionSize = config[`mode_${modePrefix}_position_size`]
 
   return (
     <div className="ngsat-card p-5">
@@ -50,9 +55,9 @@ export default function StrategySummaryCard({ config, regime }) {
         <div>
           <p className="text-xs text-ngsat-muted mb-2 font-medium">리스크 관리</p>
           <div className="space-y-1.5">
-            <Row label="손절선" value={`${config.mode_short_stop_loss_pct || config.mode_swing_stop_loss_pct}%`} />
-            <Row label="일일한도" value={`${config.mode_short_daily_loss_pct || config.mode_swing_daily_loss_pct}%`} />
-            <Row label="포지션크기" value={`${((config.mode_short_position_size || config.mode_swing_position_size) * 100).toFixed(0)}%`} />
+            <Row label="손절선" value={stopLoss != null ? `${stopLoss}%` : '—'} />
+            <Row label="일일한도" value={dailyLoss != null ? `${dailyLoss}%` : '—'} />
+            <Row label="포지션크기" value={positionSize != null ? `${(positionSize * 100).toFixed(0)}%` : '—'} />
           </div>
         </div>
       </div>

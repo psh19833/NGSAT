@@ -24,6 +24,7 @@ from zoneinfo import ZoneInfo
 from core.config import load_config
 from core.logger import logger
 from core.types import Market, PriceData, StockInfo
+from data.minute_bar_builder import MinuteBarBuilder
 
 KST = ZoneInfo("Asia/Seoul")
 
@@ -89,6 +90,7 @@ class RealDataProvider:
         # WebSocket 실시간 시세
         self._ws: Any = None
         self._ws_task: Any = None
+        self._minute_builder: MinuteBarBuilder = MinuteBarBuilder()
 
     def update_date_range(
         self,
@@ -323,8 +325,10 @@ class RealDataProvider:
                 base_url=config.kis.base_url,
             )
 
-            # Map WebSocket prices back to cache
-            def on_price(code: str, price: float, volume: int, ts: str):
+            # Map WebSocket prices back to cache + build minute bars
+            def on_price(code: str, price: float, high: float, low: float,
+                         open_price: float, volume: int, ts: str):
+                self._minute_builder.feed(code, price, high, low, open_price, volume, ts)
                 for i, (info, prices) in enumerate(self._universe_cache or []):
                     if info.code == code and prices:
                         updated = PriceData(
@@ -355,6 +359,58 @@ class RealDataProvider:
 
         except Exception as e:
             logger.warning(f"WebSocket 실시간 시세 중단: {e} — REST polling fallback")
+
+    async def swap_universe(self, new_codes: list[str],
+                            held_codes: set[str] | None = None) -> None:
+        """실시간 유니버스 교체 — WebSocket 구독 변경 + 캐시 갱신.
+
+        Args:
+            new_codes: 새 유니버스 종목코드 리스트 (최대 40).
+            held_codes: 보유 포지션 코드. 이 종목들은 절대 제외되지 않음.
+        """
+        held = held_codes or set()
+        old_codes = set(self._codes) if isinstance(self._codes, list) else set()
+        new_set = set(new_codes)
+        add_codes = list(new_set - old_codes)
+        remove_codes = [c for c in (old_codes - new_set) if c not in held]
+
+        if not add_codes and not remove_codes:
+            logger.info("유니버스 교체 불필요 (변동 없음)")
+            return
+
+        # 1. WebSocket 구독 교체
+        if self._ws:
+            await self._ws.swap_universe(add_codes, remove_codes)
+
+        # 2. 새 종목 일봉 데이터 로드
+        if add_codes and self._universe_cache:
+            adapter = await self._get_adapter()
+            for code in add_codes:
+                try:
+                    prices = await adapter.get_daily_chart(code)
+                    if prices:
+                        market = _infer_market(code)
+                        self._universe_cache.append(
+                            (StockInfo(code=code, name="", market=market), prices)
+                        )
+                    await asyncio.sleep(0.1)
+                except Exception as e:
+                    logger.warning(f"[{code}] 신규 편입 일봉 로드 실패: {e}")
+
+        # 3. 제거 종목 캐시 정리
+        if remove_codes and self._universe_cache:
+            self._universe_cache = [
+                (info, prices) for info, prices in self._universe_cache
+                if info.code not in remove_codes
+            ]
+
+        # 4. MinuteBarBuilder 정리
+        for code in remove_codes:
+            self._minute_builder.clear(code)
+
+        self._codes = list(new_set)
+        logger.info(f"유니버스 교체: {len(old_codes)}→{len(new_set)}종목 "
+                    f"(+{len(add_codes)}, -{len(remove_codes)})")
 
     async def refresh_prices(self):
         """실시간 시세 갱신 — 최근 5일치만 조회해 캐시된 데이터 업데이트.

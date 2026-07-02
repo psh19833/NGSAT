@@ -203,6 +203,16 @@ _FINANCIAL_RATIO = KisEndpoint(
     description="국내주식 재무비율 (PER/PBR/EPS/ROE 등)",
 )
 
+# ── 거래량순위 ──
+_VOLUME_RANK = KisEndpoint(
+    name="volume_rank",
+    category=KisCategory.QUOTATION,
+    path="/uapi/domestic-stock/v1/quotations/volume-rank",
+    method="GET",
+    tr_id="FHPST01710000",
+    description="국내주식 거래량순위",
+)
+
 # ── Order TR IDs (매수/매도 구분) ──
 BUY_TR_ID = "TTTC0802U"
 SELL_TR_ID = "TTTC0801U"
@@ -219,6 +229,7 @@ _ENDPOINTS: dict[str, KisEndpoint] = {
         _MARKET_HOLIDAY, _MARKET_HOURS,
         _FOREIGN_INVESTOR,
         _FINANCIAL_RATIO,
+        _VOLUME_RANK,
     ]
 }
 

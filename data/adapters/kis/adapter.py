@@ -236,6 +236,47 @@ class KisAdapter(BrokerAdapter):
         logger.info(f"일봉 조회: {code} {len(history)}개")
         return history
 
+    async def get_volume_rank(self) -> list[dict]:
+        """KIS 거래량순위 API — 실시간 거래량 상위 종목.
+
+        Returns:
+            [{"code": "005930", "name": "삼성전자", "volume": 12345678}, ...]
+        """
+        from datetime import datetime
+        params = {
+            "FID_COND_MRKT_DIV_CODE": "J",
+            "FID_COND_SCR_DIV_CODE": "20171",
+            "FID_INPUT_ISCD": "0000",
+            "FID_DIV_CLS_CODE": "0",
+            "FID_BLNG_CLS_CODE": "0",
+            "FID_TRGT_CLS_CODE": "000000000",
+            "FID_TRGT_EXLS_CLS_CODE": "0",
+            "FID_INPUT_PRICE_1": "",
+            "FID_INPUT_PRICE_2": "",
+            "FID_VOL_CNT": "",
+            "FID_INPUT_DATE_1": datetime.now().strftime("%Y%m%d"),
+        }
+        resp = await self._http.get("volume_rank", params=params)
+        if not resp.success:
+            logger.warning(f"거래량순위 조회 실패: {resp.msg_cd} {resp.msg1}")
+            return []
+        output = resp.raw.get("output", [])
+        if not isinstance(output, list):
+            return []
+        result = []
+        for item in output:
+            code = item.get("stck_shrn_iscd", "")
+            if not code:
+                continue
+            result.append({
+                "code": code,
+                "name": item.get("hts_kor_isnm", ""),
+                "volume": int(item.get("acml_vol", 0) or 0),
+                "price": int(item.get("stck_prpr", 0) or 0),
+                "change_pct": float(item.get("prdy_ctrt", 0) or 0),
+            })
+        return result
+
     async def get_minute_history(
         self,
         code: str,

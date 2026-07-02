@@ -16,8 +16,8 @@ from __future__ import annotations
 import numpy as np
 
 from core.logger import logger
-from core.types import MarketRegime, MinuteScore, PriceData, StockInfo
-from strategy.indicators import current_rsi, sma
+from core.types import MinuteScore, PriceData
+from strategy.indicators import current_rsi
 
 
 def screen_by_minute(
@@ -64,9 +64,15 @@ def _score_minute_stock(code: str, prices: list[PriceData]) -> MinuteScore:
     rsi_val = current_rsi(closes, 14)
     if not np.isnan(rsi_val):
         rsi_rounded = round(float(rsi_val), 1)
-        if 30 <= rsi_rounded <= 70:
+        if 40 <= rsi_rounded <= 60:
             total += 15
             reasons.append(f"RSI {rsi_rounded} (중립)")
+        elif 30 <= rsi_rounded < 40 or 60 < rsi_rounded <= 70:
+            total += 10
+            reasons.append(f"RSI {rsi_rounded}")
+        elif 25 <= rsi_rounded < 30 or 70 < rsi_rounded <= 75:
+            total += 5
+            reasons.append(f"RSI {rsi_rounded} (경계)")
         elif rsi_rounded > 75:
             total -= 15
             reasons.append(f"RSI {rsi_rounded} (과열-감점)")
@@ -87,12 +93,18 @@ def _score_minute_stock(code: str, prices: list[PriceData]) -> MinuteScore:
         if 1.0 <= mom <= 3.0:
             total += 20
             reasons.append(f"모멘텀 +{mom:.1f}% (양호)")
-        elif 0.0 <= mom < 1.0:
-            total += 10
+        elif 0.5 <= mom < 1.0:
+            total += 15
+            reasons.append(f"모멘텀 +{mom:.1f}% (상승)")
+        elif 0.0 <= mom < 0.5:
+            total += 8
             reasons.append(f"모멘텀 +{mom:.1f}% (미약)")
-        elif -2.0 <= mom < 0.0:
-            total -= 5
+        elif -1.0 <= mom < 0.0:
+            total -= 3
             reasons.append(f"모멘텀 {mom:.1f}% (약세)")
+        elif -2.0 <= mom < -1.0:
+            total -= 8
+            reasons.append(f"모멘텀 {mom:.1f}% (하락)")
         else:
             total -= 15
             reasons.append(f"모멘텀 {mom:.1f}% (급락)")
@@ -109,14 +121,20 @@ def _score_minute_stock(code: str, prices: list[PriceData]) -> MinuteScore:
             total += 15
             reasons.append(f"거래량 {vol_ratio:.1f}배 (급등)")
         elif vol_ratio >= 1.5:
-            total += 10
+            total += 12
             reasons.append(f"거래량 {vol_ratio:.1f}배 (증가)")
+        elif 1.2 <= vol_ratio < 1.5:
+            total += 8
+            reasons.append(f"거래량 {vol_ratio:.1f}배 (소폭증가)")
+        elif 0.8 <= vol_ratio < 1.2:
+            total += 5
+            reasons.append(f"거래량 {vol_ratio:.1f}배 (보통)")
         elif vol_ratio <= 0.5:
             total -= 5
             reasons.append(f"거래량 {vol_ratio:.1f}배 (감소)")
         else:
-            total += 5
-            reasons.append(f"거래량 {vol_ratio:.1f}배 (보통)")
+            total += 3
+            reasons.append(f"거래량 {vol_ratio:.1f}배")
     else:
         vol_ratio = 1.0
 

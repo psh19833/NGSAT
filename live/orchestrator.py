@@ -111,6 +111,7 @@ class TradingOrchestrator:
         position_budget_pct: float = 0.10,
         minute_model=None,
         strategy_config=None,
+        minute_builder=None,
         db_url: str | None = None,
         db_pool_size: int = 10,
         db_max_overflow: int = 20,
@@ -121,6 +122,8 @@ class TradingOrchestrator:
         self._controller = TradingController()
         self._executor = OrderExecutor(broker, self._risk, self._controller)
         self._inference = MLInference(model, buy_threshold, sell_threshold, minute_model=minute_model)
+        self._minute_builder = minute_builder  # MinuteBarBuilder (optional, for WS minute bars)
+        self._trading_allowed = True  # 09:10 이후 true (main.py에서 제어)
         self._position_budget_pct = position_budget_pct
 
         # Database for trade records
@@ -310,22 +313,33 @@ class TradingOrchestrator:
         else:
             self._regime_skipped = False
             # ── Step 3: Regime evaluation ──
-            if len(index_prices) < 20:
-                result.reason = "인덱스 데이터 부족 — 레짐 평가 불가"
-                return result
+            # 안전장치: 서버 재시작 후 KOSPI 지수 데이터 안정화까지
+            # 처음 5사이클은 직전 레짐 유지 (급변 방지)
+            if self._cycle_count < 5 and self._last_regime is not None:
+                regime_result = self._last_regime
+                result.regime = regime_result.regime
+                logger.info(
+                    f"레짐 평가 보류 (사이클 #{self._cycle_count}/5): "
+                    f"직전 레짐 유지 — {regime_result.regime.value} "
+                    f"({regime_result.score:.1f}점)"
+                )
+            else:
+                if len(index_prices) < 20:
+                    result.reason = "인덱스 데이터 부족 — 레짐 평가 불가"
+                    return result
 
-            regime_result = evaluate_regime(
-                [p.close for p in index_prices],
-                [p.volume for p in index_prices],
-                [p.high for p in index_prices],
-                [p.low for p in index_prices],
-                config=self._strategy,
-                prev_regime=self._last_regime.regime if self._last_regime else None,
-            )
-            self._last_regime = regime_result
-            result.regime = regime_result.regime
+                regime_result = evaluate_regime(
+                    [p.close for p in index_prices],
+                    [p.volume for p in index_prices],
+                    [p.high for p in index_prices],
+                    [p.low for p in index_prices],
+                    config=self._strategy,
+                    prev_regime=self._last_regime.regime if self._last_regime else None,
+                )
+                self._last_regime = regime_result
+                result.regime = regime_result.regime
 
-            logger.info(f"레짐 평가: {regime_result.regime.value} ({regime_result.score:.1f}점)")
+                logger.info(f"레짐 평가: {regime_result.regime.value} ({regime_result.score:.1f}점)")
 
             # ── TR-16: 장중 KOSPI 등락률 보정 (B안) ──
             # intraday: fetch current KOSPI index, compare to yesterday close
@@ -407,7 +421,7 @@ class TradingOrchestrator:
                     minute_data = {}
                     names = {}
                     self._minute_cache.clear()
-                    for c in screen_result.candidates[:15]:  # Top 15만
+                    for c in screen_result.candidates:  # 전체 후보 분봉 조회 (WebSocket 캐시, API 0회)
                         mp = await self._fetch_minute_prices(c.code)
                         await asyncio.sleep(0.1)  # ★ Rate Limit 보호
                         if mp and len(mp) >= 20:
@@ -447,6 +461,11 @@ class TradingOrchestrator:
 
             logger.info("장 운영 시간 — 정상 진입 실행")
 
+            # 09:10 이전: 신규 진입 차단 (데이터 수집 모드)
+            if not self._trading_allowed:
+                logger.info("09:10 이전 — 데이터 수집 모드, 신규 진입 보류")
+                # 청산은 실행됨 (별도 청산 루프는 영향 없음)
+
         for candidate in (screen_result.candidates if screen_result else []):
             if not market_open:
                 break
@@ -473,10 +492,7 @@ class TradingOrchestrator:
                     result.entries_deferred += 1
                     continue
 
-            # HOLD 모드: 신규 진입 금지
-            if self._current_mode == "hold":
-                continue
-
+            # ── ML predictions (모든 모드에서 평가 실행) ──
             # Find price data for this candidate
             prices = self._find_prices(stock_universe, candidate.code)
             if prices is None or len(prices) < 60:
@@ -501,6 +517,10 @@ class TradingOrchestrator:
                     "probability": round(pred.rise_probability, 3),
                     "reason": pred.reason,
                 })
+
+            # HOLD 모드: ML 평가만 기록하고 매수 실행은 차단
+            if self._current_mode == "hold":
+                continue
 
             if pred and pred.action == DecisionAction.BUY:
                 # 진입 정밀화: 분봉으로 타이밍/가격 판단 (하이브리드 1단계, 양 모드 공통)
@@ -798,8 +818,17 @@ class TradingOrchestrator:
     async def _fetch_minute_prices(self, code: str) -> list[PriceData] | None:
         """Fetch minute-candle data for a stock.
 
+        Checks the local MinuteBarBuilder cache first (WebSocket-fed).
+        Falls back to REST API if insufficient local data.
+
         Returns None if adapter doesn't support minute data.
         """
+        # Local WS cache first
+        if self._minute_builder is not None:
+            bars = self._minute_builder.get_bars(code, 60)
+            if len(bars) >= 30:
+                return bars
+
         try:
             return await self._broker.get_minute_history(code)
         except Exception as e:

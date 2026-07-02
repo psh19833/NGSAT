@@ -18,7 +18,6 @@ from __future__ import annotations
 
 import asyncio
 import json
-import logging
 from typing import Any, Callable, Optional
 
 import websockets
@@ -62,8 +61,8 @@ class KisWebSocketClient:
         self._reconnect_delay = 1.0
 
         # Callbacks (set by consumer)
-        self.on_price: Optional[Callable[[str, float, int, str], None]] = None
-        """on_price(code, current_price, volume, timestamp_hhmmss)"""
+        self.on_price: Optional[Callable[[str, float, float, float, float, int, str], None]] = None
+        """on_price(code, price, high, low, open, volume, timestamp_hhmmss)"""
 
         self.on_error: Optional[Callable[[Exception], None]] = None
 
@@ -166,11 +165,43 @@ class KisWebSocketClient:
     def subscribed_count(self) -> int:
         return len(self._subscribed)
 
+    @property
+    def subscribed_codes(self) -> list[str]:
+        return list(self._subscribed)
+
+    # ── Batch operations ──
+
+    async def batch_subscribe(self, codes: list[str]) -> None:
+        """여러 종목 한 번에 구독."""
+        for code in codes:
+            self._subscribed.add(code)
+        if self._ws and self._running:
+            for code in codes:
+                await self._send_subscribe(code)
+        logger.info(f"WebSocket 구독 추가: {len(codes)}종목")
+
+    async def batch_unsubscribe(self, codes: list[str]) -> None:
+        """여러 종목 한 번에 구독 해제."""
+        for code in codes:
+            self._subscribed.discard(code)
+        if self._ws and self._running:
+            for code in codes:
+                await self._send_unsubscribe(code)
+        logger.info(f"WebSocket 구독 해제: {len(codes)}종목")
+
+    async def swap_universe(self, add_codes: list[str], remove_codes: list[str]) -> None:
+        """유니버스 교체: 제거 → 추가 (REST 호출 없음, WebSocket 메시지만)."""
+        if remove_codes:
+            await self.batch_unsubscribe(remove_codes)
+        if add_codes:
+            await self.batch_subscribe(add_codes)
+        logger.info(f"WebSocket 유니버스 교체: -{len(remove_codes)} +{len(add_codes)} = {len(self._subscribed)}종목")
+
     # ── Internal ──
 
     async def _request_approval_key(self) -> Optional[str]:
         """Request WebSocket approval key from KIS REST API.
-        
+
         Uses the same HTTP client pattern as the main KIS adapter.
         """
         import aiohttp
@@ -273,8 +304,20 @@ class KisWebSocketClient:
             except (ValueError, TypeError):
                 price = 0.0
             try:
+                high = float(body.get("stck_hgpr", "0"))
+            except (ValueError, TypeError):
+                high = price
+            try:
+                low = float(body.get("stck_lwpr", "0"))
+            except (ValueError, TypeError):
+                low = price
+            try:
+                open_price = float(body.get("stck_oprc", "0"))
+            except (ValueError, TypeError):
+                open_price = price
+            try:
                 volume = int(body.get("acml_vol", "0"))
             except (ValueError, TypeError):
                 volume = 0
             timestamp = body.get("stck_cntg_hour", "")
-            self.on_price(code, price, volume, timestamp)
+            self.on_price(code, price, high, low, open_price, volume, timestamp)

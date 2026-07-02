@@ -21,6 +21,8 @@ from strategy.indicators import (
     current_macd,
     current_rsi,
     sma,
+    stochastic,
+    adx,
     volume_ratio,
 )
 from strategy.patterns import (
@@ -198,6 +200,30 @@ def _evaluate_single_stock(
         "current_price": float(closes[-1]),
     }
 
+    # ── Additional indicators (Phase A) ──
+    k_val, d_val = float('nan'), float('nan')
+    if len(closes) >= 14:
+        k_arr, d_arr = stochastic(highs, lows, closes, 14, 3)
+        k_val = float(k_arr[-1]) if not np.isnan(k_arr[-1]) else float('nan')
+        d_val = float(d_arr[-1]) if not np.isnan(d_arr[-1]) else float('nan')
+        indicators["stochastic_k"] = k_val
+        indicators["stochastic_d"] = d_val
+
+    adx_val = float('nan')
+    if len(closes) >= 30:
+        adx_arr = adx(highs, lows, closes, 14)
+        adx_val = float(adx_arr[-1]) if not np.isnan(adx_arr[-1]) else float('nan')
+        indicators["adx"] = adx_val
+
+    vol_ma5_val, vol_ma20_val = float('nan'), float('nan')
+    if len(volumes) >= 20:
+        vol_ma5_arr = sma(volumes, 5)
+        vol_ma20_arr = sma(volumes, 20)
+        vol_ma5_val = float(vol_ma5_arr[-1]) if not np.isnan(vol_ma5_arr[-1]) else float('nan')
+        vol_ma20_val = float(vol_ma20_arr[-1]) if not np.isnan(vol_ma20_arr[-1]) else float('nan')
+        indicators["vol_ma5"] = vol_ma5_val
+        indicators["vol_ma20"] = vol_ma20_val
+
     # ── Pattern detection ──
     patterns: list[PatternResult] = []
     pattern_weight = thresholds.get("pattern_weight", 1.0)
@@ -231,6 +257,13 @@ def _evaluate_single_stock(
         elif rsi_val <= 30:
             score += 5   # Oversold — potential rebound
 
+    # Stochastic scoring (Phase A)
+    if not np.isnan(k_val) and not np.isnan(d_val):
+        if k_val < 20 and d_val < 20:
+            score += 10  # Oversold — rebound expected
+        elif k_val > 80 and d_val > 80:
+            score -= 10  # Overbought — chase risk
+
     # MACD scoring
     if hist > 0:
         score += 10  # Bullish MACD
@@ -240,19 +273,42 @@ def _evaluate_single_stock(
     # MA alignment scoring
     if ma5 > 0 and ma20 > 0:
         if closes[-1] > ma5 > ma20:
-            score += 15  # Perfect bullish alignment
+            score += 20  # Perfect bullish alignment (Phase C: 15→20)
         elif closes[-1] > ma5:
             score += 5   # Above short-term MA
         elif closes[-1] < ma5 < ma20:
-            score -= 15  # Bearish alignment
+            score -= 20  # Bearish alignment (Phase C: -15→-20)
 
-    # Volume confirmation
-    if vol_ratio > 1.5:
-        score += 5  # Above-average volume
+    # Volume trend analysis (Phase B)
+    if not np.isnan(vol_ma5_val) and not np.isnan(vol_ma20_val) and not np.isnan(vol_ratio):
+        if vol_ma5_val > vol_ma20_val and vol_ratio > 1.2:
+            score += 8  # Volume increasing + above-average activity
+        elif vol_ma5_val > vol_ma20_val:
+            score += 4  # Volume trend improving
+        elif vol_ratio > 1.5:
+            score += 5  # Above-average volume (original)
+        elif vol_ma5_val < vol_ma20_val and vol_ratio < 0.7:
+            score -= 3  # Volume declining
 
-    # Pattern scoring (weighted by regime)
-    detected_count = len(patterns)
-    score += detected_count * 4 * pattern_weight
+    # ADX trend strength scoring (Phase A)
+    if not np.isnan(adx_val):
+        if adx_val > 25:
+            score += 10  # Trending stock — prefer
+        elif adx_val < 15:
+            score -= 10  # Sideways stock — penalize
+
+    # Pattern scoring — weighted by pattern type (Phase B)
+    pattern_type_weights = {
+        "breakout": 1.5,
+        "bollinger_squeeze": 1.3,
+        "ma_cross": 1.2,
+        "pullback": 0.8,
+        "rebound": 0.7,
+    }
+    score += sum(
+        3 * pattern_type_weights.get(p.pattern_name, 1.0) * pattern_weight
+        for p in patterns
+    )
 
     # KOSPI bonus (기획서: 코스피 비중 더 높게)
     kospi_bonus = False
@@ -271,6 +327,8 @@ def _evaluate_single_stock(
         f"점수 {score:.1f}/100",
         f"RSI {rsi_val:.1f}" if not np.isnan(rsi_val) else "RSI N/A",
         f"MACD {'+' if hist > 0 else ''}{hist:.0f}",
+        f"스토캐스틱 K={k_val:.0f}" if not np.isnan(k_val) else "",
+        f"ADX {adx_val:.0f}" if not np.isnan(adx_val) else "",
         f"패턴: {', '.join(pattern_names)}" if pattern_names else "패턴 없음",
         f"코스피 가산점" if kospi_bonus else "",
     ]
