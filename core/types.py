@@ -6,12 +6,19 @@ Shared across all modules to avoid circular imports.
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from datetime import datetime
+from datetime import datetime, timezone, timedelta
 from enum import Enum
 from typing import Any, Optional
 
 # Re-export enums from config for convenience
 from core.config import Environment, MarketRegime, OrderSide, OrderStatus
+
+KST = timedelta(hours=9)
+
+
+def now_kst() -> datetime:
+    """Return current datetime in KST (Korea Standard Time)."""
+    return datetime.now(timezone.utc) + KST
 
 
 class Market(str, Enum):

@@ -250,6 +250,22 @@ class UniverseManager:
         config = load_config()
         universe_data = provider._universe_cache or []
 
+        # screen_stocks()를 한 번 호출해 모든 종목 스크리너 점수 계산
+        screener_lookup: dict[str, float] = {}
+        if universe_data:
+            try:
+                from strategy.regime import RegimeResult
+                from core.config import MarketRegime
+                dummy_regime = RegimeResult(
+                    regime=MarketRegime.NEUTRAL,
+                    score=50.0,
+                    reason="universe scoring",
+                )
+                sr = screen_stocks(universe_data, dummy_regime, config.strategy)
+                screener_lookup = {c.code: c.score for c in sr.candidates}
+            except Exception as e:
+                logger.warning(f"스크리너 점수 계산 실패 (중립 50.0 사용): {e}")
+
         result = []
         for code in codes:
             # 순위 점수 (normalize: 1등=100, 100등=0)
@@ -257,29 +273,12 @@ class UniverseManager:
             vp = max(0, 100 - power_map.get(code, 999))
             fl = max(0, 100 - fluct_map.get(code, 999))
 
-            # 스크리너 점수 (일봉 데이터 기반)
-            screener_score = 50.0  # 기본 중립
-            for info, prices in universe_data:
-                if info.code == code:
-                    try:
-                        from core.types import MarketRegime
-                        dummy_regime = MarketRegime(
-                            regime="neutral", score=50, mode="hold",
-                            reason="universe scoring"
-                        )
-                        # 단순 스크리너: stock 객체를 임시로 구성해야 함
-                        # 실제 구현 시 screen_stocks는 복잡하므로 단순화
-                        screener_score = 50.0  # 기본값, 필요시 개선
-                    except Exception:
-                        pass
-                    break
-
             stock = ScoredStock(
                 code=code,
                 volume_score=vr,
                 power_score=vp,
                 fluct_score=fl,
-                screener_score=50.0,  # 기술점수는 일봉 데이터 필요시 추가 구현
+                screener_score=screener_lookup.get(code, 50.0),
             )
             stock.compute_score()
             result.append(stock)
@@ -302,7 +301,9 @@ class UniverseManager:
                     from data.adapters.kis.adapter import KisAdapter
                     adapter = provider._adapter
                 if adapter:
-                    prices = await adapter.get_daily_chart(code)
+                    end = datetime.now()
+                    start = end - timedelta(days=365)
+                    prices = await adapter.get_price_history(code, start, end)
                     if prices:
                         from data.real_data_provider import _infer_market
                         market = _infer_market(code)

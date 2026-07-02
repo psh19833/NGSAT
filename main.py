@@ -26,6 +26,7 @@ from pathlib import Path
 
 from core.config import load_config
 from core.logger import logger, setup_logger
+from core.types import now_kst
 
 
 def parse_args():
@@ -261,7 +262,7 @@ async def run_live(config, args):
 
         def _is_after_market_close_kst() -> bool:
             """KST 기준 장 마감 여부 (15:30 이후)."""
-            kst_now = datetime.now(timezone.utc) + timedelta(hours=9)
+            kst_now = now_kst()
             return kst_now.hour > 15 or (kst_now.hour == 15 and kst_now.minute >= 30)
 
         while True:
@@ -362,7 +363,7 @@ async def run_live(config, args):
                     if not hasattr(orchestrator, '_universe_manager') or orchestrator._universe_manager is None:
                         orchestrator._universe_manager = UniverseManager()
 
-                    kst_now = datetime.now(timezone.utc) + timedelta(hours=9)
+                    kst_now = now_kst()
                     um = orchestrator._universe_manager
 
                     # 09:00~09:10 사이: 초기화 (1회) + 거래 차단
@@ -551,12 +552,13 @@ async def run_live(config, args):
     # ── 8. Wait for shutdown signal ──
     stop_event = asyncio.Event()
 
-    def signal_handler(sig, frame):
+    def signal_handler(sig, frame=None):
         logger.info(f"종료 신호 수신: {sig}")
         stop_event.set()
 
-    signal.signal(signal.SIGINT, signal_handler)
-    signal.signal(signal.SIGTERM, signal_handler)
+    loop = asyncio.get_event_loop()
+    loop.add_signal_handler(signal.SIGINT, signal_handler)
+    loop.add_signal_handler(signal.SIGTERM, signal_handler)
 
     try:
         await stop_event.wait()
@@ -577,6 +579,7 @@ async def run_live(config, args):
         await asyncio.gather(*tasks, return_exceptions=True)
 
         # Cleanup resources
+        await data_provider.close()
         await broker.close()
         if orchestrator:
             await orchestrator.close()

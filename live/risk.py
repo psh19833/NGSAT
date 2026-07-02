@@ -122,12 +122,17 @@ class RiskManager:
         """Check if daily loss limit has been reached.
 
         Uses mode-aware daily loss limit.
+        Falls back to total_profit_loss_pct if daily_loss_pct is 0
+        (KIS API may not provide separate daily loss field).
         """
         limit_pct = self.effective_daily_loss_limit
 
-        if account.daily_loss_pct >= limit_pct:
+        # daily_loss_pct 우선, 0이면 total_profit_loss_pct로 대체
+        loss_pct = account.daily_loss_pct or account.total_profit_loss_pct
+
+        if loss_pct >= limit_pct:
             reason = (
-                f"일일 총손실 한도 도달: {account.daily_loss_pct:.1f}% >= {limit_pct:.1f}%"
+                f"일일 총손실 한도 도달: {loss_pct:.1f}% >= {limit_pct:.1f}%"
             )
             logger.warning(reason)
             self._halted = True
@@ -141,7 +146,7 @@ class RiskManager:
 
         return RiskCheckResult(
             is_safe=True,
-            reason=f"일일 손실 {account.daily_loss_pct:.1f}% (한도 {limit_pct:.1f}%)",
+            reason=f"일일 손실 {loss_pct:.1f}% (한도 {limit_pct:.1f}%)",
             action=DecisionAction.NONE,
         )
 

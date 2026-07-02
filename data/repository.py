@@ -155,6 +155,18 @@ class PositionRepository:
             self._session.flush()
         return pos
 
+    def update_position_quantity(
+        self,
+        code: str,
+        sold_quantity: int,
+    ) -> Optional[PositionRecord]:
+        """Reduce position quantity after a partial sell (부분 청산)."""
+        pos = self.get_position_by_code(code)
+        if pos:
+            pos.quantity = max(0, pos.quantity - sold_quantity)
+            self._session.flush()
+        return pos
+
 
 class DailyReportRepository:
     """Daily report storage."""

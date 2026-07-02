@@ -87,6 +87,7 @@ class OrderExecutor:
         self._account_product_code = account_product_code
         # BE-1: idempotency — track successfully submitted orders to prevent duplicates
         self._submitted_orders: dict[tuple[str, str], str] = {}  # (code, side) -> order_id
+        self._orders_lock = asyncio.Lock()
 
     async def _adapt_price_for_vi(
         self,
@@ -161,7 +162,8 @@ class OrderExecutor:
             BrokerError: If all retries fail (transient) or order is rejected (permanent).
         """
         # Check if this (code, side) was already submitted successfully
-        prev_order_id = self._submitted_orders.get((code, side.value))
+        async with self._orders_lock:
+            prev_order_id = self._submitted_orders.get((code, side.value))
         if prev_order_id:
             try:
                 status = await self._broker.get_order_status(prev_order_id)
@@ -183,7 +185,8 @@ class OrderExecutor:
                     code=code, side=side, quantity=quantity, price=price,
                 )
                 # Store successful submission for idempotency
-                self._submitted_orders[(code, side.value)] = order_id
+                async with self._orders_lock:
+                    self._submitted_orders[(code, side.value)] = order_id
                 return order_id
             except BrokerError as e:
                 last_error = e
@@ -198,7 +201,8 @@ class OrderExecutor:
                     raise
 
                 # Check if a previous attempt's order was actually accepted
-                prev_id = self._submitted_orders.get((code, side.value))
+                async with self._orders_lock:
+                    prev_id = self._submitted_orders.get((code, side.value))
                 if prev_id:
                     try:
                         existing_status = await self._broker.get_order_status(prev_id)

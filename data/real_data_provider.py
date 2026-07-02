@@ -294,8 +294,8 @@ class RealDataProvider:
                 code="MARKET_INDEX",
                 timestamp=dt,
                 open=avg_close,
-                high=avg_close * 1.005,
-                low=avg_close * 0.995,
+                high=avg_close,
+                low=avg_close,
                 close=avg_close,
                 volume=int(avg_volume),
             ))
@@ -307,7 +307,13 @@ class RealDataProvider:
         return result
 
     async def close(self):
-        """Clean up adapter + WebSocket."""
+        """Clean up adapter + WebSocket task."""
+        if self._ws_task and not self._ws_task.done():
+            self._ws_task.cancel()
+            try:
+                await self._ws_task
+            except asyncio.CancelledError:
+                pass
         if self._ws:
             await self._ws.disconnect()
         if self._adapter:

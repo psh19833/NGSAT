@@ -670,6 +670,14 @@ class TradingOrchestrator:
                     reason=partial_tp["reason"],
                 )
                 if exec_result.success:
+                    # 부분 매도 DB 기록 (close_position 대신 update_position_quantity)
+                    self._record_sell(
+                        result, exec_result, position, sell_price,
+                        action=DecisionAction.SELL,
+                        log_label="부분 익절",
+                        reason=partial_tp["reason"],
+                        partial_sold_qty=partial_tp["sell_quantity"],
+                    )
                     from dataclasses import replace as dc_replace_tp
                     remaining = position.quantity - partial_tp["sell_quantity"]
                     tp1_done = position.partial_tp1_executed or (partial_tp["tp_stage"] == 1)
@@ -681,7 +689,6 @@ class TradingOrchestrator:
                         partial_tp2_executed=tp2_done,
                         original_quantity=position.original_quantity or position.quantity + partial_tp["sell_quantity"],
                     )
-                    result.sells_executed += 1
                     logger.info(
                         f"부분 익절 완료: {position.name}({position.code}) "
                         f"{partial_tp['sell_quantity']}주 매도, 잔여 {remaining}주"
@@ -885,24 +892,39 @@ class TradingOrchestrator:
 
     def _record_sell(
         self, result, exec_result, position, sell_price, action, log_label, reason,
+        partial_sold_qty: int | None = None,
     ) -> None:
-        """Record a sell trade to DB + update cycle result."""
+        """Record a sell trade to DB + update cycle result.
+
+        Args:
+            partial_sold_qty: Actual shares sold in a partial sell.
+                When set (and < position.quantity), updates position quantity
+                instead of closing the position. Default None = full close.
+        """
         if not exec_result.success:
             result.errors.append(f"{log_label} 실패 {position.code}: {exec_result.error}")
             return
         result.sells_executed += 1
         try:
+            # 실제 매도 수량 (부분 청산 시 partial_sold_qty, 아니면 exec_result)
+            sold_qty = partial_sold_qty or exec_result.quantity or position.quantity
+            is_partial = partial_sold_qty is not None and partial_sold_qty < position.quantity
             with self._Session() as session:
                 self._TradeRepo(session).save_trade(
                     code=position.code, name=position.name,
-                    side=OrderSide.SELL, quantity=position.quantity,
+                    side=OrderSide.SELL, quantity=sold_qty,
                     price=exec_result.price or sell_price or 0,
-                    amount=exec_result.amount or (position.quantity * (exec_result.price or sell_price or 0)),
+                    amount=exec_result.amount or (sold_qty * (exec_result.price or sell_price or 0)),
                     action=action, reason=reason,
                 )
-                self._PositionRepo(session).close_position(
-                    code=position.code, final_profit_loss=position.profit_loss_pct
-                )
+                if is_partial:
+                    self._PositionRepo(session).update_position_quantity(
+                        code=position.code, sold_quantity=sold_qty,
+                    )
+                else:
+                    self._PositionRepo(session).close_position(
+                        code=position.code, final_profit_loss=position.profit_loss_pct
+                    )
                 session.commit()
         except Exception as e:
             logger.error(f"{log_label} 기록 저장 실패: {e}")

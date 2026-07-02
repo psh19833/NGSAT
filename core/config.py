@@ -193,6 +193,10 @@ class Config:
     telegram: TelegramConfig = field(default_factory=TelegramConfig)
 
 
+from functools import lru_cache
+
+
+@lru_cache(maxsize=1)
 def load_config(env_file: str | None = None) -> Config:
     """Load configuration from environment variables.
 
