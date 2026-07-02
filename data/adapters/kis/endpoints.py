@@ -213,6 +213,26 @@ _VOLUME_RANK = KisEndpoint(
     description="국내주식 거래량순위",
 )
 
+# ── 체결강도 상위 ──
+_VOLUME_POWER = KisEndpoint(
+    name="volume_power",
+    category=KisCategory.QUOTATION,
+    path="/uapi/domestic-stock/v1/ranking/volume-power",
+    method="GET",
+    tr_id="FHPST01680000",
+    description="국내주식 체결강도 상위",
+)
+
+# ── 등락률 순위 ──
+_FLUCTUATION = KisEndpoint(
+    name="fluctuation",
+    category=KisCategory.QUOTATION,
+    path="/uapi/domestic-stock/v1/ranking/fluctuation",
+    method="GET",
+    tr_id="FHPST01700000",
+    description="국내주식 등락률 순위",
+)
+
 # ── Order TR IDs (매수/매도 구분) ──
 BUY_TR_ID = "TTTC0802U"
 SELL_TR_ID = "TTTC0801U"
@@ -230,6 +250,8 @@ _ENDPOINTS: dict[str, KisEndpoint] = {
         _FOREIGN_INVESTOR,
         _FINANCIAL_RATIO,
         _VOLUME_RANK,
+        _VOLUME_POWER,
+        _FLUCTUATION,
     ]
 }
 

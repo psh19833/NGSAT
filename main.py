@@ -357,36 +357,47 @@ async def run_live(config, args):
                                 logger.exception(f"자동 재학습 실패: {e}")
 
                 if orchestrator.controller.is_running:
-                    # ── 동적 유니버스 교체 (09:09, 1일 1회) ──
+                    # ── 동적 유니버스 (UniverseManager) ──
+                    from data.universe_manager import UniverseManager
+                    if not hasattr(orchestrator, '_universe_manager') or orchestrator._universe_manager is None:
+                        orchestrator._universe_manager = UniverseManager()
+
                     kst_now = datetime.now(timezone.utc) + timedelta(hours=9)
-                    if not hasattr(orchestrator.controller, '_universe_swapped'):
-                        orchestrator.controller._universe_swapped = False
-                    if not orchestrator.controller._universe_swapped and kst_now.hour == 9 and kst_now.minute >= 9:
-                        try:
-                            orchestrator._trading_allowed = False
-                            rank_data = await broker.get_volume_rank()
-                            if rank_data:
-                                top_60 = [item["code"] for item in rank_data[:60]]
-                                # 보유 포지션 보호
-                                positions = await broker.get_positions()
-                                held = {p.code for p in positions}
-                                # 거래량 상위 35 + 보유포지션
-                                new_uni = list(dict.fromkeys(top_60))
-                                new_uni = [c for c in new_uni if c not in held][:35]
-                                new_uni = list(held) + new_uni
-                                new_uni = new_uni[:40]
-                                await data_provider.swap_universe(new_uni, held_codes=held)
-                                logger.info(f"유니버스 교체 완료: {len(new_uni)}종목")
+                    um = orchestrator._universe_manager
+
+                    # 09:00~09:10 사이: 초기화 (1회) + 거래 차단
+                    if kst_now.hour == 9 and 0 <= kst_now.minute < 10:
+                        if not um.initialized and kst_now.minute >= 0:
+                            await um.initialize(broker, data_provider)
+                        orchestrator._trading_allowed = False
+                    else:
+                        # 09:10 이후 또는 09시 이후 기동: 초기화 + 거래 허용
+                        if not um.initialized:
+                            await um.initialize(broker, data_provider)
                             orchestrator._trading_allowed = True
-                        except Exception as e:
-                            logger.warning(f"유니버스 교체 실패 (기존 유지): {e}")
+                        elif um.initialized and orchestrator._trading_allowed is None:
                             orchestrator._trading_allowed = True
-                        finally:
-                            orchestrator.controller._universe_swapped = True
-                    elif kst_now.hour > 9 and not orchestrator.controller._universe_swapped:
-                        # 09시 이후 기동 시 즉시 교체 없이 거래 허용
-                        orchestrator._trading_allowed = True
-                        orchestrator.controller._universe_swapped = True
+
+                    # 보유 포지션 업데이트
+                    try:
+                        positions = await broker.get_positions()
+                        um.held_codes = {p.code for p in positions}
+                    except Exception:
+                        pass
+
+                    # 5분 교체 체크
+                    if um.initialized and um.should_swap(kst_now):
+                        await um.swap(broker, data_provider)
+                        um.last_swap = kst_now
+
+                    # active 유니버스를 stock list로 사용
+                    active_codes = um.get_active_codes() if um.initialized else None
+                    if active_codes and data_provider._universe_cache:
+                        universe = [
+                            (info, prices) for info, prices in data_provider._universe_cache
+                            if info.code in active_codes
+                        ]
+                    # universe는 run_cycle에 전달될 stock pool
 
                     result = await orchestrator.run_cycle(index_prices, universe)
 

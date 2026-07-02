@@ -277,6 +277,84 @@ class KisAdapter(BrokerAdapter):
             })
         return result
 
+    async def get_volume_power(self) -> list[dict]:
+        """체결강도 상위 — 실시간 매수압력 순위.
+
+        Returns:
+            [{"code": "005930", "name": "삼성전자", "score": 100}, ...]
+        """
+        params = {
+            "FID_TRGT_EXLS_CLS_CODE": "0",
+            "FID_COND_MRKT_DIV_CODE": "J",
+            "FID_COND_SCR_DIV_CODE": "20168",
+            "FID_INPUT_ISCD": "0000",
+            "FID_DIV_CLS_CODE": "0",
+            "FID_INPUT_PRICE_1": "",
+            "FID_INPUT_PRICE_2": "",
+            "FID_VOL_CNT": "",
+            "FID_TRGT_CLS_CODE": "0",
+        }
+        resp = await self._http.get("volume_power", params=params)
+        if not resp.success:
+            return []
+        output = resp.raw.get("output", [])
+        if not isinstance(output, list):
+            return []
+        result = []
+        for item in output:
+            code = item.get("stck_shrn_iscd", "")
+            if not code:
+                continue
+            result.append({
+                "code": code,
+                "name": item.get("hts_kor_isnm", ""),
+                "score": int(item.get("acml_vol", 0) or 0),
+            })
+        return result
+
+    async def get_fluctuation_rank(self, top_n: int = 100) -> list[dict]:
+        """등락률 순위 — 상승률 상위 N종목.
+
+        Args:
+            top_n: 조회할 종목 수 (기본 100).
+
+        Returns:
+            [{"code": "005930", "name": "삼성전자", "change_pct": 2.5}, ...]
+        """
+        params = {
+            "FID_COND_MRKT_DIV_CODE": "J",
+            "FID_COND_SCR_DIV_CODE": "20170",
+            "FID_INPUT_ISCD": "0000",
+            "FID_RANK_SORT_CLS_CODE": "0000",
+            "FID_INPUT_CNT_1": str(top_n),
+            "FID_PRC_CLS_CODE": "0",
+            "FID_INPUT_PRICE_1": "0",
+            "FID_INPUT_PRICE_2": "1000000",
+            "FID_VOL_CNT": "100000",
+            "FID_TRGT_CLS_CODE": "0",
+            "FID_TRGT_EXLS_CLS_CODE": "0",
+            "FID_DIV_CLS_CODE": "0",
+            "FID_RSFL_RATE1": "0",
+            "FID_RSFL_RATE2": "30",
+        }
+        resp = await self._http.get("fluctuation", params=params)
+        if not resp.success:
+            return []
+        output = resp.raw.get("output", [])
+        if not isinstance(output, list):
+            return []
+        result = []
+        for item in output:
+            code = item.get("stck_shrn_iscd", "")
+            if not code:
+                continue
+            result.append({
+                "code": code,
+                "name": item.get("hts_kor_isnm", ""),
+                "change_pct": float(item.get("prdy_ctrt", 0) or 0),
+            })
+        return result
+
     async def get_minute_history(
         self,
         code: str,
