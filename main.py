@@ -260,155 +260,190 @@ async def run_live(config, args):
         _last_status_time = 0.0  # 마지막 정기 Status 발송 시간 (timestamp)
         session_tracker = MarketSessionTracker()
 
+        # ── Helper: KST 장 마감 여부 ──
         def _is_after_market_close_kst() -> bool:
-            """KST 기준 장 마감 여부 (15:30 이후)."""
             kst_now = now_kst()
             return kst_now.hour > 15 or (kst_now.hour == 15 and kst_now.minute >= 30)
 
+        # ── Helper: 시장 세션 변경 감지 및 알림 ──
+        async def _handle_market_session() -> None:
+            from core.types import is_market_hours
+            session_result = session_tracker.update(is_market_hours())
+            if not session_result.get("changed") or not telegram_bot:
+                return
+            state = session_result["state"]
+            if state == "open":
+                try:
+                    account = await orchestrator._broker.get_account_summary()
+                    regime_info = f"레짐: {orchestrator._last_regime.regime.value}({orchestrator._last_regime.score:.0f}점)" if orchestrator._last_regime else "레짐: 미평가"
+                    msg = (
+                        f"🌅 장 시작 (09:00)\n"
+                        f"──────────\n"
+                        f"{regime_info}\n"
+                        f"모드: {orchestrator._current_mode}\n"
+                        f"예수금: {account.deposit:,.0f}원\n"
+                        f"보유: {len(orchestrator._last_positions) if hasattr(orchestrator, '_last_positions') else '?'}개 종목"
+                    )
+                except Exception:
+                    msg = "🌅 장 시작 (09:00)"
+                await telegram_bot.send_system_event("market_open", msg)
+            else:
+                await telegram_bot.send_system_event("market_close", "🌇 장 종료 (15:30)")
+
+        # ── Helper: 일일 보고서 전송 ──
+        async def _send_daily_report() -> None:
+            if not telegram_bot or not session_tracker.should_send_daily_report:
+                return
+            try:
+                from data.repository import TradeRepository
+                from sqlalchemy.orm import Session as SASession
+                from core.db import SessionLocal
+                db_session: SASession = SessionLocal()
+                try:
+                    trade_repo = TradeRepository(db_session)
+                    today = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+                    trades = trade_repo.get_trades_by_date(today)
+                    buy_count = sum(1 for t in trades if t.side == "buy")
+                    sell_count = sum(1 for t in trades if t.side == "sell")
+                    total_trades = len(trades)
+                    account = await orchestrator._broker.get_account_summary()
+                    positions = await orchestrator._broker.get_positions()
+                    pos_summary = "\n".join(
+                        f"{p.name} {p.quantity}주 ({p.profit_loss_pct:+.1f}%)"
+                        for p in positions[:10]
+                    ) if positions else "없음"
+                    await telegram_bot.send_daily_report(
+                        date=today, total_trades=total_trades,
+                        buy_count=buy_count, sell_count=sell_count,
+                        total_pnl=account.total_profit_loss,
+                        win_rate=0.0, current_capital=account.total_asset,
+                        positions_summary=pos_summary,
+                    )
+                finally:
+                    db_session.close()
+            except Exception as e:
+                logger.error(f"일일 보고서 전송 실패: {e}")
+            session_tracker.mark_daily_report_sent()
+
+        # ── Helper: 데이터 갱신 + 자동 재학습 ──
+        async def _refresh_data_and_retrain() -> None:
+            nonlocal _refresh_counter, _last_retrain_date, universe, index_prices
+            _refresh_counter += 1
+            if _refresh_counter not in (2, 35) and _refresh_counter % 300 != 0:
+                return
+            universe, index_prices = await data_provider.refresh_prices()
+            if dashboard_app:
+                dashboard_app.state.latest_universe = universe
+                dashboard_app.state.latest_index_prices = index_prices
+            # Auto retrain
+            if config.strategy.ml_auto_retrain and model:
+                today_kst = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+                if _last_retrain_date != today_kst and _is_after_market_close_kst():
+                    _last_retrain_date = today_kst
+                    codes = [info.code for info, _ in universe]
+                    prices_list = [prices for _, prices in universe]
+                    logger.info(f"자동 재학습 시작: {len(codes)}개 종목")
+                    try:
+                        changed, result = model.auto_retrain(prices_list, codes)
+                        if changed:
+                            model.save()
+                            logger.info(f"자동 재학습 완료: AUC={result.auc:.3f}")
+                            if dashboard_app:
+                                dashboard_app.state.model = model
+                    except Exception as e:
+                        logger.exception(f"자동 재학습 실패: {e}")
+
+        # ── Helper: 동적 유니버스 관리 ──
+        async def _manage_universe() -> list:
+            from data.universe_manager import UniverseManager
+            if not hasattr(orchestrator, '_universe_manager') or orchestrator._universe_manager is None:
+                orchestrator._universe_manager = UniverseManager()
+            kst = now_kst()
+            um = orchestrator._universe_manager
+            # 09:00~09:10: 초기화 + 거래 차단
+            if kst.hour == 9 and 0 <= kst.minute < 10:
+                if not um.initialized and kst.minute >= 0:
+                    await um.initialize(broker, data_provider)
+                orchestrator._trading_allowed = False
+            else:
+                if not um.initialized:
+                    await um.initialize(broker, data_provider)
+                    orchestrator._trading_allowed = True
+                elif um.initialized and orchestrator._trading_allowed is None:
+                    orchestrator._trading_allowed = True
+            # 보유 포지션 업데이트
+            try:
+                positions = await broker.get_positions()
+                um.held_codes = {p.code for p in positions}
+            except Exception:
+                pass
+            # 5분 교체
+            if um.initialized and um.should_swap(kst):
+                await um.swap(broker, data_provider)
+                um.last_swap = kst
+            # active 유니버스 + 보유포지션 합집합
+            active_codes = um.get_active_codes() if um.initialized else None
+            if active_codes and data_provider._universe_cache:
+                include_codes = set(active_codes) | orchestrator._last_held_codes
+                return [
+                    (info, prices) for info, prices in data_provider._universe_cache
+                    if info.code in include_codes
+                ]
+            return universe
+
+        # ── Helper: 정기 Status 메시지 ──
+        async def _send_status_if_due(result) -> None:
+            nonlocal _last_status_time
+            if not telegram_bot:
+                return
+            now_ts = time.time()
+            if now_ts - _last_status_time < 600:
+                return
+            _last_status_time = now_ts
+            try:
+                tokens = []
+                tokens.append(f"🔄 사이클 #{result.timestamp.strftime('%H:%M')}")
+                preset_name = getattr(orchestrator, '_preset_router', None)
+                preset_name = getattr(preset_name, 'current_preset', None) if preset_name else None
+                mode_label = {"swing": "스윙", "short_term": "단타", "hold": "홀드"}.get(result.mode, result.mode)
+                tokens.append(f"🏷️ {mode_label}" + (f" · {preset_name}" if preset_name else ""))
+                regime_kr = {"bull": "강세장", "neutral": "중립장", "bear": "약세장"}.get(result.regime.value if result.regime else "", "?")
+                rs = getattr(orchestrator, '_last_regime', None)
+                tokens.append(f"📈 {regime_kr} ({rs.score:.0f}점)" if rs else "📈 ?")
+                tokens.append(f"🎯 후보 {result.candidates_found}개")
+                buy_preds = sum(1 for p in result.predictions if p.get('action') == 'buy')
+                if buy_preds > 0:
+                    tokens.append(f"🤖 ML BUY {buy_preds}건")
+                if result.buys_executed > 0 or result.sells_executed > 0:
+                    tokens.append(f"🟢 매수 {result.buys_executed}건")
+                    tokens.append(f"🔴 매도 {result.sells_executed}건")
+                acc = await orchestrator._broker.get_account_summary()
+                if acc:
+                    tokens.append(f"💰 {acc.deposit:,.0f}원 / {acc.total_asset:,.0f}원")
+                positions = await orchestrator._fetch_positions()
+                if positions:
+                    pos_str = " · ".join(f"{p.name} {p.quantity}주 ({p.profit_loss_pct:+.1f}%)" for p in positions[:3])
+                    tokens.append(f"📊 {pos_str}" + (f" 외 {len(positions)-3}종목" if len(positions) > 3 else ""))
+                await telegram_bot.send_system_event("info", "\n".join(tokens))
+                logger.info("정기 Status 메시지 발송 완료")
+            except Exception as e:
+                logger.warning(f"정기 Status 발송 실패: {e}")
+
+        # ── Main loop ──
         while True:
             try:
-                # ── Market session tracking (장 시작/종료 감지) ──
-                from core.types import is_market_hours
-                session_result = session_tracker.update(is_market_hours())
-                if session_result.get("changed"):
-                    if telegram_bot:
-                        state = session_result["state"]
-                        if state == "open":
-                            # 장 시작 — 계좌/레짐 정보 포함
-                            try:
-                                account = await orchestrator._broker.get_account_summary()
-                                regime_info = f"레짐: {orchestrator._last_regime.regime.value}({orchestrator._last_regime.score:.0f}점)" if orchestrator._last_regime else "레짐: 미평가"
-                                msg = (
-                                    f"🌅 장 시작 (09:00)\n"
-                                    f"──────────\n"
-                                    f"{regime_info}\n"
-                                    f"모드: {orchestrator._current_mode}\n"
-                                    f"예수금: {account.deposit:,.0f}원\n"
-                                    f"보유: {len(orchestrator._last_positions) if hasattr(orchestrator, '_last_positions') else '?'}개 종목"
-                                )
-                            except Exception:
-                                msg = "🌅 장 시작 (09:00)"
-                            await telegram_bot.send_system_event("market_open", msg)
-                        else:
-                            await telegram_bot.send_system_event("market_close", "🌇 장 종료 (15:30)")
-
-                # ── 일일 보고서 전송 (장 마감 감지 후 1회) ──
-                if telegram_bot and session_tracker.should_send_daily_report:
-                    try:
-                        from data.repository import TradeRepository
-                        from sqlalchemy.orm import Session as SASession
-                        from core.db import SessionLocal
-                        db_session: SASession = SessionLocal()
-                        try:
-                            trade_repo = TradeRepository(db_session)
-                            today = datetime.now(timezone.utc).strftime("%Y-%m-%d")
-                            trades = trade_repo.get_trades_by_date(today)
-                            buy_count = sum(1 for t in trades if t.side == "buy")
-                            sell_count = sum(1 for t in trades if t.side == "sell")
-                            total_trades = len(trades)
-                            account = await orchestrator._broker.get_account_summary()
-                            positions = await orchestrator._broker.get_positions()
-                            pos_summary = "\n".join(
-                                f"{p.name} {p.quantity}주 ({p.profit_loss_pct:+.1f}%)"
-                                for p in positions[:10]
-                            ) if positions else "없음"
-                            await telegram_bot.send_daily_report(
-                                date=today,
-                                total_trades=total_trades,
-                                buy_count=buy_count,
-                                sell_count=sell_count,
-                                total_pnl=account.total_profit_loss,
-                                win_rate=0.0,  # 별도 계산 로직 필요시 추가
-                                current_capital=account.total_asset,
-                                positions_summary=pos_summary,
-                            )
-                        finally:
-                            db_session.close()
-                    except Exception as e:
-                        logger.error(f"일일 보고서 전송 실패: {e}")
-                    session_tracker.mark_daily_report_sent()
-
-                # 일봉 데이터는 장 마감 후에만 변경되므로 300사이클(50분) 간격으로 충분
-                _refresh_counter += 1
-                if _refresh_counter == 2 or _refresh_counter % 300 == 0 or _refresh_counter == 35:
-                    # 2번째 사이클에서 최초 1회 즉시 refresh, 이후 50분마다
-                    # _refresh_counter == 35: 재학습 후 fresh 데이터 적용
-                    universe, index_prices = await data_provider.refresh_prices()
-                    # Update app.state for manual retrain API
-                    if dashboard_app:
-                        dashboard_app.state.latest_universe = universe
-                        dashboard_app.state.latest_index_prices = index_prices
-                    # ── Auto daily retrain ──
-                    if config.strategy.ml_auto_retrain and model:
-                        _today_kst_str = datetime.now(timezone.utc).strftime("%Y-%m-%d")
-                        if (_last_retrain_date != _today_kst_str
-                                and _is_after_market_close_kst()):
-                            _last_retrain_date = _today_kst_str
-                            codes = [info.code for info, _ in universe]
-                            prices_list = [prices for _, prices in universe]  # list[list[PriceData]]
-                            logger.info(f"자동 재학습 시작: {len(codes)}개 종목")
-                            try:
-                                changed, result = model.auto_retrain(prices_list, codes)
-                                if changed:
-                                    model.save()
-                                    logger.info(f"자동 재학습 완료: AUC={result.auc:.3f}")
-                                    if dashboard_app:
-                                        dashboard_app.state.model = model
-                            except Exception as e:
-                                logger.exception(f"자동 재학습 실패: {e}")
+                await _handle_market_session()
+                await _send_daily_report()
+                await _refresh_data_and_retrain()
 
                 if orchestrator.controller.is_running:
-                    # ── 동적 유니버스 (UniverseManager) ──
-                    from data.universe_manager import UniverseManager
-                    if not hasattr(orchestrator, '_universe_manager') or orchestrator._universe_manager is None:
-                        orchestrator._universe_manager = UniverseManager()
-
-                    kst_now = now_kst()
-                    um = orchestrator._universe_manager
-
-                    # 09:00~09:10 사이: 초기화 (1회) + 거래 차단
-                    if kst_now.hour == 9 and 0 <= kst_now.minute < 10:
-                        if not um.initialized and kst_now.minute >= 0:
-                            await um.initialize(broker, data_provider)
-                        orchestrator._trading_allowed = False
-                    else:
-                        # 09:10 이후 또는 09시 이후 기동: 초기화 + 거래 허용
-                        if not um.initialized:
-                            await um.initialize(broker, data_provider)
-                            orchestrator._trading_allowed = True
-                        elif um.initialized and orchestrator._trading_allowed is None:
-                            orchestrator._trading_allowed = True
-
-                    # 보유 포지션 업데이트
-                    try:
-                        positions = await broker.get_positions()
-                        um.held_codes = {p.code for p in positions}
-                    except Exception:
-                        pass
-
-                    # 5분 교체 체크
-                    if um.initialized and um.should_swap(kst_now):
-                        await um.swap(broker, data_provider)
-                        um.last_swap = kst_now
-
-                    # active 유니버스를 stock list로 사용
-                    active_codes = um.get_active_codes() if um.initialized else None
-                    if active_codes and data_provider._universe_cache:
-                        # 보유 포지션 종목도 universe에 포함 (청산 가격 조회용)
-                        include_codes = set(active_codes) | orchestrator._last_held_codes
-                        universe = [
-                            (info, prices) for info, prices in data_provider._universe_cache
-                            if info.code in include_codes
-                        ]
-                    # universe는 run_cycle에 전달될 stock pool
-
-                    result = await orchestrator.run_cycle(index_prices, universe)
+                    stock_universe = await _manage_universe()
+                    result = await orchestrator.run_cycle(index_prices, stock_universe)
 
                     # 자동 프리셋 변경 시 텔레그램 알림
                     if telegram_bot and result.preset_change:
                         await telegram_bot.send_system_event(
-                            "info",
-                            f"🔄 프리셋 자동 전환: {result.preset_change}",
+                            "info", f"🔄 프리셋 자동 전환: {result.preset_change}",
                         )
 
                     # 미체결 주문 취소 (지정가 30초 경과 시)
@@ -416,18 +451,14 @@ async def run_live(config, args):
                         cancelled = await orchestrator.cancel_unfilled_orders(max_age_seconds=30)
                         if cancelled > 0 and telegram_bot:
                             await telegram_bot.send_system_event(
-                                "info",
-                                f"미체결 주문 {cancelled}건 자동 취소",
+                                "info", f"미체결 주문 {cancelled}건 자동 취소",
                             )
 
-                    # Send telegram notification for trades
+                    # 거래 알림
                     if telegram_bot and (result.buys_executed > 0 or result.sells_executed > 0):
-                        await telegram_bot.send_system_event(
-                            "info",
-                            result.reason,
-                        )
+                        await telegram_bot.send_system_event("info", result.reason)
 
-                    # Broadcast cycle result to WebSocket dashboard clients
+                    # WebSocket 브로드캐스트
                     if dashboard_app and hasattr(dashboard_app.state, 'broadcast'):
                         await dashboard_app.state.broadcast({
                             "type": "cycle",
@@ -441,56 +472,9 @@ async def run_live(config, args):
                 # Reset consecutive error counter on successful cycle
                 _consecutive_errors = 0
 
-                # ── 정기 Status 메시지 (10분마다) ──
-                if telegram_bot:
-                    now_ts = time.time()
-                    if now_ts - _last_status_time >= 600:  # 10min
-                        _last_status_time = now_ts
-                        try:
-                            tokens = []
-                            # Cycle info
-                            tokens.append(f"🔄 사이클 #{result.timestamp.strftime('%H:%M')}")
-                            # Mode + preset
-                            preset_name = getattr(orchestrator, '_preset_router', None)
-                            preset_name = getattr(preset_name, 'current_preset', None) if preset_name else None
-                            mode_label = {"swing": "스윙", "short_term": "단타", "hold": "홀드"}.get(result.mode, result.mode)
-                            tokens.append(f"🏷️ {mode_label}" + (f" · {preset_name}" if preset_name else ""))
-                            # Regime
-                            regime_kr = {"bull": "강세장", "neutral": "중립장", "bear": "약세장"}.get(
-                                result.regime.value if result.regime else "", "?")
-                            rs = getattr(orchestrator, '_last_regime', None)
-                            rs_score = rs.score if rs else 0
-                            tokens.append(f"📈 {regime_kr} ({rs_score:.0f}점)")
-                            # Candidates
-                            tokens.append(f"🎯 후보 {result.candidates_found}개")
-                            # ML BUY count
-                            buy_preds = sum(1 for p in result.predictions if p.get('action') == 'buy')
-                            if buy_preds > 0:
-                                tokens.append(f"🤖 ML BUY {buy_preds}건")
-                            # Trades today
-                            if result.buys_executed > 0 or result.sells_executed > 0:
-                                tokens.append(f"🟢 매수 {result.buys_executed}건")
-                                tokens.append(f"🔴 매도 {result.sells_executed}건")
-                            # Account summary
-                            acc = await orchestrator._broker.get_account_summary()
-                            if acc:
-                                tokens.append(f"💰 {acc.deposit:,.0f}원 / {acc.total_asset:,.0f}원")
-                            # Positions
-                            positions = await orchestrator._fetch_positions()
-                            if positions:
-                                pos_str = " · ".join(
-                                    f"{p.name} {p.quantity}주 ({p.profit_loss_pct:+.1f}%)"
-                                    for p in positions[:3]
-                                )
-                                tokens.append(f"📊 {pos_str}")
-                                if len(positions) > 3:
-                                    tokens[-1] += f" 외 {len(positions)-3}종목"
-
-                            msg = "\n".join(tokens)
-                            await telegram_bot.send_system_event("info", msg)
-                            logger.info("정기 Status 메시지 발송 완료")
-                        except Exception as e:
-                            logger.warning(f"정기 Status 발송 실패: {e}")
+                # 정기 Status 메시지 (10분마다)
+                if orchestrator.controller.is_running:
+                    await _send_status_if_due(result)
 
                 await asyncio.sleep(tick_interval)
 
@@ -505,20 +489,15 @@ async def run_live(config, args):
                 )
                 if telegram_bot:
                     await telegram_bot.send_system_event(
-                        "error",
-                        f"매매 루프 오류 ({_consecutive_errors}회): {e}"
+                        "error", f"매매 루프 오류 ({_consecutive_errors}회): {e}"
                     )
                 if _consecutive_errors >= 5:
-                    logger.critical(
-                        "연속 에러 5회 — 매매 루프 중단"
-                    )
+                    logger.critical("연속 에러 5회 — 매매 루프 중단")
                     if telegram_bot:
                         await telegram_bot.send_system_event(
-                            "critical",
-                            "연속 오류 5회로 시스템 중단"
+                            "critical", "연속 오류 5회로 시스템 중단"
                         )
                     break
-                # 지수 백오프: 에러 반복 시 대기 시간 증가
                 backoff = min(tick_interval * (2 ** _consecutive_errors), 300)
                 await asyncio.sleep(backoff)
 
