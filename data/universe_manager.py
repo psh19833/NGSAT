@@ -18,6 +18,7 @@ from typing import Any, Optional
 
 from core.logger import logger
 from core.types import Market, StockInfo
+from core.types import now_kst
 
 KST = timedelta(hours=9)
 
@@ -140,6 +141,7 @@ class UniverseManager:
             logger.info(f"WebSocket 구독: {len(ws_codes)}종목")
 
         self.initialized = True
+        self.last_swap = now_kst()
         logger.info(f"유니버스 초기화 완료: active={len(self.active)}, reserve={len(self.reserve)}")
 
     async def swap(self, broker: Any, provider: Any) -> None:
