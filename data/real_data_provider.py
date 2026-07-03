@@ -523,6 +523,9 @@ async def _code_to_name(code: str, adapter: Any = None) -> str:
         "214150": "클래시스", "035900": "JYP Ent.", "403870": "HPSP",
         "068760": "셀트리온제약", "263750": "펄어비스", "257720": "실리콘투",
         "240810": "원익IPS",
+        # 동적 유니버스 자주 편입되는 종목
+        "189400": "건설기계", "429010": "클럽디",
+        "0002C0": "기아코나", "Q530142": "KODEX코스닥",
     }
     if code in _STATIC_NAMES:
         _name_cache[code] = (_STATIC_NAMES[code], now + _NAME_CACHE_TTL)
