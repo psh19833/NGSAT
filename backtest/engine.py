@@ -209,6 +209,9 @@ class BacktestEngine:
         # Determine the number of trading days
         n_days = min(len(index_prices), max(len(p) for _, p in universe if p))
 
+        # start_day가 n_days보다 크면 루프가 실행 안 됨 → 보정
+        start_day = min(start_day, max(n_days - 20, 20))
+
         logger.info(f"백테스트 시작: {n_days}일, 종목 {len(universe)}개, 자본 {self._initial_capital:,.0f}")
 
         for day_idx in range(start_day, n_days):
