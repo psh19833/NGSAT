@@ -250,7 +250,7 @@ class KisAdapter(BrokerAdapter):
             "FID_DIV_CLS_CODE": "0",
             "FID_BLNG_CLS_CODE": "0",
             "FID_TRGT_CLS_CODE": "000000000",
-            "FID_TRGT_EXLS_CLS_CODE": "0",
+            "FID_TRGT_EXLS_CLS_CODE": "0000001100",  # 7:ETF, 8:ETN 제외
             "FID_INPUT_PRICE_1": "",
             "FID_INPUT_PRICE_2": "",
             "FID_VOL_CNT": "",
@@ -284,7 +284,7 @@ class KisAdapter(BrokerAdapter):
             [{"code": "005930", "name": "삼성전자", "score": 100}, ...]
         """
         params = {
-            "FID_TRGT_EXLS_CLS_CODE": "0",
+            "FID_TRGT_EXLS_CLS_CODE": "0000001100",  # 7:ETF, 8:ETN 제외
             "FID_COND_MRKT_DIV_CODE": "J",
             "FID_COND_SCR_DIV_CODE": "20168",
             "FID_INPUT_ISCD": "0000",
@@ -332,7 +332,7 @@ class KisAdapter(BrokerAdapter):
             "FID_INPUT_PRICE_2": "1000000",
             "FID_VOL_CNT": "100000",
             "FID_TRGT_CLS_CODE": "0",
-            "FID_TRGT_EXLS_CLS_CODE": "0",
+            "FID_TRGT_EXLS_CLS_CODE": "0000001100",  # 7:ETF, 8:ETN 제외
             "FID_DIV_CLS_CODE": "0",
             "FID_RSFL_RATE1": "0",
             "FID_RSFL_RATE2": "30",
