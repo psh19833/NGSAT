@@ -235,7 +235,7 @@ def parse_minute_history(raw: dict[str, Any], code: str = "") -> list[PriceData]
 def parse_stock_info(raw: dict[str, Any]) -> StockInfo:
     """Parse KIS stock-info response → StockInfo."""
     code = str(raw.get("pdno") or raw.get("stck_shrn_iscd") or raw.get("stock_code") or "")
-    name = str(raw.get("prdt_name") or raw.get("stock_name") or raw.get("hts_kor_isnm") or "")
+    name = str(raw.get("prdt_name") or raw.get("prdt_abrv_name") or raw.get("stock_name") or raw.get("hts_kor_isnm") or "")
 
     # Market inference from code or explicit field
     market_str = str(raw.get("mrkt_cls_nm") or raw.get("market_code") or "").lower()
