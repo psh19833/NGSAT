@@ -99,8 +99,19 @@ class UniverseManager:
         scored = await self._score_candidates(all_codes, provider,
                                               volume_rank, volume_power, fluctuation)
 
-        # 4. TOP 40 = active, 41~100 = reserve
+        # 4. ETN/ETF 제외 + TOP 40 = active, 41~100 = reserve
         scored.sort(key=lambda x: x.composite_score, reverse=True)
+        # ETN/ETF 종목은 유니버스에서 제외 (KIS 위험고지/매수불가)
+        filtered: list[ScoredStock] = []
+        for s in scored:
+            try:
+                from data.real_data_provider import _get_stock_type
+                ptype = await _get_stock_type(s.code, provider._adapter if hasattr(provider, '_adapter') else None)
+                if ptype == "stock":
+                    filtered.append(s)
+            except Exception:
+                filtered.append(s)  # 오류 시 기본 포함
+        scored = filtered
         self.active = {s.code: s for s in scored[:40]}
         self.reserve = {s.code: s for s in scored[40:100]}
 
@@ -163,6 +174,17 @@ class UniverseManager:
             candidate_codes, provider, volume_rank, volume_power, fluctuation
         )
         candidates.sort(key=lambda x: x.composite_score, reverse=True)
+        # ETN/ETF 제외
+        filtered: list[ScoredStock] = []
+        for s in candidates:
+            try:
+                from data.real_data_provider import _get_stock_type
+                ptype = await _get_stock_type(s.code, provider._adapter if hasattr(provider, '_adapter') else None)
+                if ptype == "stock":
+                    filtered.append(s)
+            except Exception:
+                filtered.append(s)
+        candidates = filtered
         to_add = candidates[:min(20, len(candidates))]
 
         # 5. 교체 실행
