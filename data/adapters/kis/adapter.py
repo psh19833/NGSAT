@@ -405,6 +405,29 @@ class KisAdapter(BrokerAdapter):
         logger.warning("get_stock_list not yet implemented — will use stock universe cache")
         return []
 
+    async def get_stock_info(self, code: str) -> str:
+        """종목코드로 종목명 조회 (inquire_stock_basic CTPF1604R).
+
+        Returns:
+            종목명 (실패 시 빈 문자열).
+        """
+        # FID_COND_MRKT_DIV_CODE: J=KOSPI, Q=KOSDAQ (첫자리로 구분)
+        div_code = "J" if code[:1].isdigit() else "Q"
+        params = {
+            "FID_COND_MRKT_DIV_CODE": div_code,
+            "FID_INPUT_ISCD": code,
+        }
+        try:
+            resp = await self._http.get("inquire_stock_basic", params=params)
+            if resp.success and resp.data:
+                from data.adapters.kis.mapper import parse_stock_info
+                info = parse_stock_info(resp.data)
+                if info.name:
+                    return info.name
+        except Exception as e:
+            logger.debug(f"[{code}] 종목정보 조회 실패: {type(e).__name__}")
+        return ""
+
     async def submit_order(
         self,
         code: str,

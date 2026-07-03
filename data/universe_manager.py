@@ -310,7 +310,7 @@ class UniverseManager:
                         if provider._universe_cache is None:
                             provider._universe_cache = []
                         provider._universe_cache.append(
-                            (StockInfo(code=code, name=_code_to_name(code), market=market), prices)
+                            (StockInfo(code=code, name=await _code_to_name(code, adapter), market=market), prices)
                         )
                         loaded += 1
                     await asyncio.sleep(0.1)  # Rate Limit

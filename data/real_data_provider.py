@@ -17,6 +17,7 @@ main.py의 합성 데이터를 대체하여 실제 KIS 데이터를
 from __future__ import annotations
 
 import asyncio
+import time
 from datetime import datetime, timedelta
 from typing import Any
 from zoneinfo import ZoneInfo
@@ -173,7 +174,7 @@ class RealDataProvider:
                 prices = await adapter.get_price_history(code, start, end)
                 if prices:
                     market = _infer_market(code)
-                    info = StockInfo(code=code, name=_code_to_name(code), market=market)
+                    info = StockInfo(code=code, name=await _code_to_name(code, adapter), market=market)
                     universe.append((info, prices))
             except Exception as e:
                 logger.warning(f"[{code}] 데이터 로드 실패: {type(e).__name__}")
@@ -489,9 +490,24 @@ class RealDataProvider:
             return False
 
 
-def _code_to_name(code: str) -> str:
-    """종목코드 → 종목명 (간단 매핑, 추후 KIS stock_info로 대체)."""
-    names = {
+# ── 종목코드→종목명 캐시 (KIS API 기반, TTL 1일) ──
+_name_cache: dict[str, tuple[str, float]] = {}
+_NAME_CACHE_TTL = 86400  # 1일
+
+
+async def _code_to_name(code: str, adapter: Any = None) -> str:
+    """종목코드 → 종목명 (KIS API + 캐시 + 하드코딩 fallback).
+
+    캐시 TTL 1일. API 실패 시 하드코딩 딕셔너리로 fallback.
+    """
+    now = time.time()
+    # 1. 캐시 조회
+    if code in _name_cache:
+        name, expiry = _name_cache[code]
+        if now < expiry:
+            return name
+    # 2. 하드코딩 딕셔너리
+    _STATIC_NAMES = {
         "005930": "삼성전자", "000660": "SK하이닉스", "373220": "LG에너지솔루션",
         "207940": "삼성바이오로직스", "005380": "현대차", "000270": "기아",
         "068270": "셀트리온", "105560": "KB금융", "055550": "신한지주",
@@ -502,11 +518,22 @@ def _code_to_name(code: str) -> str:
         "138040": "메리츠금융지주", "096770": "SK이노베이션", "018260": "삼성에스디에스",
         "034730": "SK", "323410": "카카오뱅크", "259960": "크래프톤",
         "352820": "하이브",
-        # KOSDAQ
         "247540": "에코프로비엠", "196170": "알테오젠",
         "028300": "HLB", "086520": "에코프로", "058470": "리노공업",
         "214150": "클래시스", "035900": "JYP Ent.", "403870": "HPSP",
         "068760": "셀트리온제약", "263750": "펄어비스", "257720": "실리콘투",
         "240810": "원익IPS",
     }
-    return names.get(code, f"종목{code}")
+    if code in _STATIC_NAMES:
+        _name_cache[code] = (_STATIC_NAMES[code], now + _NAME_CACHE_TTL)
+        return _STATIC_NAMES[code]
+    # 3. KIS API 호출
+    if adapter is not None and hasattr(adapter, 'get_stock_info'):
+        try:
+            name = await adapter.get_stock_info(code)
+            if name:
+                _name_cache[code] = (name, now + _NAME_CACHE_TTL)
+                return name
+        except Exception:
+            pass
+    return f"종목{code}"
