@@ -305,11 +305,12 @@ class UniverseManager:
                     prices = await adapter.get_price_history(code, start, end)
                     if prices:
                         from data.real_data_provider import _infer_market
+                        from data.real_data_provider import _code_to_name
                         market = _infer_market(code)
                         if provider._universe_cache is None:
                             provider._universe_cache = []
                         provider._universe_cache.append(
-                            (StockInfo(code=code, name="", market=market), prices)
+                            (StockInfo(code=code, name=_code_to_name(code), market=market), prices)
                         )
                         loaded += 1
                     await asyncio.sleep(0.1)  # Rate Limit
