@@ -531,15 +531,21 @@ async def _code_to_name(code: str, adapter: Any = None) -> str:
     }
     if code in _STATIC_NAMES:
         _name_cache[code] = (_STATIC_NAMES[code], now + _NAME_CACHE_TTL)
+        _type_cache[code] = ("stock", now + _NAME_CACHE_TTL)
         return _STATIC_NAMES[code]
-    # 3. KIS API 호출
+    # 3. KIS API 호출 — 이름 + 분류 동시 획득
     if adapter is not None and hasattr(adapter, 'get_stock_info'):
         try:
             from data.adapters.kis.mapper import parse_stock_info, _classify_product
-            name = await adapter.get_stock_info(code)
-            if name:
-                _name_cache[code] = (name, now + _NAME_CACHE_TTL)
-                return name
+            # 직접 API 호출 (adapter._http를 통해)하여 이름과 분류 동시 획득
+            if hasattr(adapter, '_http'):
+                resp = await adapter._http.get("inquire_stock_basic", params={"PDNO": code, "PRDT_TYPE_CD": "300"})
+                if resp.success and resp.data:
+                    info = parse_stock_info(resp.data)
+                    if info.name:
+                        _name_cache[code] = (info.name, now + _NAME_CACHE_TTL)
+                        _type_cache[code] = (info.product_type or "stock", now + _NAME_CACHE_TTL)
+                        return info.name
         except Exception:
             pass
     return f"종목{code}"
@@ -548,19 +554,20 @@ async def _code_to_name(code: str, adapter: Any = None) -> str:
 async def _get_stock_type(code: str, adapter: Any = None) -> str:
     """종목코드 → 상품유형 (stock/etf/etn).
 
-    _code_to_name과 동일한 캐시 메커니즘 사용.
-    API 응답의 prdt_clsf_cd로 분류.
+    _code_to_name과 동일한 캐시 사용. 이미 _code_to_name에서
+    API를 호출했다면 _type_cache가 채워져 있음.
     """
     now = time.time()
     if code in _type_cache:
         ptype, expiry = _type_cache[code]
         if now < expiry:
             return ptype
-    # API 호출하여 이름 + 분류 동시 획득
+    # _name_cache에 있으면 _type_cache도 있어야 함 (동시 저장)
+    if code in _name_cache:
+        return "stock"  # fallback: 기본값
+    # API 호출 (이름도 같이 캐싱)
     if adapter is not None and hasattr(adapter, 'get_stock_info'):
         try:
-            from data.adapters.kis.client import KisHttpClient
-            # adapter._http를 통해 stock_basic API 직접 호출
             if hasattr(adapter, '_http'):
                 resp = await adapter._http.get("inquire_stock_basic", params={"PDNO": code, "PRDT_TYPE_CD": "300"})
                 if resp.success and resp.data:
@@ -568,7 +575,6 @@ async def _get_stock_type(code: str, adapter: Any = None) -> str:
                     info = parse_stock_info(resp.data)
                     ptype = info.product_type or "stock"
                     _type_cache[code] = (ptype, now + _NAME_CACHE_TTL)
-                    # 이름도 같이 캐싱
                     if info.name and code not in _name_cache:
                         _name_cache[code] = (info.name, now + _NAME_CACHE_TTL)
                     return ptype
