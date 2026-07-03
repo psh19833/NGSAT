@@ -352,8 +352,8 @@ class TradingOrchestrator:
             except Exception:
                 index_price = None
             if index_price is not None and len(index_prices) >= 2:
-                prev_close = index_prices[-1].close
-                intraday_change_pct = ((index_price.close - prev_close) / prev_close) * 100
+                # API가 제공하는 등락률 직접 사용 (bstp_nmix_prdy_ctrt)
+                intraday_change_pct = index_price.change_pct if index_price.change_pct is not None else 0.0
                 # Map to ±5 point correction, capped
                 correction = intraday_change_pct * 1.67  # ±3% → ±5점
                 correction = max(-5.0, min(5.0, correction))
