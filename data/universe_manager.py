@@ -112,6 +112,21 @@ class UniverseManager:
             except Exception:
                 filtered.append(s)  # 오류 시 기본 포함
         scored = filtered
+        # DEFAULT_UNIVERSE_CODES로 부족분 보충 (랭킹 API가 소형주/ETN 위주인 경우)
+        if len(scored) < 40:
+            from data.real_data_provider import DEFAULT_UNIVERSE_CODES
+            existing = {s.code for s in scored}
+            for code in DEFAULT_UNIVERSE_CODES:
+                if len(scored) >= 40:
+                    break
+                if code in existing or code in self.held_codes:
+                    continue
+                # 기본 ScoredStock 추가 (랭킹 점수 없음, 이름/시장만)
+                market = Market.KOSPI if code in DEFAULT_UNIVERSE_CODES[:28] else Market.KOSDAQ
+                scored.append(ScoredStock(
+                    code=code, name="", market=market,
+                    volume_score=0, power_score=0, fluct_score=0, screener_score=0,
+                ))
         self.active = {s.code: s for s in scored[:40]}
         self.reserve = {s.code: s for s in scored[40:100]}
 
