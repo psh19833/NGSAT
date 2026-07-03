@@ -132,7 +132,7 @@ export default function BacktestPanel({ api }) {
                     {result.trades.slice(0, 50).map((t, i) => (
                       <tr key={i} className="border-b border-ngsat-border/30 hover:bg-ngsat-border/10">
                         <td className="py-2 px-2 text-xs text-ngsat-muted">{t.date}</td>
-                        <td className="py-2 px-2 text-ngsat-text">{t.code}</td>
+                        <td className="py-2 px-2 text-ngsat-text">{t.name ? `${t.name}(${t.code})` : t.code}</td>
                         <td className="py-2 px-2 text-center">
                           <span className={`px-2 py-0.5 text-xs rounded ${
                             t.side === 'buy' ? 'bg-ngsat-green/10 text-ngsat-green' : 'bg-ngsat-red/10 text-ngsat-red'

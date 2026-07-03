@@ -78,8 +78,7 @@ export default function DiagnosisPanel({ api }) {
                   s.score >= 70 ? 'bg-ngsat-green/5' : s.score >= 60 ? 'bg-ngsat-yellow/5' : ''
                 }`}>
                   <div className="flex items-center gap-2 min-w-0">
-                    <span className="text-ngsat-text font-medium truncate">{s.name}</span>
-                    <span className="text-ngsat-muted">{s.code}</span>
+                    <span className="text-ngsat-text font-medium truncate">{s.name}({s.code})</span>
                   </div>
                   <div className="flex items-center gap-2 shrink-0">
                     <span className={`num font-mono ${
@@ -111,8 +110,7 @@ export default function DiagnosisPanel({ api }) {
                 }`}>
                   <div className="flex items-center gap-2 min-w-0">
                     <span>{p.action === 'buy' ? '🟢' : p.action === 'hold' ? '🟡' : '🔴'}</span>
-                    <span className="text-ngsat-text font-medium truncate">{p.name}</span>
-                    <span className="text-ngsat-muted">{p.code}</span>
+                    <span className="text-ngsat-text font-medium truncate">{p.name}({p.code})</span>
                   </div>
                   <span className={`shrink-0 num font-mono ${
                     p.action === 'buy' ? 'text-ngsat-green' : 'text-ngsat-muted'

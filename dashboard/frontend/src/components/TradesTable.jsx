@@ -109,8 +109,7 @@ function TradesRow({ trade: t, index: i }) {
           {t.date ? t.date.substring(11, 16) : '--:--'}
         </td>
         <td className="py-2.5 px-3 text-ngsat-text font-medium whitespace-nowrap">
-          {t.name}
-          <span className="text-ngsat-muted ml-1 text-xs">{t.code}</span>
+          {t.name}({t.code})
         </td>
         <td className="py-2.5 px-3 text-center">
           <span className={`px-2 py-0.5 text-xs rounded ${
