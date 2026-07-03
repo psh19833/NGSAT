@@ -526,7 +526,7 @@ async def run_live(config, args):
     if dashboard_app:
         config_uvicorn = uvicorn.Config(
             dashboard_app,
-            host="127.0.0.1",
+            host="0.0.0.0",
             port=8000,
             log_level="info",
         )
