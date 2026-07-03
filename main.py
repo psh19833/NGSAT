@@ -379,8 +379,8 @@ async def run_live(config, args):
             else:
                 if not um.initialized:
                     await um.initialize(broker, data_provider)
-                    orchestrator._trading_allowed = True
-                elif um.initialized and orchestrator._trading_allowed is None:
+                # 09:10 이후 _trading_allowed 초기화 (09:00~09:10에 False 설정된 것 복원)
+                if orchestrator._trading_allowed is False or orchestrator._trading_allowed is None:
                     orchestrator._trading_allowed = True
             # 보유 포지션 업데이트
             try:
