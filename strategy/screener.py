@@ -265,11 +265,11 @@ def _evaluate_single_stock(
         elif k_val > 80 and d_val > 80:
             score -= 10  # Overbought — chase risk
 
-    # MACD scoring
+    # MACD scoring (Phase C: ±10→±5)
     if hist > 0:
-        score += 10  # Bullish MACD
+        score += 5  # Bullish MACD
     elif hist < 0:
-        score -= 10  # Bearish MACD
+        score -= 5  # Bearish MACD
 
     # MA alignment scoring
     if ma5 > 0 and ma20 > 0:
@@ -278,7 +278,7 @@ def _evaluate_single_stock(
         elif closes[-1] > ma5:
             score += 5   # Above short-term MA
         elif closes[-1] < ma5 < ma20:
-            score -= 20  # Bearish alignment (Phase C: -15→-20)
+            score -= 10  # Bearish alignment (완화: -20→-10)
 
     # Volume trend analysis (Phase B)
     if not np.isnan(vol_ma5_val) and not np.isnan(vol_ma20_val) and not np.isnan(vol_ratio):
