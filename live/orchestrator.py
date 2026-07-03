@@ -409,6 +409,12 @@ class TradingOrchestrator:
 
             # ── Step 5: Screen stocks ──
             screen_result = screen_stocks(stock_universe, regime_result, config=self._strategy)
+            # ETN/ETF 종목 제외 (KIS 위험고지 미등록 계좌에서 매수 불가)
+            if screen_result.candidates:
+                screen_result.candidates = [
+                    c for c in screen_result.candidates
+                    if getattr(c, 'product_type', 'stock') == 'stock'
+                ]
             result.candidates_found = len(screen_result.candidates)
             result.screened = [
                 {"code": c.code, "name": c.name, "score": round(c.score, 1),

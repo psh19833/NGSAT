@@ -110,6 +110,7 @@ class StockInfo:
     name: str                          # 종목명
     market: Market                     # 코스피/코스닥
     sector: str = ""                   # 업종 코드/명
+    product_type: str = "stock"        # stock / etf / etn / etn_etc
 
 
 @dataclass

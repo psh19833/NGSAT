@@ -246,7 +246,19 @@ def parse_stock_info(raw: dict[str, Any]) -> StockInfo:
     else:
         market = _infer_market(code)
 
-    return StockInfo(code=code, name=name, market=market)
+    # 상품 분류 (prdt_clsf_cd: 101=ETF, 102=ETN)
+    product_type = _classify_product(str(raw.get("prdt_clsf_cd") or ""))
+
+    return StockInfo(code=code, name=name, market=market, product_type=product_type)
+
+
+def _classify_product(prdt_clsf_cd: str) -> str:
+    """KIS 상품분류코드 → product_type (stock/etf/etn)."""
+    if prdt_clsf_cd.startswith("102"):
+        return "etn"
+    if prdt_clsf_cd.startswith("101"):
+        return "etf"
+    return "stock"
 
 
 def build_order_payload(

@@ -174,7 +174,8 @@ class RealDataProvider:
                 prices = await adapter.get_price_history(code, start, end)
                 if prices:
                     market = _infer_market(code)
-                    info = StockInfo(code=code, name=await _code_to_name(code, adapter), market=market)
+                    info = StockInfo(code=code, name=await _code_to_name(code, adapter), market=market,
+                                    product_type=await _get_stock_type(code, adapter))
                     universe.append((info, prices))
             except Exception as e:
                 logger.warning(f"[{code}] 데이터 로드 실패: {type(e).__name__}")
@@ -492,6 +493,7 @@ class RealDataProvider:
 
 # ── 종목코드→종목명 캐시 (KIS API 기반, TTL 1일) ──
 _name_cache: dict[str, tuple[str, float]] = {}
+_type_cache: dict[str, tuple[str, float]] = {}  # code → (product_type, expiry)
 _NAME_CACHE_TTL = 86400  # 1일
 
 
@@ -533,6 +535,7 @@ async def _code_to_name(code: str, adapter: Any = None) -> str:
     # 3. KIS API 호출
     if adapter is not None and hasattr(adapter, 'get_stock_info'):
         try:
+            from data.adapters.kis.mapper import parse_stock_info, _classify_product
             name = await adapter.get_stock_info(code)
             if name:
                 _name_cache[code] = (name, now + _NAME_CACHE_TTL)
@@ -540,3 +543,35 @@ async def _code_to_name(code: str, adapter: Any = None) -> str:
         except Exception:
             pass
     return f"종목{code}"
+
+
+async def _get_stock_type(code: str, adapter: Any = None) -> str:
+    """종목코드 → 상품유형 (stock/etf/etn).
+
+    _code_to_name과 동일한 캐시 메커니즘 사용.
+    API 응답의 prdt_clsf_cd로 분류.
+    """
+    now = time.time()
+    if code in _type_cache:
+        ptype, expiry = _type_cache[code]
+        if now < expiry:
+            return ptype
+    # API 호출하여 이름 + 분류 동시 획득
+    if adapter is not None and hasattr(adapter, 'get_stock_info'):
+        try:
+            from data.adapters.kis.client import KisHttpClient
+            # adapter._http를 통해 stock_basic API 직접 호출
+            if hasattr(adapter, '_http'):
+                resp = await adapter._http.get("inquire_stock_basic", params={"PDNO": code, "PRDT_TYPE_CD": "300"})
+                if resp.success and resp.data:
+                    from data.adapters.kis.mapper import parse_stock_info, _classify_product
+                    info = parse_stock_info(resp.data)
+                    ptype = info.product_type or "stock"
+                    _type_cache[code] = (ptype, now + _NAME_CACHE_TTL)
+                    # 이름도 같이 캐싱
+                    if info.name and code not in _name_cache:
+                        _name_cache[code] = (info.name, now + _NAME_CACHE_TTL)
+                    return ptype
+        except Exception:
+            pass
+    return "stock"  # 기본값: 일반 주식으로 간주

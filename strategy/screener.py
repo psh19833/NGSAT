@@ -58,6 +58,7 @@ class ScreenCandidate:
     indicators: dict[str, float] = field(default_factory=dict)
     reason: str = ""
     kospi_bonus: bool = False
+    product_type: str = "stock"  # stock / etf / etn
 
 
 @dataclass(frozen=True)
@@ -342,5 +343,6 @@ def _evaluate_single_stock(
         patterns=patterns,
         indicators=indicators,
         reason=reason,
+        product_type=stock.product_type,
         kospi_bonus=kospi_bonus,
     )
