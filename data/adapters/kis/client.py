@@ -47,7 +47,7 @@ class KisHttpClient:
         app_secret: str,
         base_url: str,
         token_manager: KisTokenManager | None = None,
-        timeout: float = 30.0,
+        timeout: float = 10.0,
     ):
         self._app_key = app_key
         self._app_secret = app_secret
@@ -72,8 +72,7 @@ class KisHttpClient:
         return self._client
 
     async def _throttle(self) -> None:
-        """중앙 Rate Limit: 15개 동시 호출 제한 + API 간 최소 50ms 간격."""
-        await self._rate_semaphore.acquire()
+        """중앙 Rate Limit: API 간 최소 50ms 간격."""
         async with self._rate_lock:
             elapsed = time.monotonic() - self._last_request_time
             if elapsed < 0.05:
@@ -134,26 +133,27 @@ class KisHttpClient:
         url = f"{self._base_url}{ep.path}"
 
         await self._throttle()
-        try:
-            resp = await client.get(url, params=params, headers=headers, timeout=self._timeout)
-            resp.raise_for_status()
-        except httpx.HTTPStatusError as e:
-            status = e.response.status_code
-            snippet = (e.response.text or "")[:300]
-            logger.error(
-                f"KIS GET {endpoint_name} HTTP {status}: body={snippet}"
-            )
-            raise BrokerError(
-                f"KIS HTTP error on {endpoint_name}: HTTP {status}"
-            ) from e
-        except httpx.TimeoutException as e:
-            logger.error(f"KIS GET {endpoint_name} 타임아웃: {e}")
-            raise BrokerError(f"KIS HTTP timeout on {endpoint_name}") from e
-        except httpx.HTTPError as e:
-            logger.error(f"KIS GET {endpoint_name} HTTP 실패: {type(e).__name__}: {e}")
-            raise BrokerError(f"KIS HTTP error on {endpoint_name}: {type(e).__name__}") from e
+        async with self._rate_semaphore:
+            try:
+                resp = await client.get(url, params=params, headers=headers, timeout=self._timeout)
+                resp.raise_for_status()
+            except httpx.HTTPStatusError as e:
+                status = e.response.status_code
+                snippet = (e.response.text or "")[:300]
+                logger.error(
+                    f"KIS GET {endpoint_name} HTTP {status}: body={snippet}"
+                )
+                raise BrokerError(
+                    f"KIS HTTP error on {endpoint_name}: HTTP {status}"
+                ) from e
+            except httpx.TimeoutException as e:
+                logger.error(f"KIS GET {endpoint_name} 타임아웃: {e}")
+                raise BrokerError(f"KIS HTTP timeout on {endpoint_name}") from e
+            except httpx.HTTPError as e:
+                logger.error(f"KIS GET {endpoint_name} HTTP 실패: {type(e).__name__}: {e}")
+                raise BrokerError(f"KIS HTTP error on {endpoint_name}: {type(e).__name__}") from e
 
-        return self._parse_response(resp.json(), endpoint_name)
+            return self._parse_response(resp.json(), endpoint_name)
 
     async def post(
         self,
@@ -181,26 +181,27 @@ class KisHttpClient:
         url = f"{self._base_url}{ep.path}"
 
         await self._throttle()
-        try:
-            resp = await client.post(url, json=json_data, headers=headers, timeout=self._timeout)
-            resp.raise_for_status()
-        except httpx.HTTPStatusError as e:
-            status = e.response.status_code
-            snippet = (e.response.text or "")[:300]
-            logger.error(
-                f"KIS POST {endpoint_name} HTTP {status}: body={snippet}"
-            )
-            raise BrokerError(
-                f"KIS HTTP error on {endpoint_name}: HTTP {status}"
-            ) from e
-        except httpx.TimeoutException as e:
-            logger.error(f"KIS POST {endpoint_name} 타임아웃: {e}")
-            raise BrokerError(f"KIS HTTP timeout on {endpoint_name}") from e
-        except httpx.HTTPError as e:
-            logger.error(f"KIS POST {endpoint_name} HTTP 실패: {type(e).__name__}: {e}")
-            raise BrokerError(f"KIS HTTP error on {endpoint_name}: {type(e).__name__}") from e
+        async with self._rate_semaphore:
+            try:
+                resp = await client.post(url, json=json_data, headers=headers, timeout=self._timeout)
+                resp.raise_for_status()
+            except httpx.HTTPStatusError as e:
+                status = e.response.status_code
+                snippet = (e.response.text or "")[:300]
+                logger.error(
+                    f"KIS POST {endpoint_name} HTTP {status}: body={snippet}"
+                )
+                raise BrokerError(
+                    f"KIS HTTP error on {endpoint_name}: HTTP {status}"
+                ) from e
+            except httpx.TimeoutException as e:
+                logger.error(f"KIS POST {endpoint_name} 타임아웃: {e}")
+                raise BrokerError(f"KIS HTTP timeout on {endpoint_name}") from e
+            except httpx.HTTPError as e:
+                logger.error(f"KIS POST {endpoint_name} HTTP 실패: {type(e).__name__}: {e}")
+                raise BrokerError(f"KIS HTTP error on {endpoint_name}: {type(e).__name__}") from e
 
-        return self._parse_response(resp.json(), endpoint_name)
+            return self._parse_response(resp.json(), endpoint_name)
 
     def _parse_response(self, body: dict[str, Any], endpoint_name: str) -> KisResponse:
         """Parse and validate a KIS API response.
