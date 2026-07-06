@@ -288,10 +288,8 @@ def build_order_payload(
         "PDNO": code,
         "ORD_DVSN": "01" if price is None else "00",  # 01=시장가, 00=지정가
         "ORD_QTY": str(quantity),
+        "ORD_UNPR": "0" if price is None else str(int(price)),  # 시장가도 KIS는 "0" 필요
     }
-
-    if price is not None:
-        payload["ORD_UNPR"] = str(int(price))
 
     return payload
 

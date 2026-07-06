@@ -215,7 +215,7 @@ class TestBuildOrderPayload:
         assert payload["PDNO"] == "005930"
         assert payload["ORD_DVSN"] == "01"  # market
         assert payload["ORD_QTY"] == "10"
-        assert "ORD_UNPR" not in payload
+        assert payload["ORD_UNPR"] == "0"  # 시장가도 KIS는 "0" 필요
 
     def test_limit_order_sell(self):
         payload = build_order_payload(
