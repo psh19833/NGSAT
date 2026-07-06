@@ -92,16 +92,18 @@ class UniverseManager:
             logger.warning(f"등락률 API 실패: {fluctuation}")
             fluctuation = []
 
-        # 2. 통합 코드 리스트
-        all_codes = self._merge_rankings(volume_rank, volume_power, fluctuation)
-        if all_codes:
-            # 성공 → 캐시 저장
-            self._last_rank_cache = all_codes[:100]
-            self._initial_rank_codes = set(all_codes)
-        elif self._last_rank_cache:
-            # 실패 but 캐시 있음 → 캐시로 fallback
-            logger.warning(f"ranking API 실패 — 캐시 사용 ({len(self._last_rank_cache)}종목)")
-            all_codes = self._last_rank_cache
+        # 2. 통합 코드 리스트 (베이스 + 랭킹 하이브리드)
+        ranking_codes = self._merge_rankings(volume_rank, volume_power, fluctuation)
+        if ranking_codes:
+            self._last_rank_cache = ranking_codes[:100]
+        if ranking_codes or self._last_rank_cache:
+            if not ranking_codes:
+                logger.warning(f"ranking API 실패 — 캐시 사용 ({len(self._last_rank_cache)}종목)")
+                ranking_codes = self._last_rank_cache
+            # P-52 F안: DEFAULT_UNIVERSE_CODES 40종목을 베이스로 랭킹 API로 보충
+            from data.real_data_provider import DEFAULT_UNIVERSE_CODES
+            base_codes = list(DEFAULT_UNIVERSE_CODES)
+            all_codes = list(dict.fromkeys(base_codes + ranking_codes))  # base 우선, 중복 제거
             self._initial_rank_codes = set(all_codes)
         else:
             logger.error("유니버스 초기화 실패 — 모든 순위 API 실패, 캐시 없음")
