@@ -320,9 +320,7 @@ async def run_live(config, args):
                 return
             try:
                 from data.repository import TradeRepository
-                from sqlalchemy.orm import Session as SASession
-                from core.db import SessionLocal
-                db_session: SASession = SessionLocal()
+                db_session = orchestrator._Session()
                 try:
                     trade_repo = TradeRepository(db_session)
                     today = datetime.now(timezone.utc).strftime("%Y-%m-%d")
