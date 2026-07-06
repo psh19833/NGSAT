@@ -328,6 +328,29 @@ async def run_live(config, args):
                     buy_count = sum(1 for t in trades if t.side == "buy")
                     sell_count = sum(1 for t in trades if t.side == "sell")
                     total_trades = len(trades)
+                    # 오늘 체결 기반 손익 계산 (계좌 평가손익 대신)
+                    from collections import defaultdict
+                    buy_by_code: dict[str, list] = defaultdict(list)
+                    sell_by_code: dict[str, list] = defaultdict(list)
+                    for t in trades:
+                        if t.side == "buy":
+                            buy_by_code[t.code].append(t)
+                        else:
+                            sell_by_code[t.code].append(t)
+                    realized_pnl = 0.0
+                    all_codes = set(buy_by_code.keys()) | set(sell_by_code.keys())
+                    for code in all_codes:
+                        buys = buy_by_code.get(code, [])
+                        sells = sell_by_code.get(code, [])
+                        total_buy_qty = sum(b.quantity for b in buys)
+                        total_buy_amt = sum(b.amount for b in buys)
+                        total_sell_qty = sum(s.quantity for s in sells)
+                        total_sell_amt = sum(s.amount for s in sells)
+                        matched_qty = min(total_buy_qty, total_sell_qty)
+                        if matched_qty > 0 and total_buy_qty > 0:
+                            avg_buy = total_buy_amt / total_buy_qty
+                            avg_sell = total_sell_amt / total_sell_qty
+                            realized_pnl += (avg_sell - avg_buy) * matched_qty
                     account = await orchestrator._broker.get_account_summary()
                     positions = await orchestrator._broker.get_positions()
                     pos_summary = "\n".join(
@@ -338,7 +361,7 @@ async def run_live(config, args):
                     await telegram_bot.send_daily_report(
                         date=today, total_trades=total_trades,
                         buy_count=buy_count, sell_count=sell_count,
-                        total_pnl=account.total_profit_loss,
+                        total_pnl=realized_pnl,
                         win_rate=win_rate, current_capital=account.total_asset,
                         positions_summary=pos_summary,
                     )
