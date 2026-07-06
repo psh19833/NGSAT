@@ -91,6 +91,11 @@ class OrderExecutor:
         self._submitted_orders: dict[tuple[str, str], str] = {}  # (code, side) -> order_id
         self._orders_lock = asyncio.Lock()
 
+    def clear_idempotency(self) -> None:
+        """P-54: 사이클 시작 시 idempotency 캐시 초기화 — 동일 종목 재매수 차단 방지."""
+        self._submitted_orders.clear()
+        logger.debug("Idempotency 캐시 초기화 완료")
+
     async def _adapt_price_for_vi(
         self,
         code: str,

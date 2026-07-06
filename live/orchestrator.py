@@ -261,6 +261,9 @@ class TradingOrchestrator:
         result = CycleResult()
         self._cycle_count += 1
 
+        # P-54: 사이클 시작 시 idempotency 초기화 (재매수 차단 방지)
+        self._executor.clear_idempotency()
+
         # Check controller state
         if not self._controller.is_running:
             result.reason = f"매매 대기 중 (상태: {self._controller.state.value})"
@@ -619,6 +622,10 @@ class TradingOrchestrator:
                         "reason": buy_reason,
                     })
                     held_codes.add(pred.code)
+                    # P-54: 같은 사이클 내 max_holdings/섹터집중도/상관관계 정확성
+                    held_quantities[pred.code] = held_quantities.get(pred.code, 0) + quantity
+                    if candidate_sector:
+                        held_sector_counts[candidate_sector] = held_sector_counts.get(candidate_sector, 0) + 1
                 else:
                     result.errors.append(f"매수 실패 {pred.code}: {exec_result.error}")
 
@@ -917,7 +924,10 @@ class TradingOrchestrator:
     async def _refine_exit(self, code: str, profit_pct: float) -> ExitDecision:
         """분봉으로 청산 긴급도/가격을 정밀화. 분봉 미가용 시 정밀화 생략(기존 로직 위임)."""
         try:
-            minute_prices = await self._broker.get_minute_history(code)
+            # P-54: 캐시 우선, 없으면 API 호출 (_refine_entry와 동일)
+            minute_prices = self._minute_cache.get(code)
+            if minute_prices is None:
+                minute_prices = await self._fetch_minute_prices(code)
         except NotImplementedError:
             return ExitDecision(
                 should_exit=False, urgency=ExitUrgency.NONE, limit_price=None,
@@ -928,6 +938,11 @@ class TradingOrchestrator:
             return ExitDecision(
                 should_exit=False, urgency=ExitUrgency.NONE, limit_price=None,
                 reason="분봉 조회 실패 — 청산 정밀화 생략", evidence={},
+            )
+        if minute_prices is None:
+            return ExitDecision(
+                should_exit=False, urgency=ExitUrgency.NONE, limit_price=None,
+                reason="분봉 데이터 없음 — 청산 정밀화 생략", evidence={},
             )
         return refine_exit(minute_prices, profit_pct)
 
