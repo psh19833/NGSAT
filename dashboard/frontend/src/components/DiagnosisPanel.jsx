@@ -18,7 +18,7 @@ export default function DiagnosisPanel({ api }) {
     fetch()
     const interval = setInterval(fetch, 5000)
     return () => { mounted = false; clearInterval(interval) }
-  }, [])
+  }, [api])
 
   if (loading || !data) {
     return <SkeletonCard lines={4} className="mt-4" />

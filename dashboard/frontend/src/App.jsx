@@ -75,7 +75,7 @@ export default function App() {
     if (action === 'start') await api.start()
     else if (action === 'stop') await api.stop()
     else if (action === 'forcehold') await api.forceHold(code)
-    refreshAll()
+    await refreshAll()
   }
 
   const handleTabChange = (tabId) => {
@@ -92,8 +92,18 @@ export default function App() {
   const handleRestart = async () => {
     showToast('서버 재시작 중...', 'info')
     await api.restart()
-    refreshAll()
-    showToast('서버 재시작 완료', 'success')
+    // Poll until server is back (timeout 30s)
+    for (let i = 0; i < 30; i++) {
+      await new Promise(r => setTimeout(r, 1000))
+      try {
+        const s = await api.getStatus()
+        if (s?.state) {
+          showToast('서버 재시작 완료', 'success')
+          return refreshAll()
+        }
+      } catch {}
+    }
+    showToast('서버 재시작 응답 없음', 'error')
   }
 
   const handleConfirm = async () => {
@@ -102,7 +112,7 @@ export default function App() {
     setConfirmAction(null)
     if (action === 'shutdown') await api.shutdown()
     else if (action === 'forcesell') await api.forceSell(code)
-    refreshAll()
+    await refreshAll()
   }
 
   const connected = status?.connected !== false

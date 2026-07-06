@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef, useMemo } from 'react'
+import { useState, useEffect, useMemo } from 'react'
 import EvidenceBox from './EvidenceBox.jsx'
 import Pagination from './Pagination.jsx'
 
@@ -211,11 +211,8 @@ export default function TradesTable({ trades: propTrades, api }) {
   const [page, setPage] = useState(1)
   const [localData, setLocalData] = useState(null)
   const [localTotal, setLocalTotal] = useState(0)
-  const prevApiRef = useRef(null)
 
   const hasApi = !!api
-  const apiChanged = prevApiRef.current !== api
-  prevApiRef.current = api
 
   useEffect(() => {
     if (!hasApi) return
@@ -230,10 +227,16 @@ export default function TradesTable({ trades: propTrades, api }) {
     }
     fetch()
     return () => { mounted = false }
-  }, [hasApi, page, api, apiChanged])
+  }, [hasApi, page, api])
 
   const data = propTrades || localData
   const total = propTrades ? (propTrades.total || 0) : localTotal
+  const tradeList = (data && data.connected !== false) ? (data.trades || []) : []
+
+  // useMemo must be before any early return (React Hooks rule)
+  const PAGE_SIZE = 20
+  const groups = useMemo(() => groupTradesByDate(tradeList), [tradeList])
+  const totalPages = Math.ceil(total / PAGE_SIZE)
 
   if (!data || data.connected === false) {
     return (
@@ -243,25 +246,6 @@ export default function TradesTable({ trades: propTrades, api }) {
       </div>
     )
   }
-
-  const tradeList = data.trades || []
-
-  if (tradeList.length === 0) {
-    return (
-      <div className="ngsat-card p-6">
-        <h3 className="text-sm text-ngsat-muted mb-3">거래 내역</h3>
-        <div className="text-center py-8">
-          <p className="text-ngsat-muted text-sm">
-            {data.message || '거래 내역이 없습니다'}
-          </p>
-        </div>
-      </div>
-    )
-  }
-
-  // Group by date
-  const groups = useMemo(() => groupTradesByDate(tradeList), [tradeList])
-  const totalPages = Math.ceil(total / PAGE_SIZE)
 
   return (
     <div className="ngsat-card p-6">

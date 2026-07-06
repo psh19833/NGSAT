@@ -14,11 +14,29 @@ export default function BacktestPanel({ api }) {
 
     try {
       const resp = await api.runBacktest()
-      if (resp?.status === 'completed' && resp?.result) {
+      if (resp?.result) {
         setResult(resp.result)
         setProgress(null)
       } else if (resp?.status === 'error') {
         setProgress({ pct: 0, label: resp?.message || '백테스트 실행 실패' })
+      } else if (resp?.status === 'running' || resp?.status === 'pending') {
+        // Poll backtest state until complete
+        setProgress({ pct: 50, label: '백테스트 실행 중...' })
+        pollRef.current = setInterval(async () => {
+          try {
+            const state = await api.getBacktestState()
+            if (state?.status === 'completed' && state?.result) {
+              setResult(state.result)
+              setProgress(null)
+              if (pollRef.current) clearInterval(pollRef.current)
+            } else if (state?.status === 'error') {
+              setProgress({ pct: 0, label: state?.message || '백테스트 실패' })
+              if (pollRef.current) clearInterval(pollRef.current)
+            } else if (state?.progress) {
+              setProgress({ pct: state.progress.pct || 50, label: state.progress.label || '실행 중...' })
+            }
+          } catch { /* retry next interval */ }
+        }, 2000)
       } else {
         setProgress({ pct: 0, label: '실패: ' + (resp?.message || '알 수 없는 오류') })
       }
