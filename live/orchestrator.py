@@ -512,7 +512,7 @@ class TradingOrchestrator:
             if is_short_term:
                 # 단타 모드: 분봉 ML로 진입 예측 (캐시 우선)
                 minute_prices = self._minute_cache.get(candidate.code) or await self._fetch_minute_prices(candidate.code)
-                if minute_prices and len(minute_prices) >= 60:
+                if minute_prices and len(minute_prices) >= 30:
                     pred = self._inference.predict_minute_entry(candidate, minute_prices)
                 else:
                     pred = self._inference.predict_entry(candidate, prices)

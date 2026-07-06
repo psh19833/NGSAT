@@ -103,7 +103,7 @@ def build_minute_features(
     Returns:
         MinuteFeatureVector 또는 None (데이터 부족 시).
     """
-    if len(prices) < 60:
+    if len(prices) < 30:
         return None
 
     df = pd.DataFrame([
