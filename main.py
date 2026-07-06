@@ -145,7 +145,7 @@ async def run_live(config, args):
 
     logger.info("=== NGSAT 실거래 모드 시작 ===")
 
-    # ── 1. Load ML model ──
+    # ── 1. Load ML models ──
     model_path = args.model_path or str(
         Path(__file__).resolve().parent / "models" / "trained" / "price_rise_model.pkl"
     )
@@ -153,7 +153,6 @@ async def run_live(config, args):
     try:
         model = PriceRiseModel.load(model_path)
         model.auto_select_model = config.strategy.ml_auto_select_model
-        # C-1: 합성 데이터 모델 경고
         if model.data_source == "synthetic":
             logger.warning(
                 "⚠️ 로드된 모델의 데이터 출처가 'synthetic'입니다. "
@@ -164,6 +163,20 @@ async def run_live(config, args):
         logger.warning(f"저장된 모델 없음 ({model_path}). 모델 학습이 필요합니다.")
         logger.warning("python main.py --train 으로 모델을 먼저 학습하세요.")
         return
+
+    # ── 1B. Load minute ML model (optional, for short_term mode) ──
+    minute_model_path = str(
+        Path(__file__).resolve().parent / "models" / "trained" / "minute_model.pkl"
+    )
+    minute_model = None
+    try:
+        minute_model = PriceRiseModel.load(minute_model_path)
+        logger.info(f"분봉 ML 모델 로드: {minute_model_path}")
+    except Exception:
+        logger.info(
+            f"분봉 ML 모델 없음 ({minute_model_path}) — "
+            "단타 모드 시 일봉 ML로 폴백"
+        )
 
     # ── 2. Create KIS adapter ──
     if not config.kis.is_configured:
@@ -183,6 +196,7 @@ async def run_live(config, args):
     orchestrator = TradingOrchestrator(
         broker=broker,
         model=model,
+        minute_model=minute_model,
         risk_config=config.risk,
         strategy_config=config.strategy,
         buy_threshold=config.strategy.buy_threshold,
