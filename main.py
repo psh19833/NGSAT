@@ -323,10 +323,19 @@ async def run_live(config, args):
                 return
             try:
                 from data.repository import TradeRepository
+                from core.models import DailyReport
                 db_session = orchestrator._Session()
                 try:
-                    trade_repo = TradeRepository(db_session)
                     today = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+
+                    # P-54: DB에 오늘자 보고서가 이미 있으면 중복 발송 방지
+                    existing = db_session.query(DailyReport).filter(DailyReport.date == today).first()
+                    if existing is not None:
+                        logger.info(f"오늘({today}) 일일 보고서 이미 전송됨 — 중복 방지")
+                        session_tracker.mark_daily_report_sent()
+                        return
+
+                    trade_repo = TradeRepository(db_session)
                     trades = trade_repo.get_trades_by_date(today)
                     buy_count = sum(1 for t in trades if t.side == "buy")
                     sell_count = sum(1 for t in trades if t.side == "sell")
@@ -368,6 +377,20 @@ async def run_live(config, args):
                         win_rate=win_rate, current_capital=account.total_asset,
                         positions_summary=pos_summary,
                     )
+                    # P-54: DailyReport DB 저장 (재시작 중복 발송 방지)
+                    db_session.add(DailyReport(
+                        date=today,
+                        total_asset=account.total_asset,
+                        daily_loss=abs(min(realized_pnl, 0)),
+                        trade_count=total_trades,
+                        buy_count=buy_count, sell_count=sell_count,
+                        summary={
+                            "pnl": realized_pnl,
+                            "win_rate": win_rate,
+                            "positions": pos_summary,
+                        },
+                    ))
+                    db_session.commit()
                 finally:
                     db_session.close()
             except Exception as e:
