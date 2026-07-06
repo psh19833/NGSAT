@@ -621,6 +621,7 @@ class TradingOrchestrator:
                         "amount": exec_result.amount or (quantity * (exec_result.price or ref_price)),
                         "action": pred.action,
                         "reason": buy_reason,
+                        "timestamp": time.time(),  # N1: TTL 기반 자동 제거용
                     })
                     held_codes.add(pred.code)
                     # P-54: 같은 사이클 내 max_holdings/섹터집중도/상관관계 정확성
@@ -795,6 +796,14 @@ class TradingOrchestrator:
         # ── Confirm pending buy trades (체결된 position만 DB 저장) ──
         if self._pending_buy_trades:
             try:
+                # N1: 24시간 경과 미체결 거래 자동 제거 (TTL)
+                now_ts = time.time()
+                self._pending_buy_trades = [
+                    p for p in self._pending_buy_trades
+                    if now_ts - p.get("timestamp", 0) < 86400
+                ]
+                if not self._pending_buy_trades:
+                    return
                 confirmed_positions = await self._fetch_positions()
                 confirmed_codes = {p.code for p in confirmed_positions}
                 confirmed = []

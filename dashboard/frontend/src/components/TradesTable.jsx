@@ -234,7 +234,6 @@ export default function TradesTable({ trades: propTrades, api }) {
   const tradeList = (data && data.connected !== false) ? (data.trades || []) : []
 
   // useMemo must be before any early return (React Hooks rule)
-  const PAGE_SIZE = 20
   const groups = useMemo(() => groupTradesByDate(tradeList), [tradeList])
   const totalPages = Math.ceil(total / PAGE_SIZE)
 
