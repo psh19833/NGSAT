@@ -63,6 +63,7 @@ class UniverseManager:
         self.last_swap: Optional[datetime] = None
         self.initialized = False
         self._initial_rank_codes: set[str] = set()    # 09:00에 로드한 100종목
+        self._last_rank_cache: list[str] = []         # 마지막 성공한 ranking 결과 (fallback)
 
     # ── Public API ──
 
@@ -90,11 +91,18 @@ class UniverseManager:
 
         # 2. 통합 코드 리스트
         all_codes = self._merge_rankings(volume_rank, volume_power, fluctuation)
-        if not all_codes:
-            logger.error("유니버스 초기화 실패 — 모든 순위 API 실패")
+        if all_codes:
+            # 성공 → 캐시 저장
+            self._last_rank_cache = all_codes[:100]
+            self._initial_rank_codes = set(all_codes)
+        elif self._last_rank_cache:
+            # 실패 but 캐시 있음 → 캐시로 fallback
+            logger.warning(f"ranking API 실패 — 캐시 사용 ({len(self._last_rank_cache)}종목)")
+            all_codes = self._last_rank_cache
+            self._initial_rank_codes = set(all_codes)
+        else:
+            logger.error("유니버스 초기화 실패 — 모든 순위 API 실패, 캐시 없음")
             return
-
-        self._initial_rank_codes = set(all_codes)
 
         # 3. 4축 점수 계산
         scored = await self._score_candidates(all_codes, provider,
@@ -113,19 +121,16 @@ class UniverseManager:
             except Exception:
                 filtered.append(s)  # 오류 시 기본 포함
         scored = filtered
-        # DEFAULT_UNIVERSE_CODES로 부족분 보충 (랭킹 API가 소형주/ETN 위주인 경우)
-        if len(scored) < 40:
-            from data.real_data_provider import DEFAULT_UNIVERSE_CODES
+        # 캐시로 부족분 보충 (ranking API 실패 시에도 최소 40종목 확보)
+        if len(scored) < 40 and self._last_rank_cache:
             existing = {s.code for s in scored}
-            for code in DEFAULT_UNIVERSE_CODES:
+            for code in self._last_rank_cache:
                 if len(scored) >= 40:
                     break
                 if code in existing or code in self.held_codes:
                     continue
-                # 기본 ScoredStock 추가 (랭킹 점수 없음, 이름/시장만)
-                market = Market.KOSPI if code in DEFAULT_UNIVERSE_CODES[:28] else Market.KOSDAQ
                 scored.append(ScoredStock(
-                    code=code, name="", market=market,
+                    code=code, name="", market=Market.KOSPI,
                     volume_score=0, power_score=0, fluct_score=0, screener_score=0,
                 ))
         self.active = {s.code: s for s in scored[:40]}
@@ -159,6 +164,11 @@ class UniverseManager:
         )
         if isinstance(volume_rank, Exception) or not volume_rank:
             volume_rank = []
+        else:
+            # ranking 성공 → 캐시 갱신 (최대 100종목)
+            merged = self._merge_rankings(volume_rank, volume_power, fluctuation)
+            if merged:
+                self._last_rank_cache = merged[:100]
 
         # 2. 현재 active 40종목 재평가
         active_list = list(self.active.keys())
