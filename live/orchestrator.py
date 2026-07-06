@@ -165,6 +165,8 @@ class TradingOrchestrator:
         self._daily_trade_count: int = 0
         # C-2: 보유 포지션 코드 캐시 (main.py universe 구성용)
         self._last_held_codes: set[str] = set()
+        # Pending buy trades (체결 확인 전까지만 메모리 보관)
+        self._pending_buy_trades: list[dict] = []
 
     def refresh_read_session(self) -> None:
         """BE-10: 읽기 전용 세션 갱신 — dashboard 조회 전 호출하여 데이터 신선도 유지."""
@@ -605,20 +607,16 @@ class TradingOrchestrator:
                 if exec_result.success:
                     result.buys_executed += 1
                     self._daily_trade_count += 1
-                    # Record to database (per-cycle session for isolation)
-                    try:
-                        with self._Session() as session:
-                            trade_repo = self._TradeRepo(session)
-                            trade_repo.save_trade(
-                                code=pred.code, name=pred.name,
-                                side=OrderSide.BUY, quantity=quantity,
-                                price=exec_result.price or ref_price,
-                                amount=exec_result.amount or (quantity * (exec_result.price or ref_price)),
-                                action=pred.action, reason=buy_reason,
-                            )
-                            session.commit()
-                    except Exception as e:
-                        logger.error(f"거래 기록 저장 실패: {e}")
+                    # Defer DB save until position is confirmed (see pending 확인 블록)
+                    self._pending_buy_trades.append({
+                        "code": pred.code,
+                        "name": pred.name,
+                        "quantity": quantity,
+                        "price": exec_result.price or ref_price,
+                        "amount": exec_result.amount or (quantity * (exec_result.price or ref_price)),
+                        "action": pred.action,
+                        "reason": buy_reason,
+                    })
                     held_codes.add(pred.code)
                 else:
                     result.errors.append(f"매수 실패 {pred.code}: {exec_result.error}")
@@ -784,6 +782,37 @@ class TradingOrchestrator:
                     log_label="매도",
                     reason=f"{exit_pred.reason} || 청산정밀화: {exit_ref.reason}",
                 )
+
+        # ── Confirm pending buy trades (체결된 position만 DB 저장) ──
+        if self._pending_buy_trades:
+            try:
+                confirmed_positions = await self._fetch_positions()
+                confirmed_codes = {p.code for p in confirmed_positions}
+                confirmed = []
+                for pending in self._pending_buy_trades:
+                    if pending["code"] in confirmed_codes:
+                        confirmed.append(pending)
+                for pending in confirmed:
+                    with self._Session() as session:
+                        self._TradeRepo(session).save_trade(
+                            code=pending["code"], name=pending["name"],
+                            side=OrderSide.BUY, quantity=pending["quantity"],
+                            price=pending["price"], amount=pending["amount"],
+                            action=pending["action"], reason=pending["reason"],
+                        )
+                        session.commit()
+                    self._pending_buy_trades.remove(pending)
+                    logger.info(
+                        f"매수 체결 확인: {pending['name']}({pending['code']}) "
+                        f"{pending['quantity']}주 — trade 기록 저장"
+                    )
+                if self._pending_buy_trades:
+                    pending_codes = [p["code"] for p in self._pending_buy_trades]
+                    logger.info(
+                        f"매수 미체결(다음 사이클 재확인): {pending_codes}"
+                    )
+            except Exception as e:
+                logger.warning(f"매수 체결 확인 실패(다음 사이클 재확인): {e}")
 
         # ── Build summary ──
         regime_str = (
