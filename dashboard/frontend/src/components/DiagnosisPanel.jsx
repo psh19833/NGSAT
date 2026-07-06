@@ -56,6 +56,11 @@ export default function DiagnosisPanel({ api }) {
               data.regime === 'bull' ? 'text-ngsat-green' : data.regime === 'bear' ? 'text-ngsat-red' : 'text-ngsat-yellow'
             }`}>{data.regime === 'bull' ? '강세장' : data.regime === 'bear' ? '약세장' : '중립장'}</span></span>
             <span>모드 <span className="text-ngsat-accent font-medium">{data.mode === 'short_term' ? '단타' : data.mode === 'hold' ? '홀드' : '스윙'}</span></span>
+            {data.minute_ml_status && data.mode === 'short_term' && (
+              <span className={`text-[10px] px-1.5 py-0.5 rounded ${
+                data.minute_ml_status === '정상(분봉ML)' ? 'bg-ngsat-green/10 text-ngsat-green' : 'bg-ngsat-yellow/10 text-ngsat-yellow'
+              }`}>{data.minute_ml_status}</span>
+            )}
             {data.buys > 0 && <span className="text-ngsat-green font-medium">🟢 매수 {data.buys}건</span>}
             {data.sells > 0 && <span className="text-ngsat-red font-medium">🔴 매도 {data.sells}건</span>}
           </div>

@@ -849,6 +849,11 @@ class TradingOrchestrator:
             "deferred_entries": result.deferred_entries,
             "minute_screened": result.minute_screened,
             "summary": result.reason,
+            "minute_ml_status": (
+                "정상(분봉ML)" if self._inference.has_minute_model
+                else "미설정(일봉폴백)" if self._current_mode == "short_term"
+                else "비활성(스윙모드)"
+            ),
         }
         return result
 
