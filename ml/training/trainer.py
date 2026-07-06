@@ -477,6 +477,7 @@ class PriceRiseModel:
                 X_train_s = scaler.fit_transform(X_train)
                 X_test_s = scaler.transform(X_test)
                 self._scaler = scaler
+                # train() 경유 대신 직접 fit (scaler는 위에서 저장 완료)
                 self._model.fit(X_train_s, y_train)
                 y_pred = self._model.predict(X_test_s)
                 y_proba = self._model.predict_proba(X_test_s)[:, 1]

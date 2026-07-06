@@ -267,10 +267,26 @@ class RealDataProvider:
         return []
 
     def _synthetic_index(self) -> list[PriceData]:
-        """KOSPI 지수 조회 실패 시 합성 지수 반환."""
+        """KOSPI 지수 조회 실패 시 합성 지수 반환 (backtest import 없이 자체 생성)."""
         logger.warning(f"KOSPI 지수 폴백: 합성 지수 사용 ({self._training_days}일)")
-        from backtest.data_loader import generate_synthetic_index
-        return generate_synthetic_index(n_days=self._training_days, start_value=2600, seed=100)
+        import numpy as np
+        from datetime import datetime, timedelta
+        from core.types import PriceData
+        rng = np.random.default_rng(100)
+        prices: list[PriceData] = []
+        current = 2600.0
+        start = datetime.now() - timedelta(days=self._training_days)
+        for i in range(self._training_days):
+            daily_return = rng.normal(2.0 / 2600, 0.01)
+            current = current * (1 + daily_return)
+            intraday_vol = current * 0.01 * 0.5
+            open_p = current + rng.normal(0, intraday_vol * 0.3)
+            prices.append(PriceData(
+                code="INDEX", timestamp=start + timedelta(days=i),
+                open=max(open_p, 1), high=current * 1.005, low=current * 0.995,
+                close=current, volume=int(max(rng.normal(100000, 20000), 0)),
+            ))
+        return prices
 
     def _compute_market_index(
         self, universe: list[tuple[Any, list[PriceData]]]

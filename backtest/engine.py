@@ -171,6 +171,7 @@ class BacktestEngine:
         import hashlib
         seed = int(hashlib.md5(f"{self._initial_capital}_{len(self._trades)}".encode()).hexdigest()[:8], 16)
         rng_seed = (seed % 10000) / 10000
+        rng_seed = max(rng_seed, 0.1)  # P-54: 최소 slippage 보장 (rng_seed=0 방지)
         slip_pct = 0.003 if urgent else 0.001
         if is_buy:
             # Buy: always positive (pay more)
@@ -390,7 +391,7 @@ class BacktestEngine:
                 prev = self._daily_capital[-2]
                 daily_loss_pct = ((current_capital - prev) / prev * 100) if prev > 0 else 0
 
-            if abs(daily_loss_pct) >= self._risk.daily_loss_limit_pct:
+            if daily_loss_pct <= -self._risk.daily_loss_limit_pct:
                 self._is_halted = True
                 logger.warning(f"백테스트 일일 손실 한도 도달: {daily_loss_pct:.1f}% → 매매 중단")
 
@@ -453,7 +454,7 @@ class BacktestEngine:
         self._positions[pred.code] = BacktestPosition(
             code=pred.code,
             name=pred.name,
-            market=Market.KOSPI,
+            market=Market.KOSPI if pred.code[:1] in ("0", "1") else Market.KOSDAQ,
             quantity=quantity,
             buy_price=exec_price,
             buy_date=date_str,
