@@ -406,10 +406,11 @@ async def run_live(config, args):
             if um.initialized and um.should_swap(kst):
                 await um.swap(broker, data_provider)
                 um.last_swap = kst
-            # active 유니버스 + 보유포지션 합집합
-            active_codes = um.get_active_codes() if um.initialized else None
-            if active_codes and data_provider._universe_cache:
-                include_codes = set(active_codes) | orchestrator._last_held_codes
+            # active + reserve + 보유포지션 전체 스크리닝
+            # reserve도 검토 대상에 포함해 더 많은 종목에서 후보 발견
+            pool_codes = set(um.active.keys()) | set(um.reserve.keys()) if um.initialized else None
+            if pool_codes and data_provider._universe_cache:
+                include_codes = pool_codes | orchestrator._last_held_codes
                 return [
                     (info, prices) for info, prices in data_provider._universe_cache
                     if info.code in include_codes
