@@ -465,6 +465,9 @@ async def run_live(config, args):
             nonlocal _last_status_time
             if not telegram_bot:
                 return
+            from core.types import is_market_hours
+            if not is_market_hours():
+                return
             now_ts = time.time()
             if now_ts - _last_status_time < 600:
                 return

@@ -562,6 +562,41 @@ class KisAdapter(BrokerAdapter):
         logger.info(f"주문 상태 조회: {order_id} → {status.value}")
         return status
 
+    async def get_fill_price(self, order_id: str) -> float:
+        """P-53: 실제 체결가 조회 — KIS inquire_order 응답에서 ccld_prpr 추출.
+
+        Args:
+            order_id: KIS order number (ODNO).
+
+        Returns:
+            Actual fill price, or 0.0 if not filled / inquiry fails.
+        """
+        try:
+            resp = await self._http.get("inquire_order", params={
+                "CANO": self._account_no,
+                "ACNT_PRDT_CD": self._account_product_code,
+                "ORD_STR_DT": datetime.now().strftime("%Y%m%d"),
+                "ORD_GNO_BRNO": "",
+                "ODNO": order_id,
+                "CCLD_NCCS_DVSN": "00",
+                "SLL_BUY_DVSN_CD": "00",
+                "CTX_AREA_FK100": "",
+                "CTX_AREA_NK100": "",
+            })
+            if not resp.success:
+                logger.warning(f"체결가 조회 실패 ({order_id}): {resp.msg_cd}")
+                return 0.0
+            output = resp.raw.get("output") or resp.raw.get("output2") or {}
+            if isinstance(output, list):
+                output = output[0] if output else {}
+            ccld_prpr = float(output.get("ccld_prpr") or output.get("ftrd_ccld_prpr", 0))
+            if ccld_prpr > 0:
+                logger.info(f"실제 체결가 조회: {order_id} → {ccld_prpr:,.0f}원")
+            return ccld_prpr
+        except Exception as e:
+            logger.warning(f"체결가 조회 중 오류 ({order_id}): {e}")
+            return 0.0
+
     async def get_vi_status(self, code: str) -> bool:
         """Check VI (Volatility Interruption) status for a stock.
 

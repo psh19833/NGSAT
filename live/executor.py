@@ -41,6 +41,7 @@ class ExecutionResult:
         quantity: Number of shares.
         price: Execution price.
         amount: Total trade amount.
+        fill_price: Actual fill price from KIS (0.0 = same as price).
         action: Decision action that triggered this order.
         reason: Human-readable reason (Korean).
         error: Error message if failed.
@@ -53,6 +54,7 @@ class ExecutionResult:
     quantity: int = 0
     price: float = 0.0
     amount: float = 0.0
+    fill_price: float = 0.0  # P-53: 실제 체결가 (0이면 price와 동일)
     action: str = ""
     reason: str = ""
     error: str = ""
@@ -298,6 +300,15 @@ class OrderExecutor:
                 fill_price = adapted_price
             amount = fill_price * quantity
 
+            # P-53: 실제 체결가 조회 (시장가 주문 괴리 보정)
+            actual_fill = 0.0
+            if order_id:
+                try:
+                    await asyncio.sleep(0.3)
+                    actual_fill = await self._broker.get_fill_price(order_id)
+                except Exception:
+                    pass
+
             result = ExecutionResult(
                 success=True,
                 order_id=order_id,
@@ -307,6 +318,7 @@ class OrderExecutor:
                 quantity=quantity,
                 price=fill_price,
                 amount=amount,
+                fill_price=actual_fill if actual_fill > 0 else fill_price,
                 action=action.value,
                 reason=reason,
             )
@@ -384,6 +396,15 @@ class OrderExecutor:
                 fill_price = adapted_price
             amount = fill_price * quantity
 
+            # P-53: 실제 체결가 조회 (시장가 주문 괴리 보정)
+            actual_fill = 0.0
+            if order_id:
+                try:
+                    await asyncio.sleep(0.3)
+                    actual_fill = await self._broker.get_fill_price(order_id)
+                except Exception:
+                    pass
+
             result = ExecutionResult(
                 success=True,
                 order_id=order_id,
@@ -393,6 +414,7 @@ class OrderExecutor:
                 quantity=quantity,
                 price=fill_price,
                 amount=amount,
+                fill_price=actual_fill if actual_fill > 0 else fill_price,
                 action=action.value,
                 reason=reason,
             )

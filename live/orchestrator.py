@@ -613,6 +613,7 @@ class TradingOrchestrator:
                         "name": pred.name,
                         "quantity": quantity,
                         "price": exec_result.price or ref_price,
+                        "fill_price": exec_result.fill_price or 0,
                         "amount": exec_result.amount or (quantity * (exec_result.price or ref_price)),
                         "action": pred.action,
                         "reason": buy_reason,
@@ -794,10 +795,11 @@ class TradingOrchestrator:
                         confirmed.append(pending)
                 for pending in confirmed:
                     with self._Session() as session:
+                        trade_price = pending.get("fill_price", 0) or pending["price"]
                         self._TradeRepo(session).save_trade(
                             code=pending["code"], name=pending["name"],
                             side=OrderSide.BUY, quantity=pending["quantity"],
-                            price=pending["price"], amount=pending["amount"],
+                            price=trade_price, amount=pending["amount"],
                             action=pending["action"], reason=pending["reason"],
                         )
                         session.commit()
@@ -960,11 +962,12 @@ class TradingOrchestrator:
             sold_qty = partial_sold_qty or exec_result.quantity or position.quantity
             is_partial = partial_sold_qty is not None and partial_sold_qty < position.quantity
             with self._Session() as session:
+                sell_price_actual = exec_result.fill_price or exec_result.price or sell_price or 0
                 self._TradeRepo(session).save_trade(
                     code=position.code, name=position.name,
                     side=OrderSide.SELL, quantity=sold_qty,
-                    price=exec_result.price or sell_price or 0,
-                    amount=exec_result.amount or (sold_qty * (exec_result.price or sell_price or 0)),
+                    price=sell_price_actual,
+                    amount=exec_result.amount or (sold_qty * sell_price_actual),
                     action=action, reason=reason,
                 )
                 if is_partial:
