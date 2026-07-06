@@ -137,21 +137,25 @@ def evaluate_regime(
         bbw = float("nan")
 
     # ── Weighted total ──
-    total = (
-        scores["ma_alignment"] * w_ma / 100
-        + scores["rsi"] * w_rsi / 100
-        + scores["bollinger"] * w_bb / 100
-        + scores["change_rate"] * w_cr / 100
-        + scores["volume_trend"] * w_vol / 100
-        + scores["adx"] * cfg.regime_weight_adx / 100
-    )
-    # Validate config weights sum to 100
-    w_sum = w_ma + w_rsi + w_bb + w_cr + w_vol + cfg.regime_weight_adx
+    # Calculate weighted score with normalization (P-54: 가중치 합 ≠ 100 방어)
+    adx_w = cfg.regime_weight_adx
+    w_sum = w_ma + w_rsi + w_bb + w_cr + w_vol + adx_w
     if abs(w_sum - 100.0) > 0.01:
         logger.warning(
             f"레짐 가중치 합이 100이 아님: {w_sum:.1f} "
-            f"(MA={w_ma} RSI={w_rsi} BB={w_bb} CR={w_cr} VOL={w_vol} ADX={cfg.regime_weight_adx})"
+            f"(MA={w_ma} RSI={w_rsi} BB={w_bb} CR={w_cr} VOL={w_vol} ADX={adx_w}) — 정규화 적용"
         )
+        w_sum = max(w_sum, 1.0)  # division by zero 방지
+    else:
+        w_sum = 100.0
+    total = (
+        scores["ma_alignment"] * w_ma
+        + scores["rsi"] * w_rsi
+        + scores["bollinger"] * w_bb
+        + scores["change_rate"] * w_cr
+        + scores["volume_trend"] * w_vol
+        + scores["adx"] * adx_w
+    ) / w_sum
 
     # Determine regime with hysteresis (TR-10)
     HYSTERESIS_BAND = 5.0  # 점수 범위 내에서 이전 레짐 유지

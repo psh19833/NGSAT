@@ -14,6 +14,8 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from datetime import datetime
 
+from core.logger import logger
+
 import numpy as np
 
 from core.types import Market, MarketRegime, PriceData, StockInfo
@@ -242,7 +244,8 @@ def _evaluate_single_stock(
             result = detector()
             if result.detected:
                 patterns.append(result)
-        except Exception:
+        except Exception as e:
+            logger.warning(f"패턴 탐지 실패 ({detector.__name__ if hasattr(detector, '__name__') else '?'}): {type(e).__name__}")
             continue  # Skip failed pattern detection, don't crash screening
 
     # ── Scoring ──

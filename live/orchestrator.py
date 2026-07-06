@@ -195,7 +195,8 @@ class TradingOrchestrator:
         Returns:
             (is_safe: bool, reason: str)
         """
-        if len(current_positions) < 2:
+        # P-54: 1개 포지션도 검사 (보유 종목과 후보 간 상관관계 확인)
+        if len(current_positions) < 1:
             return True, ""
 
         closes_map: dict[str, list[float]] = {candidate_code: [p.close for p in candidate_prices]}
@@ -554,7 +555,7 @@ class TradingOrchestrator:
                 target_vol_pct = 1.5
                 min_pct = base_budget_pct * 1.0
                 max_pct = base_budget_pct * 2.0
-                vol_pct = max(vol, 0.5)  # vol은 이미 백분율 (std/mean*100)
+                vol_pct = max(vol, 0.5)  # vol은 이미 백분율 (std/mean*100). 0.5% 미만이면 0.5%로 floor
                 adjusted_pct = base_budget_pct * (target_vol_pct / vol_pct)
                 adjusted_pct = max(min_pct, min(adjusted_pct, max_pct))
                 budget = account.deposit * adjusted_pct
@@ -1064,7 +1065,7 @@ class TradingOrchestrator:
                 if len(ot) >= 6:
                     order_dt = now.replace(
                         hour=int(ot[:2]), minute=int(ot[2:4]),
-                        second=int(ot[4:6]),
+                        second=int(ot[4:6]), microsecond=0,
                     )
                     age = (now - order_dt).total_seconds()
                     if age < 0:
