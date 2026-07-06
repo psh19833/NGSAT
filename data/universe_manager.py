@@ -64,6 +64,9 @@ class UniverseManager:
         self.initialized = False
         self._initial_rank_codes: set[str] = set()    # 09:00에 로드한 100종목
         self._last_rank_cache: list[str] = []         # 마지막 성공한 ranking 결과 (fallback)
+        # P-51: reserve 종목의 일봉 데이터 캐시 (스크리닝 대상 확장용)
+        self._reserve_prices: dict[str, list] = {}    # code → (StockInfo, [PriceData])
+        self._active_prices: dict[str, list] = {}     # code → (StockInfo, [PriceData])
 
     # ── Public API ──
 
@@ -214,12 +217,16 @@ class UniverseManager:
         candidates = filtered
         to_add = candidates[:min(20, len(candidates))]
 
-        # 5. 교체 실행
+        # 5. 교체 실행 (캐시 이동 포함)
         for s in to_add:
             self.active[s.code] = s
+            if s.code in self._reserve_prices:
+                self._active_prices[s.code] = self._reserve_prices.pop(s.code)
         for s in to_remove:
             self.active.pop(s.code, None)
             self.reserve[s.code] = s
+            if s.code in self._active_prices:
+                self._reserve_prices[s.code] = self._active_prices.pop(s.code)
 
         # 6. 예비 리스트 갱신 (최대 60, active 제외)
         reserve_codes = list(self.reserve.keys()) + [s.code for s in to_remove]
@@ -257,6 +264,14 @@ class UniverseManager:
 
     def get_active_stocks(self) -> list[ScoredStock]:
         return list(self.active.values())
+
+    def get_active_prices(self) -> dict[str, list]:
+        """P-51: active 종목 일봉 데이터 조회."""
+        return self._active_prices
+
+    def get_reserve_prices(self) -> dict[str, list]:
+        """P-51: reserve 종목 일봉 데이터 조회."""
+        return self._reserve_prices
 
     # ── Internal ──
 
@@ -357,12 +372,16 @@ class UniverseManager:
                         from data.real_data_provider import _code_to_name
                         from data.real_data_provider import _get_stock_type
                         market = _infer_market(code)
+                        entry = (StockInfo(code=code, name=await _code_to_name(code, adapter), market=market,
+                                           product_type=await _get_stock_type(code, adapter)), prices)
                         if provider._universe_cache is None:
                             provider._universe_cache = []
-                        provider._universe_cache.append(
-                            (StockInfo(code=code, name=await _code_to_name(code, adapter), market=market,
-                                      product_type=await _get_stock_type(code, adapter)), prices)
-                        )
+                        provider._universe_cache.append(entry)
+                        # P-51: 자체 캐시에도 저장 (스크리닝 대상 확장용)
+                        if code in self.active:
+                            self._active_prices[code] = entry
+                        elif code in self.reserve:
+                            self._reserve_prices[code] = entry
                         loaded += 1
                     await asyncio.sleep(0.1)  # Rate Limit
             except Exception as e:

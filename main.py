@@ -282,7 +282,7 @@ async def run_live(config, args):
         # C-2: refresh 주기 상수 (tick_interval=10s 기준)
         REFRESH_FIRST_CYCLE = 2       # 2번째 사이클에서 최초 1회 refresh
         REFRESH_AFTER_RETRAIN = 35    # 재학습 후 refresh (약 5분 50초)
-        REFRESH_INTERVAL = 300        # 300사이클(50분)마다 refresh
+        REFRESH_INTERVAL = 60         # 60사이클(10분)마다 refresh (P-51: 300→60 단축)
 
         # ── Helper: KST 장 마감 여부 ──
         def _is_after_market_close_kst() -> bool:
@@ -409,12 +409,34 @@ async def run_live(config, args):
             # active + reserve + 보유포지션 전체 스크리닝
             # reserve도 검토 대상에 포함해 더 많은 종목에서 후보 발견
             pool_codes = set(um.active.keys()) | set(um.reserve.keys()) if um.initialized else None
-            if pool_codes and data_provider._universe_cache:
+            if pool_codes:
                 include_codes = pool_codes | orchestrator._last_held_codes
-                return [
-                    (info, prices) for info, prices in data_provider._universe_cache
-                    if info.code in include_codes
-                ]
+                # Step 1: _universe_cache 우선 (C안 refresh로 최신 데이터)
+                cache_by_code: dict[str, tuple] = {}
+                if data_provider._universe_cache:
+                    for info, prices in data_provider._universe_cache:
+                        cache_by_code[info.code] = (info, prices)
+                result = []
+                found = set()
+                for code in include_codes:
+                    if code in cache_by_code:
+                        result.append(cache_by_code[code])
+                        found.add(code)
+                # Step 2: reserve 중 _universe_cache에 없는 종목 → um._reserve_prices에서 보충
+                missing = include_codes - found
+                if missing and hasattr(um, '_reserve_prices'):
+                    reserve_prices = um._reserve_prices
+                    for code in missing:
+                        entry = reserve_prices.get(code)
+                        if entry is None:
+                            continue
+                        info, prices = entry
+                        # info.name이 빈값이면 ScoredStock name으로 fallback
+                        if not info.name and code in um.reserve:
+                            from dataclasses import replace
+                            info = replace(info, name=um.reserve[code].name)
+                        result.append((info, prices))
+                return result
             return universe
 
         # ── Helper: 정기 Status 메시지 ──
