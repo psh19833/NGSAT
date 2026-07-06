@@ -35,14 +35,15 @@ class TestRefineEntry:
         assert decision.limit_price is None
         assert "부족" in decision.reason
 
-    def test_normal_enters_with_limit_price(self):
-        """완만한 횡보 → 진입, 현재가 지정가 제안."""
+    def test_normal_enters_with_market_order(self):
+        """완만한 횡보 → 진입, 시장가 즉시 체결."""
         closes = [70000.0 + (50 if i % 2 else -50) for i in range(25)]
         decision = refine_entry(_bars(closes))
         assert decision.timing == EntryTiming.ENTER_NOW
         assert decision.should_enter is True
-        assert decision.limit_price is not None
-        assert decision.limit_price == closes[-1]
+        # 시장가 진입: surge/RSI 3중 가드 통과 후 즉시 체결 우선
+        assert decision.limit_price is None
+        assert "시장가" in decision.reason
 
     def test_surge_defers(self):
         """최근 5분봉 급등 → 추격 보류(WAIT)."""

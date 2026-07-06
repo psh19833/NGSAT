@@ -135,14 +135,16 @@ def refine_entry(
             evidence=evidence,
         )
 
-    # 4) 진입 적합 → 현재가 지정가 제안
+    # 4) 진입 적합 → 시장가 즉시 체결
+    # 지정가 미체결 무한반복 방지: surge/RSI/VI 3중 가드 통과 후에는
+    # 시장가로 즉시 체결. 슬리피지는 소량(2~5주) 기준 미미함.
     return EntryDecision(
         timing=EntryTiming.ENTER_NOW,
         should_enter=True,
-        limit_price=current_price,
+        limit_price=None,
         reason=(
             f"분봉 RSI {rsi_safe:.1f} 정상·급등 위험 없음(최근 {lookback}분 "
-            f"{surge_pct:+.1f}%) — 현재가 {current_price:,.0f}원 지정가 진입"
+            f"{surge_pct:+.1f}%) — 시장가 진입"
         ),
         evidence=evidence,
     )
