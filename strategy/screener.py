@@ -140,7 +140,7 @@ def screen_stocks(
         if len(price_history) < 60:
             continue  # 데이터 부족 (ML 예측도 60일 필요)
 
-        candidate = _evaluate_single_stock(stock_info, price_history, thresholds)
+        candidate = _evaluate_single_stock(stock_info, price_history, thresholds, config)
 
         if candidate and candidate.score >= thresholds["min_score"]:
             candidates.append(candidate)
@@ -171,6 +171,7 @@ def _evaluate_single_stock(
     stock: StockInfo,
     prices: list[PriceData],
     thresholds: dict,
+    config: _StrategyConfig | None = None,
 ) -> ScreenCandidate | None:
     """Evaluate a single stock for screening.
 
@@ -313,7 +314,7 @@ def _evaluate_single_stock(
 
     # KOSPI bonus (기획서: 코스피 비중 더 높게)
     kospi_bonus = False
-    cfg = _StrategyConfig()
+    cfg = config or _StrategyConfig()
     if stock.market == Market.KOSPI:
         score += cfg.kospi_bonus_score
         kospi_bonus = True

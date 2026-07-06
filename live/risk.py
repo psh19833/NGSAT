@@ -127,8 +127,8 @@ class RiskManager:
         """
         limit_pct = self.effective_daily_loss_limit
 
-        # daily_loss_pct 우선, 0이면 total_profit_loss_pct로 대체
-        loss_pct = account.daily_loss_pct or account.total_profit_loss_pct
+        # daily_loss_pct 우선, None이면 total_profit_loss_pct로 대체
+        loss_pct = account.daily_loss_pct if account.daily_loss_pct is not None else account.total_profit_loss_pct
 
         if loss_pct >= limit_pct:
             reason = (

@@ -246,8 +246,11 @@ async def run_live(config, args):
     tick_interval = args.tick_interval
     logger.info(f"매매 사이클 주기: {tick_interval}초")
 
+    data_provider = None  # P-54: finally 블록 NameError 방지
+
     async def trading_loop():
         """Main trading loop — runs orchestrator cycle with real KIS data."""
+        nonlocal data_provider
         from data.real_data_provider import RealDataProvider
         from live.session_tracker import MarketSessionTracker
 
@@ -632,7 +635,8 @@ async def run_live(config, args):
         await asyncio.gather(*tasks, return_exceptions=True)
 
         # Cleanup resources
-        await data_provider.close()
+        if data_provider is not None:
+            await data_provider.close()
         await broker.close()
         if orchestrator:
             await orchestrator.close()
