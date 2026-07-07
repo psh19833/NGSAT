@@ -396,9 +396,10 @@ def create_app(orchestrator=None, config=None) -> FastAPI:
             if broker and hasattr(broker, 'get_index_price'):
                 kospi = await broker.get_index_price("0001")
                 if kospi:
+                    change_pct = kospi.change_pct if kospi.change_pct is not None else 0.0
                     result["kospi"] = {
                         "price": round(kospi.close, 2),
-                        "change_pct": round(kospi.change_pct, 2) if kospi.change_pct is not None else None,
+                        "change_pct": round(change_pct, 2),
                     }
         except Exception:
             pass
@@ -408,9 +409,10 @@ def create_app(orchestrator=None, config=None) -> FastAPI:
             if broker and hasattr(broker, 'get_index_price'):
                 kosdaq = await broker.get_index_price("1001")
                 if kosdaq:
+                    change_pct = kosdaq.change_pct if kosdaq.change_pct is not None else 0.0
                     result["kosdaq"] = {
                         "price": round(kosdaq.close, 2),
-                        "change_pct": round(kosdaq.change_pct, 2) if kosdaq.change_pct is not None else None,
+                        "change_pct": round(change_pct, 2),
                     }
         except Exception:
             pass

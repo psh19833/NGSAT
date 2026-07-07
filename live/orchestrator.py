@@ -366,8 +366,19 @@ class TradingOrchestrator:
                 if abs(correction) >= 0.5:
                     old_score = regime_result.score
                     new_score = max(0.0, min(100.0, old_score + correction))
+                    # P-60: 보정 점수로 레짐 enum 즉시 재평가
+                    from core.config import load_config
+                    _cfg = load_config()
+                    bull_t = _cfg.strategy.regime_bull_threshold
+                    bear_t = _cfg.strategy.regime_bear_threshold
+                    if new_score <= bear_t:
+                        new_regime = MarketRegime.BEAR
+                    elif new_score >= bull_t:
+                        new_regime = MarketRegime.BULL
+                    else:
+                        new_regime = regime_result.regime
                     regime_result = RegimeResult(
-                        regime=regime_result.regime,
+                        regime=new_regime,
                         score=new_score,
                         reason=regime_result.reason + (
                             f" | 장중보정: KOSPI {intraday_change_pct:+.1f}% "
