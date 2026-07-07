@@ -143,6 +143,14 @@ class KisHttpClient:
                 logger.error(
                     f"KIS GET {endpoint_name} HTTP {status}: body={snippet}"
                 )
+                # P-55: 토큰 만료(EGW00123) 시 1회 재발급 후 재시도
+                if "EGW00123" in snippet and status == 500:
+                    logger.info(f"토큰 만료 감지 — 재발급 후 재시도: {endpoint_name}")
+                    self._token_manager.invalidate()
+                    headers = await self._build_headers(ep, extra_headers)
+                    resp = await client.get(url, params=params, headers=headers, timeout=self._timeout)
+                    resp.raise_for_status()
+                    return self._parse_response(resp.json(), endpoint_name)
                 raise BrokerError(
                     f"KIS HTTP error on {endpoint_name}: HTTP {status}"
                 ) from e
@@ -191,6 +199,15 @@ class KisHttpClient:
                 logger.error(
                     f"KIS POST {endpoint_name} HTTP {status}: body={snippet}"
                 )
+                # P-55: 토큰 만료(EGW00123) 시 1회 재발급 후 재시도
+                if "EGW00123" in snippet and status == 500:
+                    logger.info(f"토큰 만료 감지 — 재발급 후 재시도: {endpoint_name}")
+                    self._token_manager.invalidate()
+                    headers = await self._build_headers(ep, extra_headers)
+                    headers["content-type"] = "application/json"
+                    resp = await client.post(url, json=json_data, headers=headers, timeout=self._timeout)
+                    resp.raise_for_status()
+                    return self._parse_response(resp.json(), endpoint_name)
                 raise BrokerError(
                     f"KIS HTTP error on {endpoint_name}: HTTP {status}"
                 ) from e

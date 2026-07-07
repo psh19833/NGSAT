@@ -73,10 +73,12 @@ class KisWebSocketClient:
 
         Returns True if connected, False if approval_key fails.
         """
-        self._approval_key = await self._request_approval_key()
-        if not self._approval_key:
-            logger.error("KIS WebSocket: approval_key 발급 실패")
-            return False
+        # approval_key 최초 1회만 발급 (재연결 시 재사용)
+        if self._approval_key is None:
+            self._approval_key = await self._request_approval_key()
+            if not self._approval_key:
+                logger.error("KIS WebSocket: approval_key 발급 실패")
+                return False
 
         try:
             self._ws = await websockets.connect(
@@ -132,8 +134,8 @@ class KisWebSocketClient:
                 # KIS 핑 간격(30초)보다 길게 타임아웃 — 연결 생존 확인
                 continue
 
-            except websockets.ConnectionClosed:
-                logger.warning("KIS WebSocket 연결 종료 — 재연결 시도")
+            except websockets.ConnectionClosed as e:
+                logger.warning(f"KIS WebSocket 연결 종료 — 재연결 시도 (code={e.code}, reason={e.reason})")
                 self._ws = None
                 if not await self._reconnect():
                     break

@@ -118,6 +118,15 @@ class KisTokenManager:
         except Exception as e:
             logger.warning(f"토큰 캐시 쓰기 실패 (무시): {e}")
 
+    def invalidate(self) -> None:
+        """토큰 강제 무효화 — EGW00123 수신 시 호출 (P-55)."""
+        self._cached_token = None
+        try:
+            if self._CACHE_FILE.exists():
+                self._CACHE_FILE.unlink()
+        except Exception:
+            pass
+
     @property
     def is_configured(self) -> bool:
         """Check if credentials are present."""
