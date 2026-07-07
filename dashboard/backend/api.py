@@ -391,50 +391,64 @@ def create_app(orchestrator=None, config=None) -> FastAPI:
         result = {}
         broker = getattr(orch, '_broker', None)
 
-        # KOSPI
+        # KOSPI (raw KIS response 사용, parse_price 우회)
         try:
-            if broker and hasattr(broker, 'get_index_price'):
-                kospi = await broker.get_index_price("0001")
-                if kospi:
-                    change_pct = kospi.change_pct if kospi.change_pct is not None else 0.0
+            if broker and hasattr(broker, '_http'):
+                resp = await broker._http.get("inquire_index_price", params={
+                    "FID_COND_MRKT_DIV_CODE": "U", "FID_INPUT_ISCD": "0001",
+                })
+                if resp.success:
+                    raw = resp.raw.get("output", {}) if isinstance(resp.raw, dict) else resp.data
+                    price = float(raw.get("bstp_nmix_prpr", 0) or 0)
+                    chg = raw.get("bstp_nmix_prdy_ctrt") or raw.get("prdy_ctrt") or "0"
                     result["kospi"] = {
-                        "price": round(kospi.close, 2),
-                        "change_pct": round(change_pct, 2),
+                        "price": round(price, 2) if price else 0,
+                        "change_pct": round(float(chg), 2) if chg else 0.0,
                     }
         except Exception:
             pass
 
         # KOSDAQ
         try:
-            if broker and hasattr(broker, 'get_index_price'):
-                kosdaq = await broker.get_index_price("1001")
-                if kosdaq:
-                    change_pct = kosdaq.change_pct if kosdaq.change_pct is not None else 0.0
+            if broker and hasattr(broker, '_http'):
+                resp = await broker._http.get("inquire_index_price", params={
+                    "FID_COND_MRKT_DIV_CODE": "U", "FID_INPUT_ISCD": "1001",
+                })
+                if resp.success:
+                    raw = resp.raw.get("output", {}) if isinstance(resp.raw, dict) else resp.data
+                    price = float(raw.get("bstp_nmix_prpr", 0) or 0)
+                    chg = raw.get("bstp_nmix_prdy_ctrt") or raw.get("prdy_ctrt") or "0"
                     result["kosdaq"] = {
-                        "price": round(kosdaq.close, 2),
-                        "change_pct": round(change_pct, 2),
+                        "price": round(price, 2) if price else 0,
+                        "change_pct": round(float(chg), 2) if chg else 0.0,
                     }
         except Exception:
             pass
 
-        # US indices via Yahoo Finance (free, no API key needed)
+        # US indices via Yahoo Finance
         us_symbols = {
-            "sp500": "^GSPC",
-            "nasdaq": "^IXIC",
-            "dow": "^DJI",
+            "sp500": "^GSPC", "nasdaq": "^IXIC", "dow": "^DJI",
         }
         import httpx
         async with httpx.AsyncClient(timeout=5.0) as client:
             for key, symbol in us_symbols.items():
                 try:
-                    url = f"https://query1.finance.yahoo.com/v8/finance/chart/{symbol}?range=1d&interval=1m"
+                    url = f"https://query1.finance.yahoo.com/v8/finance/chart/{symbol}?range=5d&interval=1d"
                     resp = await client.get(url, headers={"User-Agent": "Mozilla/5.0"})
                     if resp.status_code == 200:
                         data = resp.json()
-                        meta = data.get("chart", {}).get("result", [{}])[0].get("meta", {})
-                        prev_close = meta.get("chartPreviousClose") or meta.get("previousClose") or 0
-                        current = meta.get("regularMarketPrice") or meta.get("currentPrice") or 0
-                        if current and prev_close:
+                        r0 = data.get("chart", {}).get("result", [{}])[0]
+                        # Get closes from quote data (most reliable)
+                        quotes = r0.get("indicators", {}).get("quote", [{}])[0]
+                        closes = [c for c in quotes.get("close", []) if c is not None]
+                        if len(closes) >= 2:
+                            prev_close = closes[-2]
+                            current = closes[-1]
+                        else:
+                            meta = r0.get("meta", {})
+                            prev_close = meta.get("chartPreviousClose") or meta.get("previousClose") or 0
+                            current = meta.get("regularMarketPrice") or meta.get("currentPrice") or 0
+                        if current and prev_close and prev_close > 0:
                             change_pct = (current - prev_close) / prev_close * 100
                             result[key] = {
                                 "price": round(current, 2),
