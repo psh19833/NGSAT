@@ -554,7 +554,7 @@ async def _code_to_name(code: str, adapter: Any = None) -> str:
     # 3. KIS API 호출 — 이름 + 분류 동시 획득
     if adapter is not None and hasattr(adapter, 'get_stock_info'):
         try:
-            from data.adapters.kis.mapper import parse_stock_info, _classify_product
+            from data.adapters.kis.mapper import parse_stock_info
             # 직접 API 호출 (adapter._http를 통해)하여 이름과 분류 동시 획득
             if hasattr(adapter, '_http'):
                 resp = await adapter._http.get("inquire_stock_basic", params={"PDNO": code, "PRDT_TYPE_CD": "300"})
@@ -589,7 +589,7 @@ async def _get_stock_type(code: str, adapter: Any = None) -> str:
             if hasattr(adapter, '_http'):
                 resp = await adapter._http.get("inquire_stock_basic", params={"PDNO": code, "PRDT_TYPE_CD": "300"})
                 if resp.success and resp.data:
-                    from data.adapters.kis.mapper import parse_stock_info, _classify_product
+                    from data.adapters.kis.mapper import parse_stock_info
                     info = parse_stock_info(resp.data)
                     ptype = info.product_type or "stock"
                     _type_cache[code] = (ptype, now + _NAME_CACHE_TTL)

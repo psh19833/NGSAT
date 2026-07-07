@@ -211,7 +211,11 @@ class TestTradingOrchestrator:
     @pytest.mark.asyncio
     async def test_refine_entry_fallback_when_unsupported(self, orchestrator):
         """분봉 미지원 broker → 진입 정밀화는 시장가 진입으로 폴백."""
-        decision = await orchestrator._refine_entry("005930")
+        from live.models import CycleContext
+        ctx = CycleContext()
+        decision = await orchestrator.entry_planner._refine_entry(
+            orchestrator._broker, "005930", ctx
+        )
         assert decision.should_enter is True
         assert decision.limit_price is None
         assert "정밀화 생략" in decision.reason
@@ -219,14 +223,22 @@ class TestTradingOrchestrator:
     @pytest.mark.asyncio
     async def test_refine_entry_defers_on_overheated_minutes(self, model):
         """분봉 과열 시 진입 보류(WAIT)."""
+        from live.models import CycleContext
         orch = TradingOrchestrator(OverheatedMinuteBroker(), model)
-        decision = await orch._refine_entry("005930")
+        ctx = CycleContext()
+        decision = await orch.entry_planner._refine_entry(
+            orch._broker, "005930", ctx
+        )
         assert decision.should_enter is False
 
     @pytest.mark.asyncio
     async def test_refine_exit_fallback_when_unsupported(self, orchestrator):
         """분봉 미지원 broker → 청산 정밀화 생략(시장가 폴백)."""
-        decision = await orchestrator._refine_exit("005930", -2.0)
+        from live.models import CycleContext
+        ctx = CycleContext()
+        decision = await orchestrator.exit_manager._refine_exit(
+            orchestrator._broker, "005930", -2.0, ctx
+        )
         assert decision.should_exit is False
         assert decision.limit_price is None
         assert "정밀화 생략" in decision.reason

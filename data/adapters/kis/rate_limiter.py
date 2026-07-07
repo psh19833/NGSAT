@@ -16,12 +16,10 @@ from __future__ import annotations
 
 import asyncio
 import time
-from typing import Optional
 
 
 class KisRateLimitError(Exception):
     """Rate limit exceeded."""
-    pass
 
 
 class KisRateLimiter:

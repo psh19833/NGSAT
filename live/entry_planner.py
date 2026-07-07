@@ -1,0 +1,468 @@
+"""NGSAT live trading — Entry Planner (Phase 2 분할).
+
+Responsible for:
+- Stock screening (Step 5, 5b)
+- ML predictions & buy execution (Step 6)
+- Position sizing, sector concentration, correlation checks
+- Entry refinement (minute-based timing)
+
+Orchestrator creates one EntryPlanner and calls `plan_entries()` each cycle.
+"""
+from __future__ import annotations
+
+from dataclasses import replace as dc_replace
+from typing import Any
+
+import numpy as np
+
+from core.config import StrategyConfig
+from core.logger import logger
+from core.types import (
+    DecisionAction,
+    MarketRegime,
+    OrderSide,
+    Position,
+    PriceData,
+    StrategyMode,
+)
+from live.executor import OrderExecutor
+from live.models import CycleContext
+from live.risk import RiskManager
+from ml.inference import MLInference
+from strategy.entry_timing import EntryDecision, EntryTiming, refine_entry
+from strategy.indicators import atr as calc_atr
+from strategy.mode_selector import estimate_volatility_from_prices
+from strategy.screener import screen_stocks
+
+
+class EntryPlanner:
+    """주식 종목 선정 → 진입 실행까지의 파이프라인.
+
+    한 사이클에서 이 planner는 orchestrator로부터 CycleContext를 받아:
+    1. 스크리닝 실행 (일봉 + 분봉)
+    2. 후보별 ML 평가
+    3. 리스크 체크 (섹터, 상관관계, 노출한도)
+    4. 포지션 사이징
+    5. 실제 매수 실행 (executor 위임)
+    """
+
+    def __init__(
+        self,
+        executor: OrderExecutor,
+        inference: MLInference,
+        risk: RiskManager,
+        strategy: StrategyConfig | None = None,
+    ) -> None:
+        self._executor = executor
+        self._inference = inference
+        self._risk = risk
+        self._strategy = strategy or StrategyConfig()
+
+    # ──────────────────────────────────────────
+    # Public API
+    # ──────────────────────────────────────────
+
+    async def plan_entries(
+        self,
+        ctx: CycleContext,
+        regime_result,  # RegimeResult
+        index_prices: list[PriceData],
+        stock_universe: list[tuple[Any, list[PriceData]]],
+        broker,  # BrokerAdapter (for index_price / minute calls)
+    ) -> dict:
+        """Execute the full entry pipeline.
+
+        Returns:
+            dict with keys used by orchestrator to build CycleResult:
+                candidates_found, screened, minute_screened,
+                predictions, deferred_entries, buys_executed,
+                entries_deferred, errors
+        """
+        result: dict = {
+            "candidates_found": 0,
+            "screened": [],
+            "minute_screened": [],
+            "predictions": [],
+            "deferred_entries": [],
+            "buys_executed": 0,
+            "entries_deferred": 0,
+            "errors": [],
+            "preset_change": None,
+        }
+
+        if not ctx.market_open:
+            return result
+
+        # ── TR-16: 장중 KOSPI 등락률 보정 (B안) ──
+        try:
+            index_price = await broker.get_index_price()
+        except Exception:
+            index_price = None
+        if index_price is not None and len(index_prices) >= 2:
+            self._apply_intraday_correction(regime_result, index_price, index_prices)
+
+        # ── Step 4A: Mode selection ──
+        vol = estimate_volatility_from_prices(
+            [p.close for p in index_prices],
+            [p.high for p in index_prices],
+            [p.low for p in index_prices],
+        )
+        ctx.atr_vol_pct = vol
+
+        # ── Step 4b: Auto preset ──
+        preset_change = await self._select_preset(regime_result, vol)
+        if preset_change:
+            result["preset_change"] = preset_change
+
+        # ── Step 5: Screen stocks ──
+        screen_result = screen_stocks(
+            stock_universe, regime_result,
+            config=self._strategy, index_prices=index_prices,
+        )
+        # ETN/ETF 종목 제외
+        if screen_result.candidates:
+            filtered = [c for c in screen_result.candidates if c.product_type == "stock"]
+            screen_result = dc_replace(screen_result, candidates=filtered)
+        result["candidates_found"] = len(screen_result.candidates)
+        result["screened"] = [
+            {"code": c.code, "name": c.name, "score": round(c.score, 1),
+             "reason": c.reason, "indicators": c.indicators}
+            for c in screen_result.candidates
+        ]
+
+        # ── Step 5b: Minute screening ──
+        await self._minute_screen(ctx, screen_result, result, broker)
+
+        # ── Step 6: ML predictions & buy execution ──
+        await self._evaluate_and_execute(ctx, screen_result, result, regime_result, stock_universe, broker)
+
+        return result
+
+    # ──────────────────────────────────────────
+    # Internal methods
+    # ──────────────────────────────────────────
+
+    def _apply_intraday_correction(self, regime_result, index_price, index_prices) -> None:
+        """TR-16: 장중 KOSPI 등락률 보정 (regime_result를 직접 수정)."""
+        intraday_change_pct = index_price.change_pct if index_price.change_pct is not None else 0.0
+        correction = intraday_change_pct * 2.5
+        correction = max(-15.0, min(15.0, correction))
+        if abs(correction) >= 0.5:
+            from core.config import load_config
+            from core.types import MarketRegime
+            from strategy.regime import RegimeResult
+            _cfg = load_config()
+            bull_t = _cfg.strategy.regime_bull_threshold
+            bear_t = _cfg.strategy.regime_bear_threshold
+            old_score = regime_result.score
+            new_score = max(0.0, min(100.0, old_score + correction))
+            if new_score <= bear_t:
+                new_regime = MarketRegime.BEAR
+            elif new_score >= bull_t:
+                new_regime = MarketRegime.BULL
+            else:
+                new_regime = regime_result.regime
+            # Note: this modifies regime_result in-place-ish; caller reads .regime after
+            regime_result.regime = new_regime
+            regime_result.score = new_score
+            regime_result.reason += (
+                f" | 장중보정: KOSPI {intraday_change_pct:+.1f}% "
+                f"({correction:+.0f}점, {old_score:.0f}→{new_score:.0f})"
+            )
+            regime_result.evidence["intraday_correction"] = correction
+            logger.info(f"장중 KOSPI {intraday_change_pct:+.1f}% — 레짐 보정 {correction:+.0f}점")
+
+    async def _select_preset(self, regime_result, vol: float) -> str | None:
+        """Auto preset selection."""
+        try:
+            from strategy.preset_router import PresetRouter
+            router = PresetRouter()
+            return router.select_preset(regime_result, atr_pct=vol)
+        except Exception:
+            return None
+
+    async def _minute_screen(self, ctx: CycleContext, screen_result, result: dict, broker) -> None:
+        """Step 5b: 분봉 기반 실시간 스크리닝 (보조 점수)."""
+        if not screen_result.candidates:
+            return
+        try:
+            from strategy.minute_screener import screen_by_minute
+            minute_data: dict[str, list[PriceData]] = {}
+            names: dict[str, str] = {}
+            ctx.minute_cache.clear()
+            for c in screen_result.candidates:
+                mp = await self._fetch_minute_prices(broker, c.code, ctx)
+                if mp and len(mp) >= 20:
+                    minute_data[c.code] = mp
+                    ctx.minute_cache[c.code] = mp
+                    names[c.code] = c.name
+            if minute_data:
+                minute_scores = screen_by_minute(minute_data)
+                for ms in minute_scores:
+                    if ms.code in names and not ms.name:
+                        ms.name = names[ms.code]
+                result["minute_screened"] = [
+                    {"code": s.code, "name": s.name, "score": s.score,
+                     "rsi": s.minute_rsi, "momentum": s.momentum_5m,
+                     "volume": s.volume_spike, "volatility": s.volatility_pct}
+                    for s in minute_scores[:10]
+                ]
+                logger.info(f"분봉 스크리닝: {len(minute_scores)}개 점수 산출")
+        except Exception as e:
+            logger.warning(f"분봉 스크리닝 실패 (skip): {e}")
+
+    async def _evaluate_and_execute(
+        self,
+        ctx: CycleContext,
+        screen_result,
+        result: dict,
+        regime_result,
+        stock_universe: list[tuple[Any, list[PriceData]]],
+        broker,
+    ) -> None:
+        """Step 6: 각 후보에 대해 ML 평가 → 리스크 체크 → 매수 실행."""
+        for candidate in screen_result.candidates if screen_result else []:
+            if not ctx.market_open:
+                break
+            if candidate.code in ctx.held_codes and ctx.held_quantities.get(candidate.code, 0) > 0:
+                continue
+
+            # 포지션 리스크: 최대 보유 종목 수
+            if self._strategy.max_holdings > 0 and len(ctx.held_codes) >= self._strategy.max_holdings:
+                logger.info(f"최대 보유 종목({self._strategy.max_holdings}개) 도달 — 신규 진입 생략")
+                break
+
+            # 섹터 집중도 체크 (TR-5)
+            candidate_sector = ctx.sector_lookup.get(candidate.code, "")
+            max_sec = self._strategy.max_sector_concentration
+            if candidate_sector and max_sec > 0:
+                current_sector_count = ctx.held_sector_counts.get(candidate_sector, 0)
+                if current_sector_count >= max_sec:
+                    logger.info(f"섹터 집중도 제한: {candidate.name}({candidate.code}) 업종={candidate_sector} — 진입 생략")
+                    result["entries_deferred"] += 1
+                    continue
+
+            # ML predictions
+            prices = self._find_prices(stock_universe, candidate.code)
+            if prices is None or len(prices) < 60:
+                continue
+
+            if ctx.is_short_term:
+                minute_prices = ctx.minute_cache.get(candidate.code) or await self._fetch_minute_prices(broker, candidate.code, ctx)
+                if minute_prices and len(minute_prices) >= 30:
+                    pred = self._inference.predict_minute_entry(candidate, minute_prices)
+                else:
+                    pred = self._inference.predict_entry(candidate, prices)
+            else:
+                pred = self._inference.predict_entry(candidate, prices)
+
+            if pred:
+                result["predictions"].append({
+                    "code": pred.code, "name": pred.name,
+                    "action": pred.action.value,
+                    "probability": round(pred.rise_probability, 3),
+                    "reason": pred.reason,
+                })
+
+            # HOLD 모드: 평가만 기록, 매수 차단
+            if ctx.mode == StrategyMode.HOLD:
+                continue
+
+            if pred and pred.action == DecisionAction.BUY:
+                await self._attempt_buy(ctx, candidate, pred, prices, result, regime_result, stock_universe, broker)
+
+    async def _attempt_buy(
+        self,
+        ctx: CycleContext,
+        candidate,
+        pred,
+        prices: list[PriceData],
+        result: dict,
+        regime_result,
+        stock_universe: list[tuple[Any, list[PriceData]]],
+        broker,
+    ) -> None:
+        """진입 정밀화 → 포지션 사이징 → 리스크 체크 → 매수 실행."""
+        entry = await self._refine_entry(broker, pred.code, ctx)
+        if not entry.should_enter:
+            result["entries_deferred"] += 1
+            result["deferred_entries"].append(
+                {"code": pred.code, "name": pred.name,
+                 "reason": entry.reason, "probability": round(pred.rise_probability, 3)}
+            )
+            return
+
+        ref_price = entry.limit_price or prices[-1].close
+        base_budget_pct = self._risk.position_size_pct
+
+        # ATR-based dynamic position sizing
+        target_vol_pct = 1.5
+        min_pct = base_budget_pct * 0.3
+        max_pct = base_budget_pct * 2.0
+        vol_pct = max(ctx.atr_vol_pct, 0.5)
+        adjusted_pct = base_budget_pct * (target_vol_pct / vol_pct)
+        adjusted_pct = max(min_pct, min(adjusted_pct, max_pct))
+
+        if not ctx.account:
+            return
+        budget = ctx.account.deposit * adjusted_pct
+        quantity = int(budget / ref_price) if ref_price > 0 else 0
+        if quantity <= 0:
+            return
+
+        # TR-13: 일일 거래 횟수 제한
+        if self._strategy.daily_trade_limit > 0 and ctx.daily_trade_count >= self._strategy.daily_trade_limit:
+            logger.info(f"일일 거래 횟수 제한 ({self._strategy.daily_trade_limit}회) 도달 — 진입 생략")
+            result["entries_deferred"] += 1
+            return
+
+        # TR-14: 총 노출 한도 체크
+        max_exposure = ctx.account.total_asset * (self._strategy.max_total_exposure_pct / 100.0)
+        current_exposure = sum(
+            p.eval_amount or (p.current_price * p.quantity)
+            for p in ctx.current_positions
+        )
+        new_exposure = ref_price * quantity
+        if current_exposure + new_exposure > max_exposure:
+            logger.info(f"총 노출 한도 초과 — 진입 생략")
+            result["entries_deferred"] += 1
+            return
+
+        # TR-7: 포트폴리오 상관관계 검사
+        corr_safe, corr_reason = await self._check_correlation_risk(
+            candidate_code=candidate.code,
+            candidate_prices=prices,
+            current_positions=ctx.current_positions,
+            stock_universe=stock_universe,
+        )
+        if not corr_safe:
+            result["entries_deferred"] += 1
+            result["deferred_entries"].append(
+                {"code": candidate.code, "name": candidate.name,
+                 "reason": corr_reason, "probability": 0}
+            )
+            return
+
+        # Execute buy
+        buy_reason = f"{pred.reason} || 진입정밀화: {entry.reason}"
+        import time
+        exec_result = await self._executor.execute_buy(
+            code=pred.code,
+            name=pred.name,
+            quantity=quantity,
+            price=entry.limit_price,
+            action=pred.action,
+            reason=buy_reason,
+        )
+
+        if exec_result.success:
+            result["buys_executed"] += 1
+            ctx.daily_trade_count += 1
+            ctx.pending_buy_trades.append({
+                "code": pred.code,
+                "name": pred.name,
+                "quantity": quantity,
+                "price": exec_result.price or ref_price,
+                "fill_price": exec_result.fill_price or 0,
+                "amount": exec_result.amount or (quantity * (exec_result.price or ref_price)),
+                "action": pred.action,
+                "reason": buy_reason,
+                "timestamp": time.time(),
+            })
+            ctx.held_codes.add(pred.code)
+            ctx.held_quantities[pred.code] = ctx.held_quantities.get(pred.code, 0) + quantity
+            if candidate_sector := ctx.sector_lookup.get(candidate.code, ""):
+                ctx.held_sector_counts[candidate_sector] = ctx.held_sector_counts.get(candidate_sector, 0) + 1
+        else:
+            result["errors"].append(f"매수 실패 {pred.code}: {exec_result.error}")
+
+    async def _check_correlation_risk(
+        self,
+        candidate_code: str,
+        candidate_prices: list[PriceData],
+        current_positions: list[Position],
+        stock_universe: list[tuple[Any, list[PriceData]]],
+    ) -> tuple[bool, str]:
+        """TR-7: 포트폴리오 상관관계 검사."""
+        if len(current_positions) < 1:
+            return True, ""
+
+        closes_map: dict[str, list[float]] = {candidate_code: [p.close for p in candidate_prices]}
+        for info, prices in stock_universe:
+            if info.code in {p.code for p in current_positions}:
+                closes_map[info.code] = [p.close for p in prices]
+
+        cand_returns = np.diff(np.log(closes_map[candidate_code][-60:]))
+
+        high_corr_count = 0
+        total_checked = 0
+        threshold = 0.85
+
+        for pos in current_positions:
+            p_prices = closes_map.get(pos.code)
+            if p_prices is None or len(p_prices) < 60:
+                continue
+            pos_returns = np.diff(np.log(p_prices[-60:]))
+            if len(cand_returns) != len(pos_returns):
+                continue
+            corr = np.corrcoef(cand_returns, pos_returns)[0, 1]
+            if not np.isnan(corr) and abs(corr) > threshold:
+                high_corr_count += 1
+            total_checked += 1
+
+        if total_checked == 0:
+            return True, ""
+
+        avg_corr = high_corr_count / total_checked
+        if avg_corr > 0.5:
+            return False, (
+                f"포트폴리오 상관관계 주의: {high_corr_count}/{total_checked}개 포지션 "
+                f"상관계수 {threshold:.0%} 초과"
+            )
+        return True, ""
+
+    async def _refine_entry(self, broker, code: str, ctx: CycleContext) -> EntryDecision:
+        """분봉으로 진입 타이밍/가격 정밀화."""
+        try:
+            minute_prices = ctx.minute_cache.get(code)
+            if minute_prices is None:
+                minute_prices = await self._fetch_minute_prices(broker, code, ctx)
+            if minute_prices is None:
+                return EntryDecision(
+                    timing=EntryTiming.ENTER_NOW, should_enter=True, limit_price=None,
+                    reason="분봉 미지원 — 정밀화 생략(시장가 진입)", evidence={},
+                )
+        except NotImplementedError:
+            return EntryDecision(
+                timing=EntryTiming.ENTER_NOW, should_enter=True, limit_price=None,
+                reason="분봉 미지원 — 정밀화 생략(시장가 진입)", evidence={},
+            )
+        except Exception as e:
+            logger.warning(f"분봉 조회 실패({code}) — 정밀화 생략: {type(e).__name__}")
+            return EntryDecision(
+                timing=EntryTiming.ENTER_NOW, should_enter=True, limit_price=None,
+                reason="분봉 조회 실패 — 정밀화 생략(시장가 진입)", evidence={},
+            )
+        return refine_entry(minute_prices)
+
+    async def _fetch_minute_prices(self, broker, code: str, ctx: CycleContext) -> list[PriceData] | None:
+        """Fetch minute data — cache-first, REST fallback."""
+        if hasattr(broker, '_minute_builder') and broker._minute_builder is not None:
+            bars = broker._minute_builder.get_bars(code, 60)
+            if len(bars) >= 30:
+                return bars
+        try:
+            return await broker.get_minute_history(code)
+        except Exception as e:
+            logger.warning(f"분봉 조회 실패({code}): {type(e).__name__}")
+            return None
+
+    @staticmethod
+    def _find_prices(
+        universe: list[tuple[Any, list[PriceData]]],
+        code: str,
+    ) -> list[PriceData] | None:
+        for info, prices in universe:
+            if info.code == code:
+                return prices
+        return None

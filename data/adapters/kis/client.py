@@ -16,7 +16,7 @@ from typing import Any
 
 import httpx
 
-from core.exceptions import BrokerError, DataError
+from core.exceptions import BrokerError
 from core.logger import logger
 from data.adapters.kis.endpoints import KisEndpoint, get_endpoint
 from data.adapters.kis.rate_limiter import KisRateLimiter

@@ -44,7 +44,7 @@
 ### 🔴 CRITICAL W1. 불필요한 5초 간격 전량 갱신 (성능 + 네트워크 낭비)
 **파일**: `App.jsx` 69-73  
 **문제**: `refreshAll()`이 5초마다 **7개 API를 전부 호출**한다. 사용자가 '진단 현황'이나 '백테스트' 탭에 있어도 운영 요약 데이터(계좌, 포지션, 레짐 등)를 계속 받아온다.  
-**영향**: 
+**영향**:
 - 백엔드에 불필요한 7건/5초 = 84건/분 API 호출 부하
 - 모바일 환경에서 데이터 사용량 낭비
 - 활성 탭과 무관한 상태 업데이트로 불필요한 리렌더링 유발  
@@ -73,7 +73,7 @@ const handleControl = async (action, code) => {
 ### 🟡 HIGH W4. 탭 기반 코드 스플리팅 미적용
 **파일**: `main.jsx` (진입점)  
 **문제**: 모든 컴포넌트가 하나의 번들로 로드된다. `React.lazy()` + `Suspense`가 전혀 사용되지 않았다.  
-**영향**: 
+**영향**:
 - 백테스트, 진단, 전략 설정 등 무거운 컴포넌트가 초기 로딩에 포함됨
 - 초기 번들 크기 불필요하게 증가
 - 실제로 사용하지 않는 기능(백테스트 등)의 코드도 항상 메모리에 상주
@@ -92,7 +92,7 @@ const handleControl = async (action, code) => {
 ### 🟡 HIGH W7. StrategyConfigPanel — 메타 프롭스를 데이터에 혼합
 **파일**: `StrategyConfigPanel.jsx` 792-799  
 **문제**: `configWithMeta` 객체에 `_modelInfo`, `_retraining`, `_retrainMsg`, `_onRetrain`, `_adjustMsg` 등 UI 상태와 이벤트 핸들러를 config 데이터와 함께 전달한다. 언더스코어 접두사로 "메타"임을 표시했지만, 데이터와 UI 상태의 명확한 분리 원칙에 위배된다.  
-**영향**: 
+**영향**:
 - `_onRetrain`(함수)이 데이터 객체에 포함되어 직렬화 시 문제 가능성
 - Component가 "이 props는 config의 일부인가?" 혼란
 - 타입스크립트 도입 시 any 타입 양산
@@ -130,7 +130,7 @@ setTimeout(async () => {
   setMessage(m => m + ' 완료')
 }, 500)
 ```
-**영향**: 
+**영향**:
 - 500ms는 서버가 저장을 완료했는지 보장하지 않음
 - 컴포넌트가 언마운트되어도 setTimeout 실행 (메모리 누출 + 고아 콜백)
 - `setMessage(m => ...)`는 함수형 업데이트지만, 컴포넌트 언마운트 후 경고 발생
@@ -157,7 +157,7 @@ export function formatNumber(n) {
 ```jsx
 alert(`✅ "${name}" 적용 완료\n변경: ${data.applied}개 항목\n...`)
 ```
-**영향**: 
+**영향**:
 - 브라우저 기본 UI로 테마/디자인 불일치
 - alert는 사용자 액션을 강제로 차단(modal)하지만, Toast로 충분한 정보까지 alert 사용
 - 모바일에서 alert UX 매우 나쁨
