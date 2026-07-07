@@ -171,6 +171,26 @@ export default function App() {
                 {formatDateTime(status.server_time)}
               </span>
             )}
+            {/* Indices mini strip - always visible */}
+            {indices && Object.keys(indices).length > 0 && (
+              <div className="flex items-center gap-2 text-[11px] font-mono">
+                {indices.kospi && (
+                  <span className={indices.kospi.change_pct >= 0 ? 'text-ngsat-green' : 'text-ngsat-red'}>
+                    KOSPI {indices.kospi.change_pct >= 0 ? '+' : ''}{indices.kospi.change_pct?.toFixed(1)}%
+                  </span>
+                )}
+                {indices.sp500 && (
+                  <span className={indices.sp500.change_pct >= 0 ? 'text-ngsat-green' : 'text-ngsat-red'}>
+                    S&P {indices.sp500.change_pct >= 0 ? '+' : ''}{indices.sp500.change_pct?.toFixed(1)}%
+                  </span>
+                )}
+                {indices.nasdaq && (
+                  <span className={indices.nasdaq.change_pct >= 0 ? 'text-ngsat-green' : 'text-ngsat-red'}>
+                    NASDAQ {indices.nasdaq.change_pct >= 0 ? '+' : ''}{indices.nasdaq.change_pct?.toFixed(1)}%
+                  </span>
+                )}
+              </div>
+            )}
             <button
               onClick={refreshAll}
               disabled={refreshing}
