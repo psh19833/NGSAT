@@ -172,7 +172,7 @@ class BacktestEngine:
         seed = int(hashlib.md5(f"{self._initial_capital}_{len(self._trades)}".encode()).hexdigest()[:8], 16)
         rng_seed = (seed % 10000) / 10000
         rng_seed = max(rng_seed, 0.1)  # P-54: 최소 slippage 보장 (rng_seed=0 방지)
-        slip_pct = 0.003 if urgent else 0.001
+        slip_pct = 0.005 if urgent else 0.002  # P-67: 0.1%→0.2% 상향 (저유동성 종목 gap 보정)
         if is_buy:
             # Buy: always positive (pay more)
             slippage = price * slip_pct * rng_seed

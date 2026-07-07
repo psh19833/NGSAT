@@ -165,7 +165,6 @@ class RealDataProvider:
         index_prices = await self._fetch_index(adapter)
         if len(index_prices) < 20:
             logger.warning(f"KOSPI 지수 부족 ({len(index_prices)}일) — 종목 로드 후 재계산")
-        await asyncio.sleep(0.05)  # Rate Limit 버킷 리필 대기
 
         # 2. 종목별 일봉 데이터 (KOSPI 후 0.05s 간격으로 안전)
         universe: list[tuple[StockInfo, list[PriceData]]] = []
@@ -183,8 +182,7 @@ class RealDataProvider:
             if (i + 1) % 10 == 0:
                 logger.info(f"  진행: {i + 1}/{len(self._codes)} 종목")
 
-            # KIS rate limit: 50ms 간격
-            await asyncio.sleep(0.05)
+            # KIS rate limit: 50ms 간격 — client.py KisRateLimiter가 중앙 관리
 
         if not universe:
             logger.error("KIS 실데이터 로드 실패 — 모든 종목 조회 실패")
@@ -425,7 +423,6 @@ class RealDataProvider:
                         self._universe_cache.append(
                             (StockInfo(code=code, name="", market=market), prices)
                         )
-                    await asyncio.sleep(0.1)
                 except Exception as e:
                     logger.warning(f"[{code}] 신규 편입 일봉 로드 실패: {e}")
 
@@ -467,7 +464,6 @@ class RealDataProvider:
                 new_index = self._compute_market_index(self._universe_cache)
             else:
                 new_index = self._synthetic_index()
-        await asyncio.sleep(0.1)
 
         # Refresh each stock's latest bar
         for i, (info, prices) in enumerate(self._universe_cache):
@@ -484,7 +480,6 @@ class RealDataProvider:
             except Exception as e:
                 logger.debug(f"[{info.code}] 시세 갱신 실패: {type(e).__name__}")
 
-            await asyncio.sleep(0.1)
             if (i + 1) % 10 == 0:
                 logger.debug(f"  시세 갱신 진행: {i + 1}/{len(self._universe_cache)}")
 

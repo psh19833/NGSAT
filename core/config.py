@@ -160,7 +160,7 @@ class StrategyConfig:
     max_total_exposure_pct: float = 50.0  # 총 노출 한도 (자산 대비 %, TR-14)
 
     # ── 트레일링 스탑 (P1-1) ──
-    trailing_stop_enabled: bool = False       # False=고정 손절, True=트레일링 스탑
+    trailing_stop_enabled: bool = True        # True=트레일링 스탑 활성 (ATR × 2.0, 수익 +1%부터)
     trailing_stop_atr_multiplier: float = 2.0 # ATR × N = 트레일링 폭
     trailing_stop_activate_pct: float = 1.0   # 수익 +N%부터 트레일링 스탑 활성화
 

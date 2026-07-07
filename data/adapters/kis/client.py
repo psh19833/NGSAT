@@ -1,4 +1,5 @@
-"""KIS HTTP client — async transport layer.
+"""
+KIS HTTP client — async transport layer.
 
 Uses httpx.AsyncClient for non-blocking HTTP calls.
 Handles:
@@ -6,12 +7,10 @@ Handles:
 - TR_ID injection
 - Response validation (rt_cd check)
 - Error handling with structured exceptions
+- Centralized rate limiting via KisRateLimiter
 """
-
 from __future__ import annotations
 
-import asyncio
-import time
 from dataclasses import dataclass
 from typing import Any
 
@@ -20,6 +19,7 @@ import httpx
 from core.exceptions import BrokerError, DataError
 from core.logger import logger
 from data.adapters.kis.endpoints import KisEndpoint, get_endpoint
+from data.adapters.kis.rate_limiter import KisRateLimiter
 from data.adapters.kis.token_manager import KisTokenManager
 
 
@@ -57,10 +57,11 @@ class KisHttpClient:
             app_key, app_secret, base_url
         )
         self._client: httpx.AsyncClient | None = None
-        # C-1: 중앙 Rate Limit — 모든 KIS REST API 호출에 적용
-        self._rate_semaphore = asyncio.Semaphore(15)  # 최대 15회 동시 호출
-        self._last_request_time: float = 0.0
-        self._rate_lock = asyncio.Lock()
+        # P-67: 중앙 Rate Limiter (Token Bucket + Semaphore)
+        # rate=20 req/s (KIS 기본), burst=30, max_concurrent=15
+        self._rate_limiter = KisRateLimiter(
+            rate_per_sec=20, burst=30, max_concurrent=15,
+        )
 
     async def _ensure_client(self) -> httpx.AsyncClient:
         """Lazily create the httpx client."""
@@ -70,14 +71,6 @@ class KisHttpClient:
                 headers={"Content-Type": "application/json"},
             )
         return self._client
-
-    async def _throttle(self) -> None:
-        """중앙 Rate Limit: API 간 최소 50ms 간격."""
-        async with self._rate_lock:
-            elapsed = time.monotonic() - self._last_request_time
-            if elapsed < 0.05:
-                await asyncio.sleep(0.05 - elapsed)
-            self._last_request_time = time.monotonic()
 
     async def _build_headers(
         self,
@@ -132,8 +125,7 @@ class KisHttpClient:
         headers = await self._build_headers(ep, extra_headers)
         url = f"{self._base_url}{ep.path}"
 
-        await self._throttle()
-        async with self._rate_semaphore:
+        async with self._rate_limiter:
             try:
                 resp = await client.get(url, params=params, headers=headers, timeout=self._timeout)
                 resp.raise_for_status()
@@ -188,8 +180,7 @@ class KisHttpClient:
         headers["content-type"] = "application/json"
         url = f"{self._base_url}{ep.path}"
 
-        await self._throttle()
-        async with self._rate_semaphore:
+        async with self._rate_limiter:
             try:
                 resp = await client.post(url, json=json_data, headers=headers, timeout=self._timeout)
                 resp.raise_for_status()

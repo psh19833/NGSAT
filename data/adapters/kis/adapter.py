@@ -697,7 +697,6 @@ class KisAdapter(BrokerAdapter):
                 "FID_COND_MRKT_DIV_CODE": "J",
                 "FID_INPUT_ISCD": code,
             })
-            await asyncio.sleep(0.1)  # Rate limit
             if resp.success:
                 from data.adapters.kis.mapper import parse_investor_data
                 return parse_investor_data(resp.raw)
@@ -725,7 +724,6 @@ class KisAdapter(BrokerAdapter):
                 "FID_COND_MRKT_DIV_CODE": "J",
                 "FID_INPUT_ISCD": code,
             })
-            await asyncio.sleep(0.1)  # Rate limit
             if resp.success:
                 from data.adapters.kis.mapper import parse_financial_ratio
                 return parse_financial_ratio(resp.raw)

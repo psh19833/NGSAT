@@ -42,35 +42,46 @@ export default function App() {
     setTimeout(() => setToast(null), 3000)
   }
 
-  const refreshAll = useCallback(async () => {
-    setRefreshing(true)
-    // Use allSettled so one failure doesn't block all; keep stale data on error
-    const results = await Promise.allSettled([
-      api.getStatus(), api.getAccount(), api.getPositions(),
-      api.getRegime(), api.getTrades(), api.getStrategyConfig(),
-      api.getIndices(),
-    ])
-    if (results[0].status === 'fulfilled') setStatus(results[0].value)
-    if (results[1].status === 'fulfilled') setAccount(results[1].value)
-    if (results[2].status === 'fulfilled') setPositions(results[2].value)
-    if (results[3].status === 'fulfilled') setRegime(results[3].value)
-    if (results[4].status === 'fulfilled') setTrades(results[4].value)
-    if (results[5].status === 'fulfilled') {
-      const d = results[5].value
-      setStrategyConfig(d?.config ? { ...d.config, active_preset: d.active_preset } : null)
+  const refreshForTab = useCallback(async (tab) => {
+    const tabApiMap = {
+      overview: [api.getStatus, api.getAccount, api.getPositions, api.getRegime, api.getTrades, api.getStrategyConfig, api.getIndices],
+      account: [api.getStatus, api.getAccount],
+      positions: [api.getStatus, api.getPositions],
+      trades: [api.getStatus, api.getTrades],
+      control: [api.getStatus],
+      diagnosis: [api.getStatus],
+      strategy: [api.getStatus, api.getStrategyConfig],
+      backtest: [api.getStatus],
     }
-    if (results[6].status === 'fulfilled') {
-      const d = results[6].value
+    const apis = tabApiMap[tab] || tabApiMap.overview
+    setRefreshing(true)
+    const results = await Promise.allSettled(apis.map(fn => fn()))
+    let idx = 0
+    if (apis.includes(api.getStatus) && results[idx]?.status === 'fulfilled') setStatus(results[idx++].value); else if (apis.includes(api.getStatus)) idx++
+    if (apis.includes(api.getAccount) && results[idx]?.status === 'fulfilled') setAccount(results[idx++].value); else if (apis.includes(api.getAccount)) idx++
+    if (apis.includes(api.getPositions) && results[idx]?.status === 'fulfilled') setPositions(results[idx++].value); else if (apis.includes(api.getPositions)) idx++
+    if (apis.includes(api.getRegime) && results[idx]?.status === 'fulfilled') setRegime(results[idx++].value); else if (apis.includes(api.getRegime)) idx++
+    if (apis.includes(api.getTrades) && results[idx]?.status === 'fulfilled') setTrades(results[idx++].value); else if (apis.includes(api.getTrades)) idx++
+    if (apis.includes(api.getStrategyConfig) && results[idx]?.status === 'fulfilled') {
+      const d = results[idx++].value
+      setStrategyConfig(d?.config ? { ...d.config, active_preset: d.active_preset } : null)
+    } else if (apis.includes(api.getStrategyConfig)) idx++
+    if (apis.includes(api.getIndices) && results[idx]?.status === 'fulfilled') {
+      const d = results[idx++].value
       if (d?.indices) setIndices(d.indices)
     }
     setRefreshing(false)
   }, [])
 
+  const refreshAll = useCallback(async () => {
+    return refreshForTab('overview')
+  }, [refreshForTab])
+
   useEffect(() => {
     refreshAll()
-    const interval = setInterval(refreshAll, 5000) // 5초마다 갱신
+    const interval = setInterval(() => refreshForTab(activeTab), 5000) // 탭별 필요한 API만 5초마다 갱신
     return () => clearInterval(interval)
-  }, [refreshAll])
+  }, [refreshAll, refreshForTab, activeTab])
 
   const handleControl = async (action, code) => {
     // Confirm for dangerous actions
@@ -78,10 +89,15 @@ export default function App() {
       setConfirmAction({ action, code })
       return
     }
-    if (action === 'start') await api.start()
-    else if (action === 'stop') await api.stop()
-    else if (action === 'forcehold') await api.forceHold(code)
-    await refreshAll()
+    try {
+      if (action === 'start') await api.start()
+      else if (action === 'stop') await api.stop()
+      else if (action === 'forcehold') await api.forceHold(code)
+      await refreshAll()
+    } catch (err) {
+      const actionLabels = { start: '매매 시작', stop: '매매 중단', forcehold: '강제 홀드' }
+      showToast(`${actionLabels[action] || action} 실패: ${err.message}`, 'error')
+    }
   }
 
   const handleTabChange = (tabId) => {
@@ -93,6 +109,8 @@ export default function App() {
     }
     setActiveTab(tabId)
     setMobileSidebarOpen(false)
+    // 탭 전환 시 해당 탭 데이터만 갱신 (전체 7개 API 대신 선택적 호출)
+    refreshForTab(tabId)
   }
 
   const handleRestart = async () => {
@@ -204,6 +222,12 @@ export default function App() {
             </button>
           </div>
         </header>
+
+        {!connected && (
+          <div className="sticky top-0 z-40 px-4 md:px-8 py-2 bg-red-700/90 border-b border-red-500/30 backdrop-blur-sm">
+            <p className="text-xs text-white text-center font-medium">⚠ 연결 끊김 — 백엔드 서버가 응답하지 않습니다</p>
+          </div>
+        )}
 
         {strategyDirty && activeTab === 'strategy' && (
           <div className="px-4 md:px-8 py-2 bg-yellow-900/30 border-b border-yellow-700/30">

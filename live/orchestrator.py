@@ -451,7 +451,6 @@ class TradingOrchestrator:
                     self._minute_cache.clear()
                     for c in screen_result.candidates:  # 전체 후보 분봉 조회 (WebSocket 캐시, API 0회)
                         mp = await self._fetch_minute_prices(c.code)
-                        await asyncio.sleep(0.1)  # ★ Rate Limit 보호
                         if mp and len(mp) >= 20:
                             minute_data[c.code] = mp
                             self._minute_cache[c.code] = mp  # 캐시 저장
@@ -566,7 +565,7 @@ class TradingOrchestrator:
                 base_budget_pct = self._risk.position_size_pct
                 # ATR-based dynamic position sizing (최소 = base 보장)
                 target_vol_pct = 1.5
-                min_pct = base_budget_pct * 1.0
+                min_pct = base_budget_pct * 0.3  # 고변동성 시 포지션 70%까지 축소 가능
                 max_pct = base_budget_pct * 2.0
                 vol_pct = max(vol, 0.5)  # vol은 이미 백분율 (std/mean*100). 0.5% 미만이면 0.5%로 floor
                 adjusted_pct = base_budget_pct * (target_vol_pct / vol_pct)

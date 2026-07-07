@@ -62,6 +62,7 @@ def parse_account_summary(raw: dict[str, Any]) -> AccountSummary:
         total_eval=total_eval,
         total_profit_loss=total_pl,
         total_profit_loss_pct=total_pl_pct,
+        daily_loss_pct=total_pl_pct,  # KIS는 별도 daily_loss 필드 미제공 → 전체 손익률로 대체
     )
 
 

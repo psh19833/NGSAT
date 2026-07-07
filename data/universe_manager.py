@@ -385,7 +385,8 @@ class UniverseManager:
                         elif code in self.reserve:
                             self._reserve_prices[code] = entry
                         loaded += 1
-                    await asyncio.sleep(0.1)  # Rate Limit
+
+                    # Rate Limit — client.py KisRateLimiter가 중앙 관리
             except Exception as e:
                 logger.warning(f"[{code}] 일봉 로드 실패: {e}")
         logger.info(f"일봉 로드: {loaded}/{len(codes)}종목")

@@ -145,8 +145,10 @@ class RiskManager:
         """
         limit_pct = self.effective_daily_loss_limit
 
-        # daily_loss_pct 우선, None이면 total_profit_loss_pct로 대체
-        loss_pct = account.daily_loss_pct if account.daily_loss_pct is not None else account.total_profit_loss_pct
+        # daily_loss_pct 우선, 0.0이면 total_profit_loss_pct로 대체
+        # (KIS는 별도 daily_loss 필드 미제공 → mapper에서 total_profit_loss_pct를 daily_loss_pct에 복사)
+        loss_pct = account.daily_loss_pct if abs(account.daily_loss_pct) > 0.001 else account.total_profit_loss_pct
+        loss_pct = abs(loss_pct)  # KIS 음수(-3.5=3.5% 손실) → 절대값으로 통일
 
         if loss_pct >= limit_pct:
             reason = (
