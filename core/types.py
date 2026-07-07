@@ -17,8 +17,8 @@ KST = timedelta(hours=9)
 
 
 def now_kst() -> datetime:
-    """Return current datetime in KST (Korea Standard Time)."""
-    return datetime.now(timezone.utc) + KST
+    """Return current datetime in KST (Korea Standard Time, UTC+9)."""
+    return datetime.now(timezone(timedelta(hours=9)))
 
 
 class Market(str, Enum):
