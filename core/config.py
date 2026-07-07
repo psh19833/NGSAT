@@ -119,7 +119,7 @@ class StrategyConfig:
     # ── 스크리너 ──
     screener_bull_min_score: float = 60.0
     screener_bull_max_candidates: int = 15
-    screener_neutral_min_score: float = 30.0
+    screener_neutral_min_score: float = 35.0
     screener_neutral_max_candidates: int = 10
     screener_bear_min_score: float = 50.0
     screener_bear_max_candidates: int = 8
@@ -131,6 +131,7 @@ class StrategyConfig:
     ml_training_end_date: str | None = None    # 과거 데이터 학습 종료일 (YYYY-MM-DD)
     ml_auto_select_model: bool = False        # True: 5개 모델 전부 학습 후 최고 AUC로 자동 교체
     ml_auto_retrain: bool = False          # True: 매일 장 마감 후 자동 재학습
+    ml_minute_auto_retrain: bool = False   # True: 장 마감 후 분봉ML(단타)도 자동 재학습
     ml_swing_forward_days: int = 3        # 스윙: N일 뒤 +2% 예측
     ml_forward_threshold: float = 0.02    # ML 일봉 양성 판정 임계 수익률 (2%)
     ml_short_forward_minutes: int = 60    # 단타: N분 뒤 +1.0% 예측 (분봉 ML threshold=0.01)

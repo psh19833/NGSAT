@@ -113,9 +113,10 @@ class ExitManager:
         if result:
             return result
 
-        # 1) 일봉 손절선
+        # 1) 일봉 손절선 (PC-3: 레짐 기반 동적 조정)
         loss_pct = abs(min(position.profit_loss_pct, 0))
-        effective_stop = self._risk.effective_stop_loss_pct or position.stop_loss_pct
+        base_stop = self._risk.effective_stop_loss_pct or position.stop_loss_pct
+        effective_stop = self._risk.regime_adjusted_stop_loss(base_stop)
         if loss_pct >= effective_stop:
             return await self._execute_exit(
                 ctx, position, sell_price, DecisionAction.STOP_LOSS,

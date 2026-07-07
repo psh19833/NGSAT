@@ -121,6 +121,31 @@ class RiskManager:
         """현재 모드의 기본 손절선."""
         return self._mode_stop_loss_map().get(self._mode, self._config.default_stop_loss_pct)
 
+    def regime_adjusted_stop_loss(self, base_stop_pct: float | None = None) -> float:
+        """레짐 점수 기반 동적 손절선 (PC-3).
+
+        Bull(≥65):   +1%p 여유   → 추세 조정에 휩쓸리지 않음
+        Bear(<35):   -1%p 타이트 → 손실 조기 확정, 리스크↓
+        Neutral:     기본값 유지
+
+        Args:
+            base_stop_pct: 기준 손절선 (None이면 effective_stop_loss_pct 사용)
+
+        Returns:
+            regime-adjusted stop loss percentage.
+        """
+        base = base_stop_pct if base_stop_pct is not None else self.effective_stop_loss_pct
+        score = self._last_regime_score
+
+        if score >= 65:  # Bull — 넓게
+            adjusted = base + 1.0
+            return min(adjusted, self._config.max_stop_loss_pct)
+        elif score < 35:  # Bear — 좁게
+            adjusted = base - 1.0
+            return max(adjusted, 1.0)
+        else:  # Neutral — 그대로
+            return base
+
     @property
     def effective_daily_loss_limit(self) -> float:
         """현재 모드의 일일 손실 한도."""

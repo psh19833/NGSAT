@@ -268,6 +268,10 @@ class MLInference:
 
     # ── 분봉 기반 단타 추론 (하이브리드 2단계) ──
 
+    def update_minute_model(self, new_model: PriceRiseModel) -> None:
+        """분봉 모델 hot-reload (프로세스 재시작 없이 교체)."""
+        self._minute_model = new_model
+
     @property
     def has_minute_model(self) -> bool:
         """분봉 단타 모델이 설정되어 있는가."""

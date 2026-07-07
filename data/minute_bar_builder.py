@@ -30,7 +30,7 @@ class MinuteBarBuilder:
         max_bars: Maximum number of minute bars to keep per code.
     """
 
-    def __init__(self, max_bars: int = 120):
+    def __init__(self, max_bars: int = 500):
         self._max_bars = max_bars
 
         # code → list of ticks in the current (incomplete) minute

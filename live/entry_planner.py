@@ -337,6 +337,7 @@ class EntryPlanner:
             candidate_prices=prices,
             current_positions=ctx.current_positions,
             stock_universe=stock_universe,
+            sector_lookup=ctx.sector_lookup,
         )
         if not corr_safe:
             result["entries_deferred"] += 1
@@ -385,8 +386,9 @@ class EntryPlanner:
         candidate_prices: list[PriceData],
         current_positions: list[Position],
         stock_universe: list[tuple[Any, list[PriceData]]],
+        sector_lookup: dict[str, str] | None = None,
     ) -> tuple[bool, str]:
-        """TR-7: 포트폴리오 상관관계 검사."""
+        """TR-7: 포트폴리오 상관관계 검사 (PC-2: 가중 + 업종 보정)."""
         if len(current_positions) < 1:
             return True, ""
 
@@ -396,31 +398,55 @@ class EntryPlanner:
                 closes_map[info.code] = [p.close for p in prices]
 
         cand_returns = np.diff(np.log(closes_map[candidate_code][-60:]))
+        n = len(cand_returns)
 
-        high_corr_count = 0
-        total_checked = 0
-        threshold = 0.85
+        # 가중치: 최근 20봉 1.5배, 이전 40봉 1.0배
+        weights = np.ones(n)
+        weights[-20:] = 1.5
+        weights[:n-20] = 1.0
+
+        cand_sector = (sector_lookup or {}).get(candidate_code, "")
+
+        weighted_corr_sum = 0.0
+        weight_sum = 0.0
+        threshold = 0.75
 
         for pos in current_positions:
             p_prices = closes_map.get(pos.code)
             if p_prices is None or len(p_prices) < 60:
                 continue
             pos_returns = np.diff(np.log(p_prices[-60:]))
-            if len(cand_returns) != len(pos_returns):
+            if len(pos_returns) != n:
                 continue
-            corr = np.corrcoef(cand_returns, pos_returns)[0, 1]
-            if not np.isnan(corr) and abs(corr) > threshold:
-                high_corr_count += 1
-            total_checked += 1
 
-        if total_checked == 0:
+            # Pearson correlation using weighted returns
+            w = weights[:len(pos_returns)]
+            w_mean_cand = np.average(cand_returns, weights=w)
+            w_mean_pos = np.average(pos_returns, weights=w)
+            w_cov = np.sum(w * (cand_returns - w_mean_cand) * (pos_returns - w_mean_pos)) / np.sum(w)
+            w_std_cand = np.sqrt(np.sum(w * (cand_returns - w_mean_cand)**2) / np.sum(w))
+            w_std_pos = np.sqrt(np.sum(w * (pos_returns - w_mean_pos)**2) / np.sum(w))
+            corr = w_cov / (w_std_cand * w_std_pos) if w_std_cand > 0 and w_std_pos > 0 else 0
+
+            if np.isnan(corr):
+                continue
+
+            # 동일 업종 보정: 같은 업종이면 +0.1
+            pos_sector = (sector_lookup or {}).get(pos.code, "")
+            sector_bonus = 0.1 if (cand_sector and pos_sector and cand_sector == pos_sector) else 0.0
+
+            effective_corr = abs(corr) + sector_bonus
+            weight = np.sum(w)
+            weighted_corr_sum += effective_corr * weight
+            weight_sum += weight
+
+        if weight_sum == 0:
             return True, ""
 
-        avg_corr = high_corr_count / total_checked
-        if avg_corr > 0.5:
+        avg_weighted_corr = weighted_corr_sum / weight_sum
+        if avg_weighted_corr > threshold:
             return False, (
-                f"포트폴리오 상관관계 주의: {high_corr_count}/{total_checked}개 포지션 "
-                f"상관계수 {threshold:.0%} 초과"
+                f"포트폴리오 상관관계 주의: 가중치 상관 {avg_weighted_corr:.2f} > {threshold:.0%}"
             )
         return True, ""
 

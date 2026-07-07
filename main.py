@@ -425,6 +425,40 @@ async def run_live(config, args):
                     except Exception as e:
                         logger.exception(f"자동 재학습 실패: {e}")
 
+                    # 분봉ML 자동 재학습 (in-process, PC-3)
+                    if config.strategy.ml_minute_auto_retrain:
+                        logger.info("분봉ML 자동 재학습 시작")
+                        try:
+                            from ml.training.trainer import train_from_minute_data
+                            mb = getattr(orchestrator, '_minute_builder', None)
+                            minute_prices_list = []
+                            minute_codes: list[str] = []
+                            for code in codes:
+                                if mb is not None:
+                                    bars = mb.get_bars(code, 60)
+                                else:
+                                    bars = None
+                                if not bars or len(bars) < 60:
+                                    continue
+                                minute_prices_list.append(bars)
+                                minute_codes.append(code)
+                            if len(minute_codes) >= 10:
+                                minute_model, minute_result = train_from_minute_data(
+                                    minute_prices_list, minute_codes,
+                                    model_type=config.strategy.ml_model_type,
+                                    forward_minutes=config.strategy.ml_short_forward_minutes,
+                                    forward_threshold=config.strategy.ml_minute_forward_threshold,
+                                )
+                                if minute_model and minute_model.is_trained:
+                                    model.update_minute_model(minute_model)
+                                    from ml.training.persistence import save_model
+                                    save_model(minute_model, "models/trained/minute_model.pkl")
+                                    logger.info(f"분봉ML 재학습 완료: AUC={minute_result.auc:.3f}")
+                            else:
+                                logger.warning(f"분봉ML 재학습 데이터 부족: {len(minute_codes)}개 종목")
+                        except Exception as e:
+                            logger.exception(f"분봉ML 재학습 실패: {e}")
+
         # ── Helper: 동적 유니버스 관리 ──
         async def _manage_universe() -> list:
             from data.universe_manager import UniverseManager
