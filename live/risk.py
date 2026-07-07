@@ -13,6 +13,7 @@ from typing import Optional
 
 from core.config import RiskConfig
 from core.logger import logger
+from core.types import MarketRegime
 from core.types import AccountSummary, DecisionAction, Position
 
 
@@ -45,6 +46,8 @@ class RiskManager:
         self._halted = False
         self._halt_reason: Optional[str] = None
         self._mode: str = "swing"  # 기본 스윙 모드
+        self._last_regime_score: float = 50.0  # P-66: position_sizer용
+        self._last_atr_pct: float = 0.0
         if strategy_config is None:
             from core.config import StrategyConfig
             strategy_config = StrategyConfig()
@@ -93,9 +96,24 @@ class RiskManager:
             f"포지션크기 {self._mode_position_size_map()[mode]:.0%})"
         )
 
+    def set_regime_context(self, regime_score: float, atr_pct: float) -> None:
+        """Set current regime context for position sizing (P-66)."""
+        self._last_regime_score = regime_score
+        self._last_atr_pct = atr_pct
+
     @property
     def position_size_pct(self) -> float:
-        """현재 모드의 포지션 크기 비율."""
+        """현재 모드의 포지션 크기 비율.
+
+        BEAR(hold) 모드에서는 position_sizer의 Kelly 기반 동적 배분 사용.
+        """
+        if self._mode == "hold":
+            from live.position_sizer import calc_position_size
+            return calc_position_size(
+                regime=MarketRegime.BEAR,
+                regime_score=self._last_regime_score,
+                atr_pct=self._last_atr_pct,
+            )
         return self._mode_position_size_map().get(self._mode, 0.10)
 
     @property

@@ -55,6 +55,7 @@ from strategy.scorer import (
     score_relative_strength,
     score_candlestick,
 )
+from strategy.sector_weights import get_sector_bonus
 from strategy.regime import RegimeResult
 
 
@@ -349,7 +350,10 @@ def _evaluate_single_stock(
     ) if patterns else 0
     indicator_scores["pattern"] = min(100.0, pattern_score * 10)
 
-    total_score = compute_total_score(indicator_scores, regime)
+    total_score = compute_total_score(indicator_scores, regime,
+        sector_bonus=get_sector_bonus(MarketRegime(regime) if isinstance(regime, str) else regime, getattr(stock, 'sector', None)),
+        momentum_bonus=0.0,
+    )
 
     # ── KOSPI bonus ──
     kospi_bonus = False

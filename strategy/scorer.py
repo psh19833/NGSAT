@@ -149,6 +149,8 @@ def score_candlestick(bullish: bool, bearish: bool) -> float:
 def compute_total_score(
     indicator_scores: dict[str, float],
     regime: str,
+    sector_bonus: float = 0.0,
+    momentum_bonus: float = 0.0,
 ) -> float:
     """Weighted total score from individual indicator scores.
 
@@ -159,6 +161,8 @@ def compute_total_score(
     Args:
         indicator_scores: {indicator_name: score_0_100}
         regime: "bull" / "neutral" / "bear"
+        sector_bonus: Sector rotation bonus (P-66).
+        momentum_bonus: Dual momentum bonus (P-66).
 
     Returns:
         Composite score 0~100.
@@ -176,4 +180,6 @@ def compute_total_score(
         return 50.0
 
     normalized = weighted_sum / total_weight
+    normalized += sector_bonus
+    normalized += momentum_bonus
     return max(0.0, min(100.0, normalized))

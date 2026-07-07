@@ -400,6 +400,8 @@ class TradingOrchestrator:
             )
             mode_decision = select_mode(regime_result, atr_pct=vol, config=self._strategy)
             self._current_mode = mode_decision.mode.value
+            # P-66: position_sizer용 레짐 컨텍스트 업데이트
+            self._risk.set_regime_context(regime_result.score, vol)
             result.mode_decision = {
                 "mode": mode_decision.mode.value,
                 "confidence": mode_decision.confidence,
