@@ -19,7 +19,7 @@ export const api = {
   getStatus: () => fetchJSON('/status'),
   getAccount: () => fetchJSON('/account'),
   getPositions: () => fetchJSON('/positions'),
-  getTrades: (limit, offset) => fetchJSON(`/trades?limit=${limit}&offset=${offset}`),
+  getTrades: (limit = 50, offset = 0) => fetchJSON(`/trades?limit=${limit}&offset=${offset}`),
   getRegime: () => fetchJSON('/regime'),
 
   start: () => fetchJSON('/control/start', { method: 'POST' }),
