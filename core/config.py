@@ -270,6 +270,7 @@ def load_config(env_file: str | None = None) -> Config:
     s.ml_training_start_date = os.getenv("NGSAT_ML_TRAINING_START_DATE", None)
     s.ml_training_end_date = os.getenv("NGSAT_ML_TRAINING_END_DATE", None)
     s.ml_auto_retrain = os.getenv("NGSAT_ML_AUTO_RETRAIN", "false").lower() == "true"
+    s.ml_minute_auto_retrain = os.getenv("NGSAT_ML_MINUTE_AUTO_RETRAIN", "false").lower() == "true"
     s.ml_auto_select_model = os.getenv("NGSAT_ML_AUTO_SELECT_MODEL", "false").lower() == "true"
     s.ml_swing_forward_days = int(os.getenv("NGSAT_ML_SWING_FORWARD_DAYS", "3"))
     s.ml_short_forward_minutes = int(os.getenv("NGSAT_ML_SHORT_FORWARD_MINUTES", "60"))
