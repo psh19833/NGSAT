@@ -423,7 +423,7 @@ class TradingOrchestrator:
             result.candidates_found = len(screen_result.candidates)
             result.screened = [
                 {"code": c.code, "name": c.name, "score": round(c.score, 1),
-                 "reason": c.reason}
+                 "reason": c.reason, "indicators": c.indicators}
                 for c in screen_result.candidates
             ]
             logger.info(f"스크리닝: {screen_result.total_scanned}개 → {result.candidates_found}개 후보")
