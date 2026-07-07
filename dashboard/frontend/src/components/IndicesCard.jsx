@@ -1,4 +1,4 @@
-import { formatPercent } from '../utils.js'
+import { formatNumber } from '../utils.js'
 
 export default function IndicesCard({ indices }) {
   if (!indices || Object.keys(indices).length === 0) return null
@@ -16,7 +16,10 @@ export default function IndicesCard({ indices }) {
           <div key={key} className="flex items-center justify-between text-xs">
             <span className="text-ngsat-text font-medium">{labels[key] || key}</span>
             <span className={`num font-mono ${val.change_pct >= 0 ? 'text-ngsat-green' : 'text-ngsat-red'}`}>
-              {val.price.toLocaleString()} <span className="text-[10px]">({formatPercent(val.change_pct / 100)})</span>
+              {formatNumber(val.price)} 
+              <span className="text-[10px]">
+                ({val.change_pct >= 0 ? '+' : ''}{val.change_pct?.toFixed(1) || '0.0'}%)
+              </span>
             </span>
           </div>
         ))}
