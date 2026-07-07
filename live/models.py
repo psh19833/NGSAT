@@ -12,7 +12,7 @@ from dataclasses import dataclass, field
 from datetime import datetime
 from typing import Any
 
-from core.types import AccountSummary, MarketRegime, Position, PriceData, StrategyMode
+from core.types import AccountSummary, MarketRegime, Position, PriceData, StrategyMode, now_kst
 
 
 @dataclass
@@ -24,7 +24,7 @@ class CycleContext:
     """
     # ── Immutable inputs (set at cycle start) ──
     cycle_number: int = 0
-    timestamp: datetime = field(default_factory=datetime.now)
+    timestamp: datetime = field(default_factory=now_kst)
     account: AccountSummary | None = None
     current_positions: list[Position] = field(default_factory=list)
     held_codes: set[str] = field(default_factory=set)
@@ -46,8 +46,7 @@ class CycleContext:
     atr_vol_pct: float = 0.0
     preset_change: str | None = None
 
-    # ── Pending buy buffer (cross-cycle) ──
-    pending_buy_trades: list[dict] = field(default_factory=list)
+    # ── Daily trade tracking ──
     daily_trade_date: str = ""
     daily_trade_count: int = 0
 

@@ -28,6 +28,7 @@ from core.types import (
 from live.executor import OrderExecutor
 from live.models import CycleContext
 from live.risk import RiskManager
+from live.trade_recorder import TradeRecorder
 from ml.inference import MLInference
 from strategy.entry_timing import EntryDecision, EntryTiming, refine_entry
 from strategy.indicators import atr as calc_atr
@@ -51,11 +52,13 @@ class EntryPlanner:
         executor: OrderExecutor,
         inference: MLInference,
         risk: RiskManager,
+        trade_recorder: TradeRecorder,
         strategy: StrategyConfig | None = None,
     ) -> None:
         self._executor = executor
         self._inference = inference
         self._risk = risk
+        self._trade_recorder = trade_recorder
         self._strategy = strategy or StrategyConfig()
 
     # ──────────────────────────────────────────
@@ -358,7 +361,7 @@ class EntryPlanner:
         if exec_result.success:
             result["buys_executed"] += 1
             ctx.daily_trade_count += 1
-            ctx.pending_buy_trades.append({
+            self._trade_recorder.record_pending_buy({
                 "code": pred.code,
                 "name": pred.name,
                 "quantity": quantity,

@@ -18,6 +18,7 @@ Endpoints:
 """
 
 from __future__ import annotations
+from contextlib import asynccontextmanager
 from dataclasses import asdict
 from datetime import datetime
 import os
@@ -25,11 +26,11 @@ import os
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, JSONResponse
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 from core.logger import logger
 from core.config_service import ConfigService
-from pydantic import BaseModel, Field
+from core.types import now_kst
 
 # ── ConfigService field map (DB key → StrategyConfig attr) ──
 CONFIG_FIELD_MAP: dict[str, str] = {
@@ -130,7 +131,46 @@ class StrategyUpdateRequest(BaseModel):
     reset: bool = False
 
 
+# ── API DTO models ──
+
+class HealthResponse(BaseModel):
+    """/api/health response."""
+    status: str = "ok"
+    service: str = "NGSAT Dashboard API"
+    server_time: str = ""
+
+
+class StatusResponse(BaseModel):
+    """/api/status response."""
+    connected: bool
+    state: str = "idle"
+    is_running: bool = False
+    risk_halted: bool = False
+    risk_reason: str | None = None
+    cycle_count: int = 0
+    current_mode: str = "swing"
+    mode_stop_loss_pct: float | None = None
+    mode_daily_loss_limit: float | None = None
+    server_time: str = ""
+
+
 # ── App factory ──
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    """FastAPI lifespan handler — startup/shutdown lifecycle."""
+    logger.info("NGSAT Dashboard API starting up")
+    yield
+    # Shutdown: dispose DB engine if we created one
+    orch = getattr(app.state, 'orchestrator', None)
+    if orch is not None:
+        try:
+            if hasattr(orch, '_db_engine') and orch._db_engine:
+                orch._db_engine.dispose()
+        except Exception as e:
+            logger.warning(f"DB engine dispose error: {e}")
+    logger.info("NGSAT Dashboard API shutdown complete")
+
 
 def create_app(orchestrator=None, config=None) -> FastAPI:
     """Create the FastAPI dashboard app.
@@ -145,7 +185,8 @@ def create_app(orchestrator=None, config=None) -> FastAPI:
     app = FastAPI(
         title="NGSAT Dashboard API",
         description="New Generation Stock Auto Trader — Dashboard",
-        version="0.1.0",
+        version="0.1.1",
+        lifespan=lifespan,
     )
 
     # CORS for frontend — production: set NGSAT_CORS_ORIGINS env (comma-separated)
@@ -241,27 +282,27 @@ def create_app(orchestrator=None, config=None) -> FastAPI:
         return {"connected": True, "enabled": enabled}
 
     # ── Status ──
-    @app.get("/api/status")
+    @app.get("/api/status", response_model=StatusResponse)
     async def get_status():
         orch = _get_orchestrator()
         if orch is None:
-            return _not_connected()
+            return StatusResponse(connected=False)
 
         controller = orch.controller
         risk = orch.risk_manager
 
-        return {
-            "connected": True,
-            "state": controller.state.value,
-            "is_running": controller.is_running,
-            "risk_halted": risk.is_halted,
-            "risk_reason": risk.halt_reason,
-            "cycle_count": orch._cycle_count,
-            "current_mode": orch._current_mode,
-            "mode_stop_loss_pct": risk.effective_stop_loss_pct,
-            "mode_daily_loss_limit": risk.effective_daily_loss_limit,
-            "server_time": datetime.now().isoformat(),
-        }
+        return StatusResponse(
+            connected=True,
+            state=controller.state.value,
+            is_running=controller.is_running,
+            risk_halted=risk.is_halted,
+            risk_reason=risk.halt_reason,
+            cycle_count=orch._cycle_count,
+            current_mode=orch._current_mode,
+            mode_stop_loss_pct=risk.effective_stop_loss_pct,
+            mode_daily_loss_limit=risk.effective_daily_loss_limit,
+            server_time=now_kst().isoformat(),
+        )
 
     # ── Account ──
     @app.get("/api/account")
@@ -855,9 +896,13 @@ def create_app(orchestrator=None, config=None) -> FastAPI:
         return {"connected": True, "result": None, "message": "완료된 백테스트 결과가 없습니다"}
 
     # ── Health ──
-    @app.get("/api/health")
+    @app.get("/api/health", response_model=HealthResponse)
     async def health():
-        return {"status": "ok", "service": "NGSAT Dashboard API"}
+        return HealthResponse(
+            status="ok",
+            service="NGSAT Dashboard API",
+            server_time=now_kst().isoformat(),
+        )
 
     # ── WebSocket: Realtime ──
     connected_ws: set[WebSocket] = set()

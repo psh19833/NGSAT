@@ -35,11 +35,11 @@ from core.types import (
     AccountSummary,
     DecisionAction,
     MarketRegime,
-    OrderSide,
     Position,
     PriceData,
     StrategyMode,
     is_market_hours,
+    now_kst,
 )
 from data.adapters.base import BrokerAdapter
 from live.controller import TradingController
@@ -48,6 +48,7 @@ from live.risk import RiskManager
 from live.models import CycleContext
 from live.entry_planner import EntryPlanner
 from live.exit_manager import ExitManager
+from live.trade_recorder import TradeRecorder
 from ml.inference import MLInference
 from strategy.regime import RegimeResult, evaluate_regime
 from strategy.mode_selector import estimate_volatility_from_prices, select_mode
@@ -67,7 +68,7 @@ class CycleResult:
         errors: List of error messages.
         reason: Human-readable cycle summary (Korean).
     """
-    timestamp: datetime = field(default_factory=datetime.now)
+    timestamp: datetime = field(default_factory=now_kst)
     regime: MarketRegime = MarketRegime.NEUTRAL
     mode: str = "swing"
     candidates_found: int = 0
@@ -121,19 +122,6 @@ class TradingOrchestrator:
         self._trading_allowed = True  # 09:10 이후 true (main.py에서 제어)
         self._position_budget_pct = position_budget_pct
 
-        # Phase 2: EntryPlanner + ExitManager
-        self._entry_planner = EntryPlanner(
-            executor=self._executor,
-            inference=self._inference,
-            risk=self._risk,
-            strategy=self._strategy,
-        )
-        self._exit_manager = ExitManager(
-            executor=self._executor,
-            inference=self._inference,
-            risk=self._risk,
-        )
-
         # Database for trade records
         from sqlalchemy import create_engine
         from sqlalchemy.orm import sessionmaker
@@ -153,9 +141,27 @@ class TradingOrchestrator:
         Session = sessionmaker(bind=self._db_engine)
         self._Session = Session  # sessionmaker factory (thread-safe, for per-cycle writes)
         self._db_session = Session()
-        self._TradeRepo = TradeRepository  # class ref for per-cycle instantiation
         self._trade_repo = TradeRepository(self._db_session)
+        self._TradeRepo = TradeRepository  # class ref for per-cycle instantiation
         self._PositionRepo = PositionRepository
+
+        # Phase 2 follow-up #1: TradeRecorder — centralized trade DB write
+        self._trade_recorder = TradeRecorder(session_factory=Session)
+
+        # Phase 2: EntryPlanner + ExitManager (injected with trade_recorder)
+        self._entry_planner = EntryPlanner(
+            executor=self._executor,
+            inference=self._inference,
+            risk=self._risk,
+            trade_recorder=self._trade_recorder,
+            strategy=self._strategy,
+        )
+        self._exit_manager = ExitManager(
+            executor=self._executor,
+            inference=self._inference,
+            risk=self._risk,
+            trade_recorder=self._trade_recorder,
+        )
 
         # State
         self._last_regime: RegimeResult | None = None
@@ -169,8 +175,7 @@ class TradingOrchestrator:
         self._daily_trade_count: int = 0
         # C-2: 보유 포지션 코드 캐시 (main.py universe 구성용)
         self._last_held_codes: set[str] = set()
-        # Pending buy trades (체결 확인 전까지만 메모리 보관)
-        self._pending_buy_trades: list[dict] = []
+        # Pending buy trades → managed by TradeRecorder (Phase 2 follow-up #2)
 
     def refresh_read_session(self) -> None:
         """BE-10: 읽기 전용 세션 갱신 — dashboard 조회 전 호출."""
@@ -232,7 +237,7 @@ class TradingOrchestrator:
         logger.info(f"=== 매매 사이클 #{self._cycle_count} 시작 ===")
 
         # TR-13: 일일 거래 횟수 리셋
-        today = datetime.now().strftime("%Y-%m-%d")
+        today = now_kst().strftime("%Y-%m-%d")
         if self._daily_trade_date != today:
             self._daily_trade_date = today
             self._daily_trade_count = 0
@@ -292,7 +297,6 @@ class TradingOrchestrator:
             trading_allowed=self._trading_allowed,
             daily_trade_date=self._daily_trade_date,
             daily_trade_count=self._daily_trade_count,
-            pending_buy_trades=self._pending_buy_trades,
         )
 
         # ── Step 3-6: Regime → Entry → Exit (장중만 실행) ──
@@ -381,8 +385,8 @@ class TradingOrchestrator:
         result.sells_executed = exit_result.get("sells_executed", 0)
         result.errors.extend(exit_result.get("errors", []))
 
-        # ── Confirm pending buy trades ──
-        await self._confirm_pending_buys()
+        # ── Confirm pending buy trades (via TradeRecorder) ──
+        await self._trade_recorder.confirm_pending_buys(self._fetch_positions)
 
         # ── Build summary ──
         regime_str = (
@@ -436,43 +440,6 @@ class TradingOrchestrator:
             logger.error(f"포지션 조회 실패: {e}")
             return []
 
-    async def _confirm_pending_buys(self) -> None:
-        """체결 확인 → DB 저장 (pending trades TTL 포함)."""
-        if not self._pending_buy_trades:
-            return
-        try:
-            import time
-            now_ts = time.time()
-            self._pending_buy_trades = [
-                p for p in self._pending_buy_trades
-                if now_ts - p.get("timestamp", 0) < 86400
-            ]
-            if not self._pending_buy_trades:
-                return
-            confirmed_positions = await self._fetch_positions()
-            confirmed_codes = {p.code for p in confirmed_positions}
-            confirmed = [p for p in self._pending_buy_trades if p["code"] in confirmed_codes]
-            for pending in confirmed:
-                try:
-                    with self._Session() as session:
-                        from data.repository import TradeRepository
-                        trade_price = pending.get("fill_price", 0) or pending["price"]
-                        TradeRepository(session).save_trade(
-                            code=pending["code"], name=pending["name"],
-                            side=OrderSide.BUY, quantity=pending["quantity"],
-                            price=trade_price, amount=pending["amount"],
-                            action=pending["action"], reason=pending["reason"],
-                        )
-                        session.commit()
-                    self._pending_buy_trades.remove(pending)
-                    logger.info(f"매수 체결 확인: {pending['name']}({pending['code']}) {pending['quantity']}주 — 저장")
-                except Exception as e:
-                    logger.warning(f"매수 체결 저장 실패: {e}")
-            if self._pending_buy_trades:
-                logger.info(f"매수 미체결(재확인): {[p['code'] for p in self._pending_buy_trades]}")
-        except Exception as e:
-            logger.warning(f"매수 체결 확인 실패(재확인): {e}")
-
     async def force_sell(self, code: str, name: str = "") -> ExecutionResult:
         """Force sell a position — operator override."""
         positions = await self._fetch_positions()
@@ -502,7 +469,7 @@ class TradingOrchestrator:
 
     async def cancel_unfilled_orders(self, max_age_seconds: int = 30) -> int:
         """미체결 주문 중 일정 시간 경과한 주문을 취소."""
-        now = datetime.now()
+        now = now_kst()
         cancelled = 0
         try:
             unfilled = await self._broker.get_unfilled_orders()

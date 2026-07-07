@@ -7,13 +7,12 @@ Responsible for:
 - Minute-based exit refinement
 - ML exit prediction
 - Sell execution (via OrderExecutor)
-- Trade recording to DB
+- Trade recording to DB (via TradeRecorder)
 
 Orchestrator creates one ExitManager and calls `check_exits()` each cycle.
 """
 from __future__ import annotations
 
-from dataclasses import replace as dc_replace
 from typing import Any
 
 import numpy as np
@@ -21,13 +20,13 @@ import numpy as np
 from core.logger import logger
 from core.types import (
     DecisionAction,
-    OrderSide,
     Position,
     PriceData,
 )
 from live.executor import OrderExecutor
 from live.models import CycleContext
 from live.risk import RiskManager
+from live.trade_recorder import TradeRecorder
 from ml.inference import MLInference
 from strategy.exit_timing import ExitDecision, ExitUrgency, refine_exit
 from strategy.indicators import atr as calc_atr
@@ -50,10 +49,12 @@ class ExitManager:
         executor: OrderExecutor,
         inference: MLInference,
         risk: RiskManager,
+        trade_recorder: TradeRecorder,
     ) -> None:
         self._executor = executor
         self._inference = inference
         self._risk = risk
+        self._trade_recorder = trade_recorder
 
     async def check_exits(
         self,
@@ -91,15 +92,11 @@ class ExitManager:
         broker,
         stock_universe: list[tuple[Any, list[PriceData]]],
     ) -> dict | None:
-        """Check exit conditions for a single position.
-
-        Returns None if no exit triggered, or dict with exit info.
-        """
+        """Check exit conditions for a single position."""
         prices = self._find_prices(stock_universe, position.code)
         if prices is None or len(prices) < 60:
             return None
 
-        # 청산 정밀화
         exit_ref = await self._refine_exit(broker, position.code, position.profit_loss_pct, ctx)
         sell_price = None if exit_ref.urgency == ExitUrgency.IMMEDIATE else exit_ref.limit_price
 
@@ -111,7 +108,6 @@ class ExitManager:
         # 0.5) 부분 익절
         result = await self._check_partial_tp(ctx, position, prices, sell_price, exit_ref)
         if result and result.get("sold"):
-            # 부분 매도 후 잔량 0이면 다음 포지션
             if position.quantity <= 0:
                 return result
         if result:
@@ -125,7 +121,7 @@ class ExitManager:
                 ctx, position, sell_price, DecisionAction.STOP_LOSS,
                 f"손절: {position.name}({position.code}) 손실 {loss_pct:.1f}% >= 손절선 {effective_stop:.1f}% "
                 f"|| 청산정밀화: {exit_ref.reason}",
-                "손절", exit_ref,
+                exit_ref,
             )
 
         # 2) 분봉 선제 청산
@@ -133,7 +129,7 @@ class ExitManager:
             return await self._execute_exit(
                 ctx, position, sell_price, DecisionAction.SELL,
                 f"분봉 청산: {exit_ref.reason}",
-                "매도", exit_ref,
+                exit_ref,
             )
 
         # 3) ML 청산 예측
@@ -156,7 +152,7 @@ class ExitManager:
             return await self._execute_exit(
                 ctx, position, sell_price, DecisionAction.SELL,
                 f"{exit_pred.reason} || 청산정밀화: {exit_ref.reason}",
-                "매도", exit_ref,
+                exit_ref,
             )
 
         return None
@@ -185,7 +181,7 @@ class ExitManager:
             return await self._execute_exit(
                 ctx, position, sell_price, DecisionAction.STOP_LOSS,
                 f"{trail_result.reason} || 청산정밀화: {exit_ref.reason}",
-                "트레일링스탑", exit_ref,
+                exit_ref,
             )
         return None
 
@@ -213,11 +209,10 @@ class ExitManager:
         if not exec_result.success:
             return {"error": f"부분 익절 실패 {position.code}: {exec_result.error}"}
 
-        # 부분 매도 DB 기록
-        self._record_sell(
+        # DB 기록 via TradeRecorder
+        self._trade_recorder.record_sell(
             exec_result, position, sell_price,
             action=DecisionAction.SELL,
-            log_label="부분 익절",
             reason=partial_tp["reason"],
             partial_sold_qty=partial_tp["sell_quantity"],
         )
@@ -237,9 +232,6 @@ class ExitManager:
         )
         return {"sold": True}
 
-        # Note: 잔여 포지션에 대해 계속 손절/ML 청산 검사하므로 return None으로 다음 단계 진행
-        # (partial_tp sold만 기록하고, 호출자가 position.quantity == 0이면 skip)
-
     async def _execute_exit(
         self,
         ctx: CycleContext,
@@ -247,7 +239,6 @@ class ExitManager:
         sell_price: float | None,
         action: DecisionAction,
         reason: str,
-        log_label: str,
         exit_ref: ExitDecision,
     ) -> dict:
         """매도 실행 + DB 기록."""
@@ -259,41 +250,16 @@ class ExitManager:
             action=action,
             reason=reason,
         )
-        self._record_sell(
+        # DB 기록 via TradeRecorder
+        self._trade_recorder.record_sell(
             exec_result, position, sell_price,
             action=action,
-            log_label=log_label,
             reason=reason,
+            partial_sold_qty=None,
         )
         if exec_result.success:
             return {"sold": True}
-        return {"error": f"{log_label} 실패 {position.code}: {exec_result.error}"}
-
-    def _record_sell(
-        self,
-        exec_result,
-        position: Position,
-        sell_price: float | None,
-        action: DecisionAction,
-        log_label: str,
-        reason: str,
-        partial_sold_qty: int | None = None,
-    ) -> None:
-        """Record a sell trade to DB."""
-        if not exec_result.success:
-            return
-        try:
-            from sqlalchemy.orm import sessionmaker
-            from data.repository import TradeRepository, PositionRepository
-            from data.adapters.kis.client import KisHttpClient  # not needed, just for session
-
-            from core.logger import logger as _log
-            # We need db access — get from orchestrator's Session. This is a limitation.
-            # Instead, we store a session factory reference.
-            # For now, this is handled at the orchestrator level.
-            pass
-        except Exception as e:
-            logger.error(f"{log_label} 기록 저장 실패: {e}")
+        return {"error": f"매도 실패 {position.code}: {exec_result.error}"}
 
     async def _refine_exit(
         self, broker, code: str, profit_pct: float, ctx: CycleContext
