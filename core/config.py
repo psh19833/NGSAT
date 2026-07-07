@@ -119,7 +119,7 @@ class StrategyConfig:
     # ── 스크리너 ──
     screener_bull_min_score: float = 60.0
     screener_bull_max_candidates: int = 15
-    screener_neutral_min_score: float = 60.0
+    screener_neutral_min_score: float = 45.0
     screener_neutral_max_candidates: int = 10
     screener_bear_min_score: float = 80.0
     screener_bear_max_candidates: int = 5
