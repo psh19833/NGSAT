@@ -175,5 +175,5 @@ def compute_total_score(
     if total_weight <= 0:
         return 50.0
 
-    normalized = weighted_sum / total_weight * 100
+    normalized = weighted_sum / total_weight
     return max(0.0, min(100.0, normalized))
