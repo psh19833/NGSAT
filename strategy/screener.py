@@ -174,8 +174,6 @@ def screen_stocks(
 
         if candidate and candidate.score >= thresholds["min_score"]:
             candidates.append(candidate)
-        elif candidate:
-            logger.info(f"스크리닝 저점수: {stock_info.code} {candidate.score:.1f}점 (기준 {thresholds['min_score']})")
 
     # Sort by score descending
     candidates.sort(key=lambda c: c.score, reverse=True)
@@ -221,11 +219,9 @@ def _evaluate_single_stock(
     # ── Pre-filtering (P-60): 변동성/거래량 부족 종목 제외 ──
     atr_pct = float(np.std(closes[-20:]) / (np.mean(closes[-20:]) or 1) * 100) if len(closes) >= 20 else 0
     if atr_pct < 0.2:
-        logger.info(f"스크리닝 필터: {stock.code} ATR {atr_pct:.2f}% < 0.2%")
         return None
     avg_vol = float(np.mean(volumes[-20:])) if len(volumes) >= 20 else 0
     if avg_vol < 500:
-        logger.info(f"스크리닝 필터: {stock.code} 거래량 {avg_vol:.0f} < 500")
         return None
 
     # ── Technical indicators ──
