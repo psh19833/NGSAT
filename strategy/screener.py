@@ -218,10 +218,10 @@ def _evaluate_single_stock(
 
     # ── Pre-filtering (P-60): 변동성/거래량 부족 종목 제외 ──
     atr_pct = float(np.std(closes[-20:]) / (np.mean(closes[-20:]) or 1) * 100) if len(closes) >= 20 else 0
-    if atr_pct < 0.3:
+    if atr_pct < 0.2:
         return None
     avg_vol = float(np.mean(volumes[-20:])) if len(volumes) >= 20 else 0
-    if avg_vol < 1000:
+    if avg_vol < 500:
         return None
 
     # ── Technical indicators ──
