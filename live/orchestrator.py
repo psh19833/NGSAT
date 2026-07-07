@@ -414,7 +414,7 @@ class TradingOrchestrator:
                 logger.info("HOLD 모드 — 신규 진입 없이 기존 포지션 청산만 실행")
 
             # ── Step 5: Screen stocks ──
-            screen_result = screen_stocks(stock_universe, regime_result, config=self._strategy)
+            screen_result = screen_stocks(stock_universe, regime_result, config=self._strategy, index_prices=index_prices)
             # ETN/ETF 종목 제외 (KIS 위험고지 미등록 계좌에서 매수 불가)
             if screen_result.candidates:
                 from dataclasses import replace

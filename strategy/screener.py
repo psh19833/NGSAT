@@ -25,7 +25,14 @@ from strategy.indicators import (
     sma,
     stochastic,
     adx,
+    adx_with_di,
     volume_ratio,
+    mfi,
+    obv,
+    obv_slope,
+    relative_strength,
+    detect_hammer,
+    detect_engulfing,
 )
 from strategy.patterns import (
     PatternResult,
@@ -34,6 +41,19 @@ from strategy.patterns import (
     detect_rebound,
     detect_bollinger_squeeze,
     detect_ma_cross,
+)
+from strategy.scorer import (
+    compute_total_score,
+    score_rsi,
+    score_mfi,
+    score_stochastic,
+    score_macd,
+    score_ma_alignment,
+    score_adx_di,
+    score_volume,
+    score_obv_slope,
+    score_relative_strength,
+    score_candlestick,
 )
 from strategy.regime import RegimeResult
 
@@ -112,6 +132,7 @@ def screen_stocks(
     stocks: list[tuple[StockInfo, list[PriceData]]],
     regime_result: RegimeResult,
     config: _StrategyConfig | None = None,
+    index_prices: list[PriceData] | None = None,
 ) -> ScreenResult:
     """Screen stocks for trading candidates.
 
@@ -126,6 +147,8 @@ def screen_stocks(
     Args:
         stocks: List of (StockInfo, price history) tuples.
         regime_result: Market regime evaluation from stage 1.
+        config: Strategy configuration (optional).
+        index_prices: Index price data for RS calculation (optional).
 
     Returns:
         ScreenResult with ranked candidates.
@@ -135,6 +158,11 @@ def screen_stocks(
     )
     if thresholds is None:
         thresholds = {"min_score": 70.0, "max_candidates": 15, "pattern_weight": 1.0}
+
+    # P-60: 지수 데이터를 thresholds에 포함 (RS 계산용)
+    if index_prices:
+        thresholds["index_closes"] = [p.close for p in index_prices]
+    thresholds["regime"] = regime_result.regime.value
 
     candidates: list[ScreenCandidate] = []
 
@@ -177,12 +205,24 @@ def _evaluate_single_stock(
 ) -> ScreenCandidate | None:
     """Evaluate a single stock for screening.
 
-    Calculates indicators, detects patterns, and computes a composite score.
+    Calculates indicators, detects patterns, computes composite score via scorer.py.
     """
     closes = np.array([p.close for p in prices], dtype=float)
     highs = np.array([p.high for p in prices], dtype=float)
     lows = np.array([p.low for p in prices], dtype=float)
     volumes = np.array([p.volume for p in prices], dtype=float)
+    opens = np.array([p.open for p in prices], dtype=float)
+
+    regime = thresholds.get("regime", "neutral")
+    index_closes = thresholds.get("index_closes")
+
+    # ── Pre-filtering (P-60): 변동성/거래량 부족 종목 제외 ──
+    atr_pct = float(np.std(closes[-20:]) / (np.mean(closes[-20:]) or 1) * 100) if len(closes) >= 20 else 0
+    if atr_pct < 0.3:
+        return None
+    avg_vol = float(np.mean(volumes[-20:])) if len(volumes) >= 20 else 0
+    if avg_vol < 1000:
+        return None
 
     # ── Technical indicators ──
     rsi_val = current_rsi(closes, 14)
@@ -193,31 +233,21 @@ def _evaluate_single_stock(
 
     vol_ratio = float(volume_ratio(volumes, 20)[-1]) if not np.isnan(volume_ratio(volumes, 20)[-1]) else 1.0
 
-    indicators = {
-        "rsi": rsi_val,
-        "macd_line": macd_line,
-        "macd_signal": signal_line,
-        "macd_histogram": hist,
-        "ma5": ma5,
-        "ma20": ma20,
-        "volume_ratio": vol_ratio,
-        "current_price": float(closes[-1]),
-    }
-
-    # ── Additional indicators (Phase A) ──
+    # ── Additional indicators ──
     k_val, d_val = float('nan'), float('nan')
     if len(closes) >= 14:
         k_arr, d_arr = stochastic(highs, lows, closes, 14, 3)
         k_val = float(k_arr[-1]) if not np.isnan(k_arr[-1]) else float('nan')
         d_val = float(d_arr[-1]) if not np.isnan(d_arr[-1]) else float('nan')
-        indicators["stochastic_k"] = k_val
-        indicators["stochastic_d"] = d_val
 
     adx_val = float('nan')
+    di_plus_val = float('nan')
+    di_minus_val = float('nan')
     if len(closes) >= 30:
-        adx_arr = adx(highs, lows, closes, 14)
+        adx_arr, di_plus_arr, di_minus_arr = adx_with_di(highs, lows, closes, 14)
         adx_val = float(adx_arr[-1]) if not np.isnan(adx_arr[-1]) else float('nan')
-        indicators["adx"] = adx_val
+        di_plus_val = float(di_plus_arr[-1]) if not np.isnan(di_plus_arr[-1]) else float('nan')
+        di_minus_val = float(di_minus_arr[-1]) if not np.isnan(di_minus_arr[-1]) else float('nan')
 
     vol_ma5_val, vol_ma20_val = float('nan'), float('nan')
     if len(volumes) >= 20:
@@ -225,14 +255,56 @@ def _evaluate_single_stock(
         vol_ma20_arr = sma(volumes, 20)
         vol_ma5_val = float(vol_ma5_arr[-1]) if not np.isnan(vol_ma5_arr[-1]) else float('nan')
         vol_ma20_val = float(vol_ma20_arr[-1]) if not np.isnan(vol_ma20_arr[-1]) else float('nan')
-        indicators["vol_ma5"] = vol_ma5_val
-        indicators["vol_ma20"] = vol_ma20_val
+
+    # ── Advanced indicators (P-60) ──
+    mfi_val = float('nan')
+    if len(closes) >= 30:
+        try:
+            mfi_arr = mfi(highs, lows, closes, volumes, 14)
+            mfi_val = float(mfi_arr[-1]) if not np.isnan(mfi_arr[-1]) else float('nan')
+        except Exception:
+            pass
+
+    obv_slope_val = 0.0
+    if len(closes) >= 20:
+        try:
+            obv_arr = obv(closes, volumes)
+            obv_slope_val = obv_slope(obv_arr, 20)
+        except Exception:
+            pass
+
+    rs_val = 1.0
+    if index_closes and len(index_closes) >= 21 and len(closes) >= 21:
+        try:
+            rs_val = relative_strength(
+                closes, np.array(index_closes[-len(closes):], dtype=float), 20)
+        except Exception:
+            pass
+
+    candle_bullish = False
+    if len(prices) >= 2:
+        try:
+            if detect_engulfing(opens[-2], closes[-2], opens[-1], closes[-1]):
+                candle_bullish = True
+            if detect_hammer(opens[-1], highs[-1], lows[-1], closes[-1]):
+                candle_bullish = True
+        except Exception:
+            pass
+
+    # ── indicators dict (backward compat + extended) ──
+    indicators = {
+        "rsi": rsi_val, "macd_line": macd_line, "macd_signal": signal_line,
+        "macd_histogram": hist, "ma5": ma5, "ma20": ma20,
+        "volume_ratio": vol_ratio, "current_price": float(closes[-1]),
+        "stochastic_k": k_val, "stochastic_d": d_val, "adx": adx_val,
+        "vol_ma5": vol_ma5_val, "vol_ma20": vol_ma20_val,
+        "mfi": mfi_val, "obv_slope": obv_slope_val,
+        "di_plus": di_plus_val, "di_minus": di_minus_val,
+        "rs": rs_val, "atr_pct": atr_pct,
+    }
 
     # ── Pattern detection ──
     patterns: list[PatternResult] = []
-    pattern_weight = thresholds.get("pattern_weight", 1.0)
-
-    # Detect all applicable patterns
     for detector in [
         lambda: detect_breakout(closes, highs, volumes),
         lambda: detect_pullback(closes, highs),
@@ -245,96 +317,63 @@ def _evaluate_single_stock(
             if result.detected:
                 patterns.append(result)
         except Exception as e:
-            logger.warning(f"패턴 탐지 실패 ({detector.__name__ if hasattr(detector, '__name__') else '?'}): {type(e).__name__}")
-            continue  # Skip failed pattern detection, don't crash screening
+            logger.warning(f"패턴 탐지 실패: {type(e).__name__}")
+            continue
 
-    # ── Scoring ──
-    score = 50.0  # Base score
+    # ── Scoring via scorer.py (P-60) ──
+    indicator_scores = {"pattern": 0.0}
 
-    # RSI scoring
     if not np.isnan(rsi_val):
-        if 30 < rsi_val < 50:
-            score += 10  # Oversold recovery zone
-        elif 50 <= rsi_val < 70:
-            score += 15  # Healthy bullish zone
-        elif rsi_val >= 70:
-            score -= 5   # Overbought — risky
-        elif rsi_val <= 30:
-            score += 5   # Oversold — potential rebound
-
-    # Stochastic scoring (Phase A)
-    if not np.isnan(k_val) and not np.isnan(d_val):
-        if k_val < 20 and d_val < 20:
-            score += 10  # Oversold — rebound expected
-        elif k_val > 80 and d_val > 80:
-            score -= 10  # Overbought — chase risk
-
-    # MACD scoring (Phase C: ±10→±5)
-    if hist > 0:
-        score += 5  # Bullish MACD
-    elif hist < 0:
-        score -= 5  # Bearish MACD
-
-    # MA alignment scoring
+        indicator_scores["rsi"] = score_rsi(rsi_val)
+    if not np.isnan(mfi_val):
+        indicator_scores["mfi"] = score_mfi(mfi_val)
+    if not np.isnan(adx_val) and not np.isnan(di_plus_val) and not np.isnan(di_minus_val):
+        indicator_scores["adx_di"] = score_adx_di(adx_val, di_plus_val, di_minus_val)
+    indicator_scores["obv"] = score_obv_slope(obv_slope_val)
     if ma5 > 0 and ma20 > 0:
-        if closes[-1] > ma5 > ma20:
-            score += 20  # Perfect bullish alignment (Phase C: 15→20)
-        elif closes[-1] > ma5:
-            score += 5   # Above short-term MA
-        elif closes[-1] < ma5 < ma20:
-            score -= 10  # Bearish alignment (완화: -20→-10)
-
-    # Volume trend analysis (Phase B)
+        indicator_scores["ma"] = score_ma_alignment(float(closes[-1]), ma5, ma20)
     if not np.isnan(vol_ma5_val) and not np.isnan(vol_ma20_val) and not np.isnan(vol_ratio):
-        if vol_ma5_val > vol_ma20_val and vol_ratio > 1.2:
-            score += 8  # Volume increasing + above-average activity
-        elif vol_ma5_val > vol_ma20_val:
-            score += 4  # Volume trend improving
-        elif vol_ratio > 1.5:
-            score += 5  # Above-average volume (original)
-        elif vol_ma5_val < vol_ma20_val and vol_ratio < 0.7:
-            score -= 3  # Volume declining
+        indicator_scores["volume"] = score_volume(vol_ma5_val, vol_ma20_val, vol_ratio)
+    indicator_scores["candle"] = score_candlestick(candle_bullish, False)
+    if index_closes:
+        indicator_scores["rs"] = score_relative_strength(rs_val)
 
-    # ADX trend strength scoring (Phase A)
-    if not np.isnan(adx_val):
-        if adx_val > 25:
-            score += 10  # Trending stock — prefer
-        elif adx_val < 15:
-            score -= 10  # Sideways stock — penalize
-
-    # Pattern scoring — weighted by pattern type (Phase B)
+    # Pattern score
     pattern_type_weights = {
-        "breakout": 1.5,
-        "bollinger_squeeze": 1.3,
-        "ma_cross": 1.2,
-        "pullback": 0.8,
-        "rebound": 0.7,
+        "breakout": 1.5, "bollinger_squeeze": 1.3, "ma_cross": 1.2,
+        "pullback": 0.8, "rebound": 0.7,
     }
-    score += sum(
-        3 * pattern_type_weights.get(p.pattern_name, 1.0) * pattern_weight
+    pattern_score = sum(
+        3 * pattern_type_weights.get(p.pattern_name, 1.0)
         for p in patterns
-    )
+    ) if patterns else 0
+    indicator_scores["pattern"] = min(100.0, pattern_score * 10)
 
-    # KOSPI bonus (기획서: 코스피 비중 더 높게)
+    total_score = compute_total_score(indicator_scores, regime)
+
+    # ── KOSPI bonus ──
     kospi_bonus = False
     cfg = config or _StrategyConfig()
     if stock.market == Market.KOSPI:
-        score += cfg.kospi_bonus_score
+        total_score += cfg.kospi_bonus_score
         kospi_bonus = True
     elif stock.market == Market.KOSDAQ:
-        score += cfg.kosdaq_bonus_score
+        total_score += cfg.kosdaq_bonus_score
 
-    score = max(0, min(100, score))
+    score = max(0, min(100, total_score))
 
-    # Build reason
+    # ── Build reason ──
     pattern_names = [p.pattern_name_kr for p in patterns]
     reason_parts = [
         f"점수 {score:.1f}/100",
-        f"RSI {rsi_val:.1f}" if not np.isnan(rsi_val) else "RSI N/A",
+        f"RSI {rsi_val:.1f}" if not np.isnan(rsi_val) else "",
+        f"MFI {mfi_val:.1f}" if not np.isnan(mfi_val) else "",
         f"MACD {'+' if hist > 0 else ''}{hist:.0f}",
+        f"ADX {adx_val:.0f} DI+{di_plus_val:.0f}/DI-{di_minus_val:.0f}" if not np.isnan(adx_val) else "",
+        f"OBV {obv_slope_val:+.2f}",
+        f"RS {rs_val:.2f}" if index_closes else "",
         f"스토캐스틱 K={k_val:.0f}" if not np.isnan(k_val) else "",
-        f"ADX {adx_val:.0f}" if not np.isnan(adx_val) else "",
-        f"패턴: {', '.join(pattern_names)}" if pattern_names else "패턴 없음",
+        f"패턴: {', '.join(pattern_names)}" if pattern_names else "",
         f"코스피 가산점" if kospi_bonus else "",
     ]
     reason = " | ".join(r for r in reason_parts if r)
@@ -347,6 +386,6 @@ def _evaluate_single_stock(
         patterns=patterns,
         indicators=indicators,
         reason=reason,
-        product_type=stock.product_type,
+        product_type=getattr(stock, "product_type", "stock"),
         kospi_bonus=kospi_bonus,
     )

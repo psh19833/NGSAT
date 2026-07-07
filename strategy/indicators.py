@@ -368,3 +368,190 @@ def adx(
         adx_values[i] = (adx_values[i - 1] * (period - 1) + dx[i]) / period
 
     return adx_values
+
+
+# ── Advanced Indicators (P-60) ──
+
+def mfi(
+    high: Sequence[float],
+    low: Sequence[float],
+    close: Sequence[float],
+    volume: Sequence[int],
+    period: int = 14,
+) -> np.ndarray:
+    """Money Flow Index — RSI with volume weighting.
+
+    Args:
+        high, low, close, volume: OHLCV data.
+        period: Lookback period (default 14).
+
+    Returns:
+        MFI values array (0~100). First (period*2-1) entries are NaN.
+    """
+    h = np.asarray(high, dtype=float)
+    l = np.asarray(low, dtype=float)
+    c = np.asarray(close, dtype=float)
+    v = np.asarray(volume, dtype=float)
+    n = len(c)
+    mfi_vals = np.full(n, np.nan)
+    if n < period + 1:
+        return mfi_vals
+    typical = (h + l + c) / 3.0
+    money_flow = typical * v
+    for i in range(period, n):
+        pos = 0.0
+        neg = 0.0
+        for j in range(i - period + 1, i + 1):
+            if typical[j] > typical[j - 1]:
+                pos += money_flow[j]
+            else:
+                neg += money_flow[j]
+        if pos + neg > 0:
+            mfi_vals[i] = 100.0 - (100.0 / (1.0 + pos / neg))
+    return mfi_vals
+
+
+def obv(close: Sequence[float], volume: Sequence[int]) -> np.ndarray:
+    """On-Balance Volume — cumulative volume from price direction.
+
+    Args:
+        close: Closing prices.
+        volume: Volume data.
+
+    Returns:
+        OBV values array (cumulative).
+    """
+    c = np.asarray(close, dtype=float)
+    v = np.asarray(volume, dtype=float)
+    n = len(c)
+    obv_vals = np.zeros(n)
+    for i in range(1, n):
+        if c[i] > c[i - 1]:
+            obv_vals[i] = obv_vals[i - 1] + v[i]
+        elif c[i] < c[i - 1]:
+            obv_vals[i] = obv_vals[i - 1] - v[i]
+        else:
+            obv_vals[i] = obv_vals[i - 1]
+    return obv_vals
+
+
+def obv_slope(obv_vals: np.ndarray, period: int = 20) -> float:
+    """OBV linear regression slope — trend strength.
+
+    Positive = accumulation, Negative = distribution.
+    Normalized to prevent extreme values.
+    """
+    if len(obv_vals) < period:
+        return 0.0
+    x = np.arange(period)
+    y = obv_vals[-period:]
+    slope = np.polyfit(x, y, 1)[0]
+    max_abs = np.abs(y).max() or 1
+    return float(slope / max_abs * 1000)
+
+
+def adx_with_di(
+    high: Sequence[float],
+    low: Sequence[float],
+    close: Sequence[float],
+    period: int = 14,
+) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+    """ADX with DI+ and DI- for trend strength + direction.
+
+    Returns (adx_values, di_plus, di_minus).
+    Same logic as adx() but also returns directional indicators.
+    adx() remains unchanged for backward compatibility.
+    """
+    h = np.asarray(high, dtype=float)
+    l = np.asarray(low, dtype=float)
+    c = np.asarray(close, dtype=float)
+    n = len(c)
+    adx_vals = np.full(n, np.nan)
+    di_plus_vals = np.full(n, np.nan)
+    di_minus_vals = np.full(n, np.nan)
+    if n < period + 1:
+        return adx_vals, di_plus_vals, di_minus_vals
+    tr = np.full(n, np.nan)
+    for i in range(1, n):
+        hl = h[i] - l[i]
+        hc = abs(h[i] - c[i - 1])
+        lc = abs(l[i] - c[i - 1])
+        tr[i] = max(hl, hc, lc)
+    plus_dm = np.full(n, np.nan)
+    minus_dm = np.full(n, np.nan)
+    for i in range(1, n):
+        up = h[i] - h[i - 1]
+        down = l[i - 1] - l[i]
+        plus_dm[i] = up if up > down and up > 0 else 0.0
+        minus_dm[i] = down if down > up and down > 0 else 0.0
+
+    def wilder(raw, p):
+        r = np.full(n, np.nan)
+        r[p] = np.nanmean(raw[1 : p + 1])
+        for i in range(p + 1, n):
+            r[i] = (r[i - 1] * (p - 1) + raw[i]) / p
+        return r
+
+    tr_s = wilder(tr, period)
+    plus_dm_s = wilder(plus_dm, period)
+    minus_dm_s = wilder(minus_dm, period)
+    for i in range(period, n):
+        if tr_s[i] > 0:
+            di_plus_vals[i] = (plus_dm_s[i] / tr_s[i]) * 100.0
+            di_minus_vals[i] = (minus_dm_s[i] / tr_s[i]) * 100.0
+    dx = np.full(n, np.nan)
+    for i in range(period, n):
+        s = di_plus_vals[i] + di_minus_vals[i]
+        if s > 0:
+            dx[i] = abs(di_plus_vals[i] - di_minus_vals[i]) / s * 100.0
+    adx_vals[period * 2 - 1] = np.nanmean(dx[period : period * 2])
+    for i in range(period * 2, n):
+        adx_vals[i] = (adx_vals[i - 1] * (period - 1) + dx[i]) / period
+    return adx_vals, di_plus_vals, di_minus_vals
+
+
+def relative_strength(
+    stock_close: Sequence[float],
+    index_close: Sequence[float],
+    period: int = 20,
+) -> float:
+    """Relative Strength vs market index.
+
+    RS = stock_return / index_return. >1.0 = outperforming.
+    Fallback to 1.0 on invalid data.
+    """
+    if len(stock_close) < period + 1 or len(index_close) < period + 1:
+        return 1.0
+    sr = (stock_close[-1] - stock_close[-period]) / (stock_close[-period] or 1)
+    ir = (index_close[-1] - index_close[-period]) / (index_close[-period] or 1)
+    return sr / ir if ir != 0 else 1.0
+
+
+def detect_hammer(open_p: float, high: float, low: float, close: float) -> bool:
+    """Hammer candlestick — long lower shadow, small body."""
+    body = abs(close - open_p)
+    if body == 0:
+        return False
+    lower = min(open_p, close) - low
+    upper = high - max(open_p, close)
+    return lower >= body * 2.0 and upper <= body * 0.3
+
+
+def detect_engulfing(
+    prev_open: float, prev_close: float, open_p: float, close: float,
+) -> bool:
+    """Bullish Engulfing — green candle fully engulfs previous red body."""
+    return (close > open_p and prev_close < prev_open
+            and close > prev_open and open_p < prev_close)
+
+
+def detect_morning_star(
+    o1: float, c1: float, o2: float, c2: float, o3: float, c3: float,
+) -> bool:
+    """Morning Star — 3-candle bullish reversal."""
+    b1 = abs(c1 - o1)
+    b2 = abs(c2 - o2)
+    b3 = abs(c3 - o3)
+    return (c1 < o1 and b3 > 0 and c3 > o3
+            and b2 < b1 * 0.3 and b2 < b3 * 0.3
+            and c3 > (o1 + c1) / 2)
