@@ -195,21 +195,26 @@ class KisAdapter(BrokerAdapter):
         logger.debug(f"시세 조회: {code} 현재가={price.close:,.0f}")
         return price
 
-    async def get_index_price(self) -> PriceData | None:
-        """Fetch current KOSPI index price (장중 레짐 보정용)."""
+    async def get_index_price(self, code: str = "0001") -> PriceData | None:
+        """Fetch current KOSPI/KOSDAQ index price (장중 레짐 보정용).
+
+        Args:
+            code: Index code. "0001" = KOSPI, "1001" = KOSDAQ.
+        """
         params = {
             "FID_COND_MRKT_DIV_CODE": "U",
-            "FID_INPUT_ISCD": "0001",
+            "FID_INPUT_ISCD": code,
         }
         try:
             resp = await self._http.get("inquire_index_price", params=params)
             if not resp.success:
-                logger.warning(f"KOSPI 지수 현재가 조회 실패: {resp.msg_cd} {resp.msg1}")
+                logger.warning(f"지수({code}) 현재가 조회 실패: {resp.msg_cd} {resp.msg1}")
                 return None
-            price = parse_price(resp.data, "KOSPI")
+            name = "KOSPI" if code == "0001" else "KOSDAQ"
+            price = parse_price(resp.data, name)
             return price
         except Exception as e:
-            logger.warning(f"KOSPI 지수 현재가 조회 예외: {type(e).__name__}: {e}")
+            logger.warning(f"지수({code}) 현재가 조회 예외: {type(e).__name__}: {e}")
             return None
 
     async def get_price_history(

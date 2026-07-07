@@ -381,6 +381,70 @@ def create_app(orchestrator=None, config=None) -> FastAPI:
             "regime_skipped": orch._regime_skipped,
         }
 
+    # ── Indices: KOSPI/KOSDAQ + US indices ──
+    @app.get("/api/indices")
+    async def get_indices():
+        orch = _get_orchestrator()
+        if orch is None:
+            return _not_connected()
+
+        result = {}
+        broker = getattr(orch, '_broker', None)
+
+        # KOSPI
+        try:
+            if broker and hasattr(broker, 'get_index_price'):
+                kospi = await broker.get_index_price("0001")
+                if kospi:
+                    change_pct = ((kospi.close - kospi.open) / kospi.open * 100) if kospi.open else 0
+                    result["kospi"] = {
+                        "price": round(kospi.close, 2),
+                        "change_pct": round(change_pct, 2),
+                    }
+        except Exception:
+            pass
+
+        # KOSDAQ
+        try:
+            if broker and hasattr(broker, 'get_index_price'):
+                kosdaq = await broker.get_index_price("1001")
+                if kosdaq:
+                    change_pct = ((kosdaq.close - kosdaq.open) / kosdaq.open * 100) if kosdaq.open else 0
+                    result["kosdaq"] = {
+                        "price": round(kosdaq.close, 2),
+                        "change_pct": round(change_pct, 2),
+                    }
+        except Exception:
+            pass
+
+        # US indices via Yahoo Finance (free, no API key needed)
+        us_symbols = {
+            "sp500": "^GSPC",
+            "nasdaq": "^IXIC",
+            "dow": "^DJI",
+        }
+        import httpx
+        async with httpx.AsyncClient(timeout=5.0) as client:
+            for key, symbol in us_symbols.items():
+                try:
+                    url = f"https://query1.finance.yahoo.com/v8/finance/chart/{symbol}?range=1d&interval=1m"
+                    resp = await client.get(url, headers={"User-Agent": "Mozilla/5.0"})
+                    if resp.status_code == 200:
+                        data = resp.json()
+                        meta = data.get("chart", {}).get("result", [{}])[0].get("meta", {})
+                        prev_close = meta.get("chartPreviousClose") or meta.get("previousClose") or 0
+                        current = meta.get("regularMarketPrice") or meta.get("currentPrice") or 0
+                        if current and prev_close:
+                            change_pct = (current - prev_close) / prev_close * 100
+                            result[key] = {
+                                "price": round(current, 2),
+                                "change_pct": round(change_pct, 2),
+                            }
+                except Exception:
+                    pass
+
+        return {"connected": True, "indices": result}
+
     # ── Control: Start ──
     @app.post("/api/control/start")
     async def control_start():

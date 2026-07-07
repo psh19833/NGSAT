@@ -10,6 +10,7 @@ import Sidebar from './components/Sidebar.jsx'
 import StatusCard from './components/StatusCard.jsx'
 import AccountCard from './components/AccountCard.jsx'
 import RegimeCard from './components/RegimeCard.jsx'
+import IndicesCard from './components/IndicesCard.jsx'
 import PositionsTable from './components/PositionsTable.jsx'
 import ControlPanel from './components/ControlPanel.jsx'
 import TradesTable from './components/TradesTable.jsx'
@@ -28,6 +29,7 @@ export default function App() {
   const [regime, setRegime] = useState(null)
   const [trades, setTrades] = useState(null)
   const [strategyConfig, setStrategyConfig] = useState(null)
+  const [indices, setIndices] = useState(null)
   const [refreshing, setRefreshing] = useState(false)
   const [activeTab, setActiveTab] = useState('overview')
   const [toast, setToast] = useState(null)
@@ -46,8 +48,8 @@ export default function App() {
     const results = await Promise.allSettled([
       api.getStatus(), api.getAccount(), api.getPositions(),
       api.getRegime(), api.getTrades(), api.getStrategyConfig(),
+      api.getIndices(),
     ])
-    // Only update state on success — stale data persists on failure
     if (results[0].status === 'fulfilled') setStatus(results[0].value)
     if (results[1].status === 'fulfilled') setAccount(results[1].value)
     if (results[2].status === 'fulfilled') setPositions(results[2].value)
@@ -56,6 +58,10 @@ export default function App() {
     if (results[5].status === 'fulfilled') {
       const d = results[5].value
       setStrategyConfig(d?.config ? { ...d.config, active_preset: d.active_preset } : null)
+    }
+    if (results[6].status === 'fulfilled') {
+      const d = results[6].value
+      if (d?.indices) setIndices(d.indices)
     }
     setRefreshing(false)
   }, [])
@@ -212,6 +218,9 @@ export default function App() {
 
               {/* Middle Row: Account */}
               <AccountCard account={account} />
+
+              {/* Indices */}
+              {indices && <IndicesCard indices={indices} />}
 
               {/* Strategy Summary */}
               <StrategySummaryCard config={strategyConfig} regime={regime} />
