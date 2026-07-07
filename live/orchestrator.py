@@ -360,9 +360,9 @@ class TradingOrchestrator:
             if index_price is not None and len(index_prices) >= 2:
                 # API가 제공하는 등락률 직접 사용 (bstp_nmix_prdy_ctrt)
                 intraday_change_pct = index_price.change_pct if index_price.change_pct is not None else 0.0
-                # Map to ±5 point correction, capped
-                correction = intraday_change_pct * 1.67  # ±3% → ±5점
-                correction = max(-5.0, min(5.0, correction))
+                # P-60: 장중보정 비례식 (고정 ±5 → 등락률 × 2.5, cap ±15)
+                correction = intraday_change_pct * 2.5  # ±4% → ±10점
+                correction = max(-15.0, min(15.0, correction))
                 if abs(correction) >= 0.5:
                     old_score = regime_result.score
                     new_score = max(0.0, min(100.0, old_score + correction))
