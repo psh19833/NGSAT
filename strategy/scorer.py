@@ -17,15 +17,18 @@ from core.logger import logger
 _REGIME_WEIGHTS: dict[str, dict[str, float]] = {
     "bull": {
         "rsi": 10, "mfi": 10, "adx_di": 20, "obv": 15,
-        "ma": 20, "volume": 10, "pattern": 10, "candle": 5,
+        "ma": 15, "volume": 10, "pattern": 10, "candle": 5,
+        "rs": 5,
     },
     "neutral": {
         "rsi": 20, "mfi": 15, "adx_di": 10, "obv": 10,
-        "ma": 10, "volume": 10, "pattern": 15, "candle": 10,
+        "ma": 10, "volume": 10, "pattern": 15, "candle": 5,
+        "rs": 5,
     },
     "bear": {
-        "rsi": 15, "mfi": 20, "adx_di": 10, "obv": 10,
-        "ma": 5, "volume": 10, "pattern": 10, "candle": 15,
+        "rsi": 15, "mfi": 10, "adx_di": 10, "obv": 5,
+        "ma": 5, "volume": 10, "pattern": 10, "candle": 5,
+        "rs": 20,
     },
 }
 

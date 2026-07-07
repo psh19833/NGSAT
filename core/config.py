@@ -121,8 +121,8 @@ class StrategyConfig:
     screener_bull_max_candidates: int = 15
     screener_neutral_min_score: float = 30.0
     screener_neutral_max_candidates: int = 10
-    screener_bear_min_score: float = 80.0
-    screener_bear_max_candidates: int = 5
+    screener_bear_min_score: float = 50.0
+    screener_bear_max_candidates: int = 8
 
     # ── ML 학습 ──
     ml_model_type: str = "gradient_boosting"  # logistic/random_forest/gradient_boosting/xgboost/lightgbm
@@ -260,8 +260,8 @@ def load_config(env_file: str | None = None) -> Config:
     s.screener_bull_max_candidates = int(os.getenv("NGSAT_SCREENER_BULL_MAX_CANDIDATES", "15"))
     s.screener_neutral_min_score = float(os.getenv("NGSAT_SCREENER_NEUTRAL_MIN_SCORE", "30.0"))
     s.screener_neutral_max_candidates = int(os.getenv("NGSAT_SCREENER_NEUTRAL_MAX_CANDIDATES", "10"))
-    s.screener_bear_min_score = float(os.getenv("NGSAT_SCREENER_BEAR_MIN_SCORE", "80.0"))
-    s.screener_bear_max_candidates = int(os.getenv("NGSAT_SCREENER_BEAR_MAX_CANDIDATES", "5"))
+    s.screener_bear_min_score = float(os.getenv("NGSAT_SCREENER_BEAR_MIN_SCORE", "50.0"))
+    s.screener_bear_max_candidates = int(os.getenv("NGSAT_SCREENER_BEAR_MAX_CANDIDATES", "8"))
     s.mode_high_volatility_atr_pct = float(os.getenv("NGSAT_MODE_HIGH_VOL_ATR_PCT", "1.5"))
     s.mode_low_volatility_atr_pct = float(os.getenv("NGSAT_MODE_LOW_VOL_ATR_PCT", "0.5"))
     s.ml_model_type = os.getenv("NGSAT_ML_MODEL_TYPE", "gradient_boosting")
