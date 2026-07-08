@@ -19,8 +19,6 @@ from core.config import StrategyConfig
 from core.logger import logger
 from core.types import (
     DecisionAction,
-    MarketRegime,
-    OrderSide,
     Position,
     PriceData,
     StrategyMode,
@@ -31,7 +29,6 @@ from live.risk import RiskManager
 from live.trade_recorder import TradeRecorder
 from ml.inference import MLInference
 from strategy.entry_timing import EntryDecision, EntryTiming, refine_entry
-from strategy.indicators import atr as calc_atr
 from strategy.mode_selector import estimate_volatility_from_prices
 from strategy.screener import screen_stocks
 
@@ -60,6 +57,8 @@ class EntryPlanner:
         self._risk = risk
         self._trade_recorder = trade_recorder
         self._strategy = strategy or StrategyConfig()
+        from strategy.preset_router import PresetRouter
+        self._preset_router = PresetRouter()
 
     # ──────────────────────────────────────────
     # Public API
@@ -153,7 +152,6 @@ class EntryPlanner:
         if abs(correction) >= 0.5:
             from core.config import load_config
             from core.types import MarketRegime
-            from strategy.regime import RegimeResult
             _cfg = load_config()
             bull_t = _cfg.strategy.regime_bull_threshold
             bear_t = _cfg.strategy.regime_bear_threshold
@@ -176,11 +174,12 @@ class EntryPlanner:
             logger.info(f"장중 KOSPI {intraday_change_pct:+.1f}% — 레짐 보정 {correction:+.0f}점")
 
     async def _select_preset(self, regime_result, vol: float) -> str | None:
-        """Auto preset selection."""
+        """자동 프리셋 선택 — PresetRouter 인스턴스 재사용 (P-68)."""
         try:
-            from strategy.preset_router import PresetRouter
-            router = PresetRouter()
-            return router.select_preset(regime_result, atr_pct=vol)
+            if not hasattr(self, '_preset_router'):
+                from strategy.preset_router import PresetRouter
+                self._preset_router = PresetRouter()
+            return self._preset_router.select_preset(regime_result, atr_pct=vol)
         except Exception:
             return None
 

@@ -28,7 +28,7 @@ from core.types import MarketRegime
 from strategy.indicators import sma, rsi, bollinger_bands, adx
 
 
-@dataclass(frozen=True)
+@dataclass
 class RegimeResult:
     """Market regime evaluation result.
 
