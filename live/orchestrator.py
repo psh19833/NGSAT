@@ -85,6 +85,7 @@ class CycleResult:
     regime_skipped: bool = False                       # 장 종료로 레짐 스킵
     preset_change: str | None = None                   # 자동 프리셋 변경 (preset name)
     minute_screened: list = field(default_factory=list) # 분봉 스크리닝 결과
+    combined_screened: list = field(default_factory=list) # 통합 점수 (일봉+분봉)
 
 
 class TradingOrchestrator:
@@ -369,6 +370,7 @@ class TradingOrchestrator:
             result.candidates_found = entry_result.get("candidates_found", 0)
             result.screened = entry_result.get("screened", [])
             result.minute_screened = entry_result.get("minute_screened", [])
+            result.combined_screened = entry_result.get("combined_screened", [])
             result.predictions = entry_result.get("predictions", [])
             result.deferred_entries = entry_result.get("deferred_entries", [])
             result.buys_executed = entry_result.get("buys_executed", 0)
@@ -421,6 +423,7 @@ class TradingOrchestrator:
             "predictions": result.predictions,
             "deferred_entries": result.deferred_entries,
             "minute_screened": result.minute_screened,
+            "combined_screened": result.combined_screened,
             "summary": result.reason,
             "minute_ml_status": (
                 "정상(분봉ML)" if self._inference.has_minute_model

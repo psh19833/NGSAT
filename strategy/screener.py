@@ -54,6 +54,7 @@ from strategy.scorer import (
     score_obv_slope,
     score_relative_strength,
     score_candlestick,
+    score_patterns,
 )
 from strategy.regime import RegimeResult
 
@@ -250,11 +251,25 @@ def _evaluate_single_stock(
         di_minus_val = float(di_minus_arr[-1]) if not np.isnan(di_minus_arr[-1]) else float('nan')
 
     vol_ma5_val, vol_ma20_val = float('nan'), float('nan')
+    vol_ma3_val = float('nan')
+    vol_price_dir = 0.0
     if len(volumes) >= 20:
+        vol_ma3_arr = sma(volumes, 3)
         vol_ma5_arr = sma(volumes, 5)
         vol_ma20_arr = sma(volumes, 20)
+        vol_ma3_val = float(vol_ma3_arr[-1]) if not np.isnan(vol_ma3_arr[-1]) else float('nan')
         vol_ma5_val = float(vol_ma5_arr[-1]) if not np.isnan(vol_ma5_arr[-1]) else float('nan')
         vol_ma20_val = float(vol_ma20_arr[-1]) if not np.isnan(vol_ma20_arr[-1]) else float('nan')
+        # Price direction for volume confirmation (+1 up, -1 down, 0 flat)
+        vol_price_dir = 0.0
+        if len(closes) >= 5:
+            price_chg = float(closes[-1]) - float(closes[-5])
+            if price_chg > 0:
+                vol_price_dir = 1.0
+            elif price_chg < 0:
+                vol_price_dir = -1.0
+    else:
+        vol_ma3_val = float('nan')
 
     # ── Advanced indicators (P-60) ──
     mfi_val = float('nan')
@@ -333,21 +348,20 @@ def _evaluate_single_stock(
     if ma5 > 0 and ma20 > 0:
         indicator_scores["ma"] = score_ma_alignment(float(closes[-1]), ma5, ma20)
     if not np.isnan(vol_ma5_val) and not np.isnan(vol_ma20_val) and not np.isnan(vol_ratio):
-        indicator_scores["volume"] = score_volume(vol_ma5_val, vol_ma20_val, vol_ratio)
+        indicator_scores["volume"] = score_volume(
+            vol_ma5_val, vol_ma20_val, vol_ratio,
+            vol_ma3=vol_ma3_val if not np.isnan(vol_ma3_val) else None,
+            price_direction=vol_price_dir,
+        )
     indicator_scores["candle"] = score_candlestick(candle_bullish, False)
+    # Stochastic (P-60 보강 — 기존 score_stochastic 함수 미사용)
+    if not np.isnan(k_val):
+        indicator_scores["stochastic_k"] = score_stochastic(k_val)
     if index_closes:
         indicator_scores["rs"] = score_relative_strength(rs_val)
 
-    # Pattern score
-    pattern_type_weights = {
-        "breakout": 1.5, "bollinger_squeeze": 1.3, "ma_cross": 1.2,
-        "pullback": 0.8, "rebound": 0.7,
-    }
-    pattern_score = sum(
-        3 * pattern_type_weights.get(p.pattern_name, 1.0)
-        for p in patterns
-    ) if patterns else 0
-    indicator_scores["pattern"] = min(100.0, pattern_score * 10)
+    # Pattern score (P-66: scorer.py 위임, 레짐별 차등 + 체감 효과)
+    indicator_scores["pattern"] = score_patterns(patterns, regime)
 
     total_score = compute_total_score(indicator_scores, regime)
 

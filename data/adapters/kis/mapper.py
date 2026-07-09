@@ -232,6 +232,8 @@ def parse_minute_history(raw: dict[str, Any], code: str = "") -> list[PriceData]
             change_pct=_float(item.get("prdy_ctrt") or item.get("change_pct")),
         ))
 
+    # KIS는 내림차순(최신순) 반환 — 모든 지표가 오름차순 가정
+    result.sort(key=lambda p: p.timestamp)
     return result
 
 

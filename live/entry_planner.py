@@ -189,6 +189,10 @@ class EntryPlanner:
             return
         try:
             from strategy.minute_screener import screen_by_minute
+            from strategy.combined_scorer import (
+                compute_combined_score,
+                compute_minute_confidence,
+            )
             minute_data: dict[str, list[PriceData]] = {}
             names: dict[str, str] = {}
             ctx.minute_cache.clear()
@@ -210,6 +214,35 @@ class EntryPlanner:
                     for s in minute_scores[:10]
                 ]
                 logger.info(f"분봉 스크리닝: {len(minute_scores)}개 점수 산출")
+
+                # ── Combined score: 일봉 + 분봉 통합 점수 ──
+                regime_str = ctx.regime.value if hasattr(ctx.regime, 'value') else str(ctx.regime)
+                minute_score_map = {ms.code: ms.score for ms in minute_scores}
+                has_ws = bool(getattr(broker, '_minute_builder', None))
+                combined_list = []
+                for s in result.get("screened", []):
+                    ms = minute_score_map.get(s["code"])
+                    if ms is not None:
+                        n_bars = len(ctx.minute_cache.get(s["code"], []))
+                        confidence = compute_minute_confidence(n_bars, has_websocket=has_ws)
+                        combined = compute_combined_score(
+                            daily_score=s["score"],
+                            minute_score=ms,
+                            regime=regime_str,
+                            minute_confidence=confidence,
+                        )
+                        combined_list.append({
+                            "code": s["code"],
+                            "name": s["name"],
+                            "combined_score": combined,
+                            "daily_score": s["score"],
+                            "minute_score": ms,
+                            "confidence": round(confidence, 2),
+                        })
+                if combined_list:
+                    combined_list.sort(key=lambda x: x["combined_score"], reverse=True)
+                    result["combined_screened"] = combined_list
+                    logger.info(f"통합 점수: {len(combined_list)}개 산출 (레짐={regime_str})")
         except Exception as e:
             logger.warning(f"분봉 스크리닝 실패 (skip): {e}")
 
@@ -253,25 +286,51 @@ class EntryPlanner:
                 minute_prices = ctx.minute_cache.get(candidate.code) or await self._fetch_minute_prices(broker, candidate.code, ctx)
                 if minute_prices and len(minute_prices) >= 30:
                     pred = self._inference.predict_minute_entry(candidate, minute_prices)
+                    # 분봉ML 확률이 매우 낮으면 일봉ML로 fallback
+                    if pred and pred.rise_probability < 0.05 and self._inference.has_minute_model:
+                        daily_pred = self._inference.predict_entry(candidate, prices)
+                        if daily_pred and daily_pred.rise_probability > pred.rise_probability:
+                            from ml.inference import MLPrediction
+                            pred = MLPrediction(
+                                code=daily_pred.code, name=daily_pred.name,
+                                rise_probability=daily_pred.rise_probability,
+                                action=daily_pred.action,
+                                reason=f"일봉ML fallback: {daily_pred.reason}",
+                                evidence=daily_pred.evidence,
+                                feature_vector=daily_pred.feature_vector,
+                            )
+                            logger.info(f"분봉ML→일봉ML fallback: {candidate.code} 분봉확률={pred.rise_probability:.1%}")
                 else:
                     pred = self._inference.predict_entry(candidate, prices)
             else:
                 pred = self._inference.predict_entry(candidate, prices)
 
             if pred:
-                result["predictions"].append({
+                pred_entry = {
                     "code": pred.code, "name": pred.name,
                     "action": pred.action.value,
                     "probability": round(pred.rise_probability, 3),
                     "reason": pred.reason,
-                })
+                    "evidence": pred.evidence,
+                }
 
             # HOLD 모드: 평가만 기록, 매수 차단
             if ctx.mode == StrategyMode.HOLD:
+                if pred:
+                    result["predictions"].append(pred_entry)
                 continue
 
             if pred and pred.action == DecisionAction.BUY:
                 await self._attempt_buy(ctx, candidate, pred, prices, result, regime_result, stock_universe, broker)
+                # Check if this buy was deferred — update prediction entry
+                if result.get("deferred_entries"):
+                    for de in reversed(result["deferred_entries"]):
+                        if de["code"] == pred.code:
+                            pred_entry["deferred_reason"] = de["reason"]
+                            break
+                result["predictions"].append(pred_entry)
+            elif pred:
+                result["predictions"].append(pred_entry)
 
     async def _attempt_buy(
         self,
@@ -292,13 +351,14 @@ class EntryPlanner:
                 {"code": pred.code, "name": pred.name,
                  "reason": entry.reason, "probability": round(pred.rise_probability, 3)}
             )
+            logger.info(f"매수 보류: {pred.name}({pred.code}) 확률={pred.rise_probability:.1%} — {entry.reason}")
             return
 
         ref_price = entry.limit_price or prices[-1].close
         base_budget_pct = self._risk.position_size_pct
 
         # ATR-based dynamic position sizing
-        target_vol_pct = 1.5
+        target_vol_pct = 8.0
         min_pct = base_budget_pct * 0.3
         max_pct = base_budget_pct * 2.0
         vol_pct = max(ctx.atr_vol_pct, 0.5)
@@ -310,6 +370,10 @@ class EntryPlanner:
         budget = ctx.account.deposit * adjusted_pct
         quantity = int(budget / ref_price) if ref_price > 0 else 0
         if quantity <= 0:
+            logger.info(f"매수 불가: {pred.name}({pred.code}) — 예산 부족 "
+                        f"(deposit={ctx.account.deposit:.0f}원, "
+                        f"adj_pct={adjusted_pct:.1%}, budget={budget:.0f}원, "
+                        f"ref_price={ref_price:.0f}원, qty={quantity})")
             return
 
         # TR-13: 일일 거래 횟수 제한

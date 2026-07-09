@@ -14,6 +14,18 @@ from core.logger import logger
 # ── Regime weight profiles ──
 # Weights are defined in StrategyConfig. These are the default fallbacks.
 # Format: {regime: {indicator_name: weight_percent}}
+# Can be overridden via env NGSAT_SCORER_WEIGHTS (JSON string)
+import json
+import os
+
+_SCORER_WEIGHTS_ENV = os.getenv("NGSAT_SCORER_WEIGHTS", "")
+if _SCORER_WEIGHTS_ENV:
+    try:
+        _REGIME_WEIGHTS = json.loads(_SCORER_WEIGHTS_ENV)
+        logger.info(f"스코어 가중치: env override 적용 ({len(_REGIME_WEIGHTS)}개 레짐)")
+    except (json.JSONDecodeError, TypeError) as e:
+        logger.warning(f"NGSAT_SCORER_WEIGHTS env 파싱 실패, 기본값 사용: {e}")
+        _REGIME_WEIGHTS = {}
 _REGIME_WEIGHTS: dict[str, dict[str, float]] = {
     "bull": {
         "rsi": 10, "mfi": 10, "adx_di": 20, "obv": 15,
@@ -21,9 +33,9 @@ _REGIME_WEIGHTS: dict[str, dict[str, float]] = {
         "rs": 5,
     },
     "neutral": {
-        "rsi": 20, "mfi": 15, "adx_di": 10, "obv": 10,
+        "rsi": 15, "mfi": 10, "adx_di": 10, "obv": 10,
         "ma": 10, "volume": 10, "pattern": 15, "candle": 5,
-        "rs": 5,
+        "stochastic_k": 10, "rs": 5,
     },
     "bear": {
         "rsi": 15, "mfi": 10, "adx_di": 10, "obv": 5,
@@ -94,16 +106,55 @@ def score_adx_di(adx_val: float, di_plus: float, di_minus: float) -> float:
         return 50.0  # Trendless
 
 
-def score_volume(vol_ma5: float, vol_ma20: float, vol_ratio: float) -> float:
-    """Volume trend scoring."""
-    if vol_ma5 > vol_ma20 and vol_ratio > 1.2:
-        return 85.0  # Volume increasing + above average
+def score_volume(
+    vol_ma5: float, vol_ma20: float, vol_ratio: float,
+    vol_ma3: float | None = None,
+    price_direction: float | None = None,
+) -> float:
+    """Volume trend scoring with multi-period analysis.
+
+    Args:
+        vol_ma5: 5-day avg volume.
+        vol_ma20: 20-day avg volume.
+        vol_ratio: current volume / avg volume.
+        vol_ma3: 3-day avg volume (ultra-short term spike).
+        price_direction: +1=up, -1=down, 0=flat (price confirmation).
+
+    Returns:
+        0~100 score.
+    """
+    score = 50.0  # neutral baseline
+
+    # Long term trend (MA5 vs MA20)
+    if vol_ma5 > vol_ma20 * 1.3:
+        score += 15  # strong uptrend
     elif vol_ma5 > vol_ma20:
-        return 65.0  # Volume trend improving
+        score += 8   # mild uptrend
+    elif vol_ma5 < vol_ma20 * 0.7:
+        score -= 10  # strong downtrend
+
+    # Short term spike (vol_ma3 vs vol_ma5)
+    if vol_ma3 is not None and vol_ma3 > vol_ma5 * 1.5:
+        score += 12  # ultra-short spike
+    elif vol_ma3 is not None and vol_ma3 > vol_ma5:
+        score += 5
+
+    # Volume ratio confirmation
+    if vol_ratio > 2.0:
+        score += 10  # 2x+ = strong interest
+    elif vol_ratio > 1.5:
+        score += 7
     elif vol_ratio > 1.2:
-        return 70.0  # Above-average volume
-    else:
-        return 35.0  # Volume declining
+        score += 4
+
+    # Price-volume confirmation
+    if price_direction is not None:
+        if price_direction > 0 and vol_ratio > 1.2:
+            score += 8  # volume supporting uptrend
+        elif price_direction < 0 and vol_ratio > 1.2:
+            score -= 8  # volume supporting downtrend (distribution)
+
+    return max(0.0, min(100.0, score))
 
 
 def score_stochastic(k_val: float) -> float:
@@ -145,6 +196,55 @@ def score_candlestick(bullish: bool, bearish: bool) -> float:
     elif bearish:
         return 30.0
     return 50.0
+
+
+# Pattern scoring weights (P-66 강화: 패턴별 + 레짐별 차등)
+_PATTERN_TYPE_WEIGHTS: dict[str, float] = {
+    "breakout": 1.5,
+    "bollinger_squeeze": 1.3,
+    "ma_cross": 1.2,
+    "pullback": 0.9,
+    "rebound": 0.8,
+}
+_PATTERN_REGIME_MOD: dict[str, float] = {
+    "bull": 1.2, "neutral": 1.0, "bear": 0.7,
+}
+
+
+def score_patterns(
+    patterns: list,
+    regime: str = "neutral",
+) -> float:
+    """Pattern score with regime modulation and diminishing returns.
+
+    Args:
+        patterns: List of pattern objects with .pattern_name and .detected.
+        regime: Current market regime.
+
+    Returns:
+        0~100 score.
+    """
+    if not patterns:
+        return 0.0
+
+    regime_mod = _PATTERN_REGIME_MOD.get(regime, 1.0)
+    total = 0.0
+    count = 0
+
+    for p in patterns:
+        if not hasattr(p, 'detected') or not p.detected:
+            continue
+        base_weight = _PATTERN_TYPE_WEIGHTS.get(
+            getattr(p, 'pattern_name', ''), 1.0
+        )
+        # Base score per pattern (diminishing returns for multiple patterns)
+        count += 1
+        addition = 20 * base_weight * regime_mod
+        if count > 1:
+            addition *= 0.6  # 2nd+ patterns get only 60%
+        total += addition
+
+    return min(100.0, total)
 
 
 # ── Composite calculation ──

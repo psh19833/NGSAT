@@ -18,6 +18,7 @@ from enum import Enum
 import numpy as np
 
 from core.types import PriceData
+from core.logger import logger
 from strategy.indicators import current_rsi
 
 
@@ -111,27 +112,31 @@ def refine_entry(
 
     # 급등 추격 보류
     if surge_pct > surge_threshold_pct:
+        reason = (
+            f"최근 {lookback}분봉 +{surge_pct:.1f}% 급등 "
+            f"(>{surge_threshold_pct:.0f}%) — 추격매수 보류, 눌림 대기"
+        )
+        logger.info(f"매수 보류(급등): 코드=?, RSI={rsi_safe:.1f}, surge={surge_pct:+.1f}%, 사유={reason}")
         return EntryDecision(
             timing=EntryTiming.WAIT,
             should_enter=False,
             limit_price=None,
-            reason=(
-                f"최근 {lookback}분봉 +{surge_pct:.1f}% 급등 "
-                f"(>{surge_threshold_pct:.0f}%) — 추격매수 보류, 눌림 대기"
-            ),
+            reason=reason,
             evidence=evidence,
         )
 
     # RSI 과열 보류
     if rsi_safe > overheat_rsi:
+        reason = (
+            f"분봉 RSI {rsi_safe:.1f} 과열(>{overheat_rsi:.0f}) "
+            f"— 추격매수 보류, 다음 기회 대기"
+        )
+        logger.info(f"매수 보류(과열): 코드=?, RSI={rsi_safe:.1f}, surge={surge_pct:+.1f}%, 사유={reason}")
         return EntryDecision(
             timing=EntryTiming.WAIT,
             should_enter=False,
             limit_price=None,
-            reason=(
-                f"분봉 RSI {rsi_safe:.1f} 과열(>{overheat_rsi:.0f}) "
-                f"— 추격매수 보류, 다음 기회 대기"
-            ),
+            reason=reason,
             evidence=evidence,
         )
 

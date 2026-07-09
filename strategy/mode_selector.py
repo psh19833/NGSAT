@@ -158,26 +158,47 @@ def estimate_volatility_from_prices(
     closes: Sequence[float],
     highs: Sequence[float] | None = None,
     lows: Sequence[float] | None = None,
-    period: int = 20,
+    period: int = 14,
 ) -> float:
-    """분봉/일봉 가격으로 변동성(%) 추정.
+    """ATR%로 변동성 추정.
+
+    True Range 기반 ATR을 계산하여 일관된 변동성 측정 제공.
+    high/low가 없으면 표준편차 기반 CV로 폴백.
 
     Args:
         closes: 종가 리스트.
-        highs: 고가 리스트 (ATR 계산용).
+        highs: 고가 리스트 (True Range 계산용).
         lows: 저가 리스트.
-        period: 기간.
+        period: ATR 기간 (기본 14).
 
     Returns:
-        변동성(%): 표준편차/평균 * 100.
+        ATR(%). 데이터 부족 시 0.5 반환.
     """
-    arr = np.asarray(closes, dtype=float)
-    if len(arr) < period:
-        return 0.5  # 기본값
-
-    recent = arr[-period:]
-    std = float(np.std(recent))
-    mean = float(np.mean(recent))
-    if mean == 0:
+    closes_arr = np.asarray(closes, dtype=float)
+    if len(closes_arr) < period + 1:
         return 0.5
-    return std / mean * 100
+
+    # high/low가 없으면 CV(변동계수)로 폴백
+    if highs is None or lows is None or len(highs) < period + 1 or len(lows) < period + 1:
+        recent = closes_arr[-period:]
+        std = float(np.std(recent))
+        mean = float(np.mean(recent))
+        return (std / mean * 100) if mean > 0 else 0.5
+
+    highs_arr = np.asarray(highs, dtype=float)
+    lows_arr = np.asarray(lows, dtype=float)
+
+    # True Range = max(H-L, |H-prevC|, |L-prevC|)
+    prev_close = np.roll(closes_arr, 1)
+    prev_close[0] = closes_arr[0]
+    tr = np.maximum(
+        highs_arr - lows_arr,
+        np.maximum(np.abs(highs_arr - prev_close), np.abs(lows_arr - prev_close)),
+    )
+
+    # ATR = SMA of True Range over period
+    atr = float(np.mean(tr[-period:]))
+    current_price = float(closes_arr[-1])
+    if current_price <= 0:
+        return 0.5
+    return atr / current_price * 100

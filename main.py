@@ -263,6 +263,8 @@ async def run_live(config, args):
 
         # Connect minute bar builder from live data provider to orchestrator
         orchestrator._minute_builder = data_provider._minute_builder
+        # Also expose on broker so entry_planner._fetch_minute_prices() can use it
+        orchestrator._broker._minute_builder = data_provider._minute_builder
 
         if not universe:
             logger.error("실데이터 로드 실패 — 시스템 중단")
@@ -435,7 +437,7 @@ async def run_live(config, args):
                             minute_codes: list[str] = []
                             for code in codes:
                                 if mb is not None:
-                                    bars = mb.get_bars(code, 60)
+                                    bars = mb.get_bars(code, 200)
                                 else:
                                     bars = None
                                 if not bars or len(bars) < 60:

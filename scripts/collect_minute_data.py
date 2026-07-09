@@ -18,6 +18,7 @@ from __future__ import annotations
 
 import asyncio
 import os
+import signal
 import sys
 from argparse import ArgumentParser, Namespace
 from datetime import datetime, timezone, timedelta
@@ -34,6 +35,9 @@ from data.repository import MinuteDataRepository
 from sqlalchemy.orm import Session
 
 KST = timezone(timedelta(hours=9))
+
+# 5분 타임아웃 — 좀비 프로세스 방지 (30종목 × 30회 API = ~1.5초, 여유 200배)
+_COLLECTOR_TIMEOUT = 300
 
 # ── 기본 수집 대상 종목 (KOSPI 주요 30종목) ──
 DEFAULT_CODES: list[str] = [
@@ -133,11 +137,31 @@ async def run_collection(codes: list[str], args: Namespace) -> None:
     errors = 0
 
     for i, code in enumerate(codes):
-        try:
-            now_kst = datetime.now(KST)
-            today_str = now_kst.strftime("%Y-%m-%d")
+        retry_count = 0
+        max_retries = 2
+        last_error = None
+        bars = []
+        while retry_count <= max_retries:
+            try:
+                now_kst = datetime.now(KST)
+                today_str = now_kst.strftime("%Y-%m-%d")
 
-            bars = await adapter.get_minute_history(code, include_past=True)
+                bars = await adapter.get_minute_history(code, include_past=True)
+                break  # 성공 — 재시도 불필요
+            except Exception as e:
+                last_error = e
+                err_str = str(e)
+                # HTTP 500 (Rate Limit)만 재시도, 그 외는 즉시 실패
+                if "500" in err_str or "EGW00201" in err_str or "초당" in err_str:
+                    retry_count += 1
+                    if retry_count <= max_retries:
+                        wait = 1.0 * retry_count  # 1초, 2초
+                        logger.debug(f"[{code}] Rate Limit 재시도 {retry_count}/{max_retries} ({wait}s)")
+                        await asyncio.sleep(wait)
+                        continue
+                break
+
+        if bars:
             fetched = len(bars)
             total_fetched += fetched
 
@@ -155,8 +179,8 @@ async def run_collection(codes: list[str], args: Namespace) -> None:
                 "code": code, "fetched": fetched, "saved": saved,
                 "date": today_str, "error": None,
             })
-        except Exception as e:
-            err_msg = str(e)[:200]
+        else:
+            err_msg = str(last_error)[:200] if last_error else "데이터 없음"
             logger.warning(f"[{code}] 수집 실패: {err_msg}")
             all_results.append({
                 "code": code, "fetched": 0, "saved": 0,
@@ -168,8 +192,9 @@ async def run_collection(codes: list[str], args: Namespace) -> None:
         if (i + 1) % 10 == 0 or i == len(codes) - 1:
             logger.info(f"  진행: {i + 1}/{len(codes)} 조회 완료 (총 {total_fetched}개 분봉)")
 
-        # KIS rate limit: 초당 20건. 50ms 간격으로 충분.
-        await asyncio.sleep(0.05)
+        # KIS rate limit: KisHttpClient 내장 KisRateLimiter가 초당 20건 자동 제한
+        # (별도 sleep 불필요 — 이미 client.py의 async with self._rate_limiter 가 제어)
+
 
     await adapter.close()
 
@@ -230,9 +255,19 @@ def main() -> None:
     print(f"NGSAT 과거분봉 수집기")
     print(f"  종목: {len(codes)}개")
     print(f"  DB 저장: {'안 함 (dry-run)' if args.dry_run else '함'}")
+    print(f"  타임아웃: {_COLLECTOR_TIMEOUT}초 (좀비 방지)")
     print()
 
-    asyncio.run(run_collection(codes, args))
+    try:
+        asyncio.run(
+            asyncio.wait_for(
+                run_collection(codes, args),
+                timeout=_COLLECTOR_TIMEOUT,
+            )
+        )
+    except asyncio.TimeoutError:
+        logger.error(f"⛔ 수집 타임아웃 ({_COLLECTOR_TIMEOUT}초 초과) — 강제 종료")
+        sys.exit(2)
 
 
 if __name__ == "__main__":

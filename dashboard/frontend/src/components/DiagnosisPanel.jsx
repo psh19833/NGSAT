@@ -5,6 +5,7 @@ export default function DiagnosisPanel({ api }) {
   const [data, setData] = useState(null)
   const [loading, setLoading] = useState(true)
   const [expandedStock, setExpandedStock] = useState(null)  // P-60: 상세 점수 접기
+  const [expandedPred, setExpandedPred] = useState(null)    // ML 예측 상세 접기
   const prevCycle = useRef(0)
 
   useEffect(() => {
@@ -132,21 +133,48 @@ export default function DiagnosisPanel({ api }) {
             <p className="text-xs text-ngsat-muted">예측 결과 없음</p>
           ) : (
             <div className="space-y-1.5 max-h-80 overflow-y-auto">
-              {predictions.map((p, i) => (
-                <div key={i} className={`flex items-center justify-between text-xs py-1.5 px-2 rounded ${
-                  p.action === 'buy' ? 'bg-ngsat-green/10' : p.action === 'hold' ? '' : 'bg-ngsat-red/5'
-                }`}>
-                  <div className="flex items-center gap-2 min-w-0">
-                    <span>{p.action === 'buy' ? '🟢' : p.action === 'hold' ? '🟡' : '🔴'}</span>
-                    <span className="text-ngsat-text font-medium truncate">{p.name}({p.code})</span>
+              {predictions.map((p, i) => {
+                const isExpanded = expandedPred === i
+                const ev = p.evidence || {}
+                return (
+                  <div key={i}>
+                    <div className={'flex items-center justify-between text-xs py-1.5 px-2 rounded cursor-pointer transition-colors ' + (
+                      isExpanded ? 'bg-ngsat-accent/10 ring-1 ring-ngsat-accent/30' :
+                      p.action === 'buy' ? 'bg-ngsat-green/10' : p.action === 'hold' ? '' : 'bg-ngsat-red/5'
+                    )} onClick={() => setExpandedPred(isExpanded ? null : i)}>
+                      <div className="flex items-center gap-2 min-w-0">
+                        <span className={'transition-transform ' + (isExpanded ? 'rotate-90' : '')}>{'>'}</span>
+                        <span>{p.action === 'buy' ? '🟢' : p.action === 'hold' ? '🟡' : '🔴'}</span>
+                        <span className="text-ngsat-text font-medium truncate">{p.name}({p.code})</span>
+                      </div>
+                      <span className={'shrink-0 num font-mono ' + (
+                        p.action === 'buy' ? 'text-ngsat-green' : 'text-ngsat-muted'
+                      )}>
+                        {(p.probability * 100).toFixed(0)}%
+                      </span>
+                    </div>
+                    {isExpanded && (
+                      <div className="ml-5 pl-3 border-l-2 border-ngsat-border py-2 space-y-1.5 text-xs">
+                        {ev.screening_score != null && <ScoreBar label="스크리너점수" raw={ev.screening_score} />}
+                        {ev.rsi != null && <ScoreBar label="RSI" raw={ev.rsi} />}
+                        {ev.macd_histogram != null && <ScoreBar label="MACD" raw={ev.macd_histogram} />}
+                        {ev.bollinger_position != null && <ScoreBar label="볼린저위치" raw={ev.bollinger_position} />}
+                        {ev.patterns_detected != null && <ScoreBar label="패턴수" raw={ev.patterns_detected} />}
+                        {ev.minute_rsi != null && <ScoreBar label="분봉RSI" raw={ev.minute_rsi} />}
+                        {ev.minute_volume_spike != null && <ScoreBar label="분봉거래량" raw={ev.minute_volume_spike} />}
+                        {ev.minute_momentum_3 != null && <ScoreBar label="분봉모멘텀" raw={ev.minute_momentum_3} />}
+                        {ev.patterns_detected != null && ev.patterns_detected > 0 && (
+                          <div className="flex items-center gap-2">
+                            <span className="w-16 text-ngsat-muted shrink-0">패턴</span>
+                            <span className="text-ngsat-text">{ev.patterns_detected}개 감지</span>
+                          </div>
+                        )}
+                        <div className="pt-1 text-[10px] text-ngsat-muted border-t border-ngsat-border/50 mt-1">{p.reason}</div>
+                      </div>
+                    )}
                   </div>
-                  <span className={`shrink-0 num font-mono ${
-                    p.action === 'buy' ? 'text-ngsat-green' : 'text-ngsat-muted'
-                  }`}>
-                    {(p.probability * 100).toFixed(0)}%
-                  </span>
-                </div>
-              ))}
+                )
+              })}
             </div>
           )}
         </div>
@@ -181,33 +209,57 @@ export default function DiagnosisPanel({ api }) {
 /** P-60: 지표별 점수 바 — raw 값을 0~100% 막대로 표시 */
 function ScoreBar({ label, raw, extra, suffix }) {
   const val = (raw != null && !isNaN(raw)) ? raw : null
+  // Determine if value has polarity (positive/negative matters)
+  const hasPolarity = label === 'MACD' || label === 'OBV' || label === '볼린저위치'
+  const isNegative = val != null && val < 0
+  const absVal = val != null ? Math.abs(val) : null
+
   // Normalize to 0~100 for bar width
   let pct = 50
   if (val != null) {
-    if (label === 'RSI' || label === 'MFI' || label === '스토캐스틱') {
+    if (label === 'RSI' || label === 'MFI' || label === '스토캐스틱' || label === '스크리너점수' || label === '분봉RSI' || label === '분봉모멘텀') {
       pct = Math.min(100, Math.max(0, val))
     } else if (label === 'ADX') {
       pct = Math.min(100, Math.max(0, val * 2))
-    } else if (label === '거래량') {
+    } else if (label === '거래량' || label === '분봉거래량') {
       pct = Math.min(100, Math.max(0, (val - 0.5) * 100))
+    } else if (label === 'MACD') {
+      // Use absolute value for bar width, color indicates polarity
+      pct = Math.min(100, Math.max(0, absVal / 200))
     } else if (label === 'OBV') {
-      pct = 50 + Math.min(50, Math.max(-50, val * 5))
+      pct = Math.min(100, Math.max(0, absVal * 5))
     } else if (label === 'ATR') {
       pct = Math.min(100, Math.max(0, val * 30))
     } else if (label === 'MA') {
       pct = 50 + Math.min(50, Math.max(-50, (val - 48000) / 200))
+    } else if (label === '볼린저위치') {
+      pct = Math.min(100, Math.max(0, (absVal) * 50))
     } else {
       pct = Math.min(100, Math.max(0, (val + 1) * 50))
     }
   }
-  const color = pct >= 70 ? 'bg-ngsat-green' : pct >= 40 ? 'bg-ngsat-yellow' : 'bg-ngsat-red'
+  // Color: polarity-aware (green=positive, red=negative)
+  let color
+  if (hasPolarity && isNegative) {
+    color = 'bg-ngsat-red'
+  } else if (pct >= 70) {
+    color = 'bg-ngsat-green'
+  } else if (pct >= 40) {
+    color = 'bg-ngsat-yellow'
+  } else {
+    color = 'bg-ngsat-muted'
+  }
+  // Value display with sign prefix for polarity labels
+  const displayVal = val != null
+    ? (hasPolarity && val > 0 ? '+' : '') + val.toFixed(1) + (suffix || '')
+    : '?'
   return (
     <div className="flex items-center gap-2">
       <span className="w-16 text-ngsat-muted shrink-0">{label}</span>
-      <div className="flex-1 h-2 bg-ngsat-border/30 rounded-full overflow-hidden">
+      <div className={'flex-1 h-2 rounded-full overflow-hidden ' + (isNegative ? 'bg-ngsat-red/20' : 'bg-ngsat-border/30')}>
         <div className={'h-full rounded-full transition-all ' + color} style={{width: pct + '%'}} />
       </div>
-      <span className="w-12 text-right num text-ngsat-text font-mono">{val != null ? val.toFixed(1) + (suffix || '') : '?'}</span>
+      <span className={'w-14 text-right num font-mono ' + (isNegative ? 'text-ngsat-red' : 'text-ngsat-text')}>{displayVal}</span>
       {extra && <span className="text-[9px] text-ngsat-muted hidden lg:block">{extra}</span>}
     </div>
   )
