@@ -532,15 +532,29 @@ def create_app(orchestrator=None, config=None) -> FastAPI:
         msg = orch.controller.shutdown()
         return {"connected": True, "message": msg, "state": orch.controller.state.value}
 
-    # ── Control: Restart ──
+    # ── Control: Restart (하드 리셋 — 좀비 프로세스까지 정리) ──
     @app.post("/api/control/restart")
     async def control_restart():
-        orch = _get_orchestrator()
-        if orch is None:
-            return _not_connected()
+        import os, signal, threading, subprocess, time
+        from pathlib import Path
 
-        msg = orch.controller.restart()
-        return {"connected": True, "message": msg, "state": orch.controller.state.value}
+        PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent
+        script = str(PROJECT_ROOT / "scripts" / "restart_server.sh")
+
+        # 1) 컨트롤러 종료
+        orch = _get_orchestrator()
+        if orch is not None:
+            orch.controller.shutdown()
+
+        # 2) 1초 후 restart_server.sh 실행 (응답 먼저 보내고 죽기 위해)
+        def _do_restart():
+            time.sleep(1)
+            subprocess.run(["bash", script], cwd=str(PROJECT_ROOT))
+            # restart_server.sh가 현재 프로세스를 SIGKILL 하므로 여기까지 오지 않음
+
+        threading.Thread(target=_do_restart, daemon=True).start()
+
+        return {"connected": True, "message": "서버 재시작 중...", "state": "restarting"}
 
     # ── Control: Force Sell ──
     @app.post("/api/control/forcesell")
