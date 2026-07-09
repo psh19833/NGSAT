@@ -70,6 +70,7 @@ CONFIG_FIELD_MAP: dict[str, str] = {
     "NGSAT_PARTIAL_TP1_RATIO": "partial_tp1_ratio",
     "NGSAT_PARTIAL_TP2_PCT": "partial_tp2_pct",
     "NGSAT_PARTIAL_TP2_RATIO": "partial_tp2_ratio",
+    "NGSAT_TARGET_VOL_PCT": "target_vol_pct",
 }
 
 
@@ -128,6 +129,7 @@ class StrategyUpdateRequest(BaseModel):
     partial_tp1_ratio: float | None = Field(None, ge=0.1, le=0.9)
     partial_tp2_pct: float | None = Field(None, ge=1.0, le=50)
     partial_tp2_ratio: float | None = Field(None, ge=0.1, le=0.5)
+    target_vol_pct: float | None = Field(None, ge=1.0, le=20.0)
     reset: bool = False
 
 

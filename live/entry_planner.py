@@ -358,7 +358,7 @@ class EntryPlanner:
         base_budget_pct = self._risk.position_size_pct
 
         # ATR-based dynamic position sizing
-        target_vol_pct = 8.0
+        target_vol_pct = self._strategy.target_vol_pct
         min_pct = base_budget_pct * 0.3
         max_pct = base_budget_pct * 2.0
         vol_pct = max(ctx.atr_vol_pct, 0.5)

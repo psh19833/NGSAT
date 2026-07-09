@@ -33,7 +33,16 @@ def setup_logger(
     logger = logging.getLogger(name)
 
     if logger.handlers:
-        return logger  # Already configured
+        # Already configured — add file handler if missing but requested
+        if log_file:
+            has_file = any(isinstance(h, logging.FileHandler) for h in logger.handlers)
+            if not has_file:
+                log_path = PROJECT_ROOT / log_file
+                log_path.parent.mkdir(parents=True, exist_ok=True)
+                file_handler = logging.FileHandler(log_path, encoding="utf-8")
+                file_handler.setFormatter(logging.Formatter(_LOG_FORMAT, _DATE_FORMAT))
+                logger.addHandler(file_handler)
+        return logger
 
     logger.setLevel(level)
 
