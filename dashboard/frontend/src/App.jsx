@@ -302,7 +302,7 @@ export default function App() {
             <div className="max-w-2xl space-y-6">
               <div className="ngsat-card p-6">
                 <h3 className="text-sm text-ngsat-muted mb-4">운영 제어</h3>
-                <ControlPanel status={status} onAction={handleControl} />
+                <ControlPanel status={status} onAction={handleControl} onRestart={handleRestart} />
               </div>
             </div>
           )}

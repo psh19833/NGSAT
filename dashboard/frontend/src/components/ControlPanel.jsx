@@ -2,9 +2,10 @@ const COLOR_MAP = {
   'ngsat-green': 'bg-ngsat-green/10 text-ngsat-green hover:bg-ngsat-green/20 border border-ngsat-green/20',
   'ngsat-yellow': 'bg-ngsat-yellow/10 text-ngsat-yellow hover:bg-ngsat-yellow/20 border border-ngsat-yellow/20',
   'ngsat-red': 'bg-ngsat-red/10 text-ngsat-red hover:bg-ngsat-red/20 border border-ngsat-red/20',
+  'ngsat-blue': 'bg-blue-500/10 text-blue-400 hover:bg-blue-500/20 border border-blue-500/20',
 }
 
-export default function ControlPanel({ status, onAction, compact = false }) {
+export default function ControlPanel({ status, onAction, onRestart, compact = false }) {
   const state = status?.state || 'idle'
   const isRunning = state === 'running'
   const isShutdown = state === 'shutdown'
@@ -49,9 +50,15 @@ export default function ControlPanel({ status, onAction, compact = false }) {
         </button>
       ))}
       {!compact && (
-        <div className="pt-4 border-t border-ngsat-border">
-          <p className="text-xs text-ngsat-muted mb-2">강제 제어</p>
+        <div className="pt-4 border-t border-ngsat-border space-y-3">
+          <p className="text-xs text-ngsat-muted">강제 제어</p>
           <p className="text-xs text-ngsat-muted">포지션 탭에서 종목별 강제매도/홀드 가능</p>
+          <button
+            onClick={onRestart}
+            className="w-full py-2.5 rounded-lg text-sm font-medium transition-all bg-ngsat-border/50 text-ngsat-muted hover:bg-ngsat-border hover:text-ngsat-text"
+          >
+            🔄 서버 재시작 (좀비 정리)
+          </button>
         </div>
       )}
     </div>
