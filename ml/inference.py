@@ -129,6 +129,12 @@ class MLInference:
 
         proba = float(self._model.predict_proba(X)[0])
 
+        # DEBUG: 핑퐝 추적 — BUY/SELL action 발생 시만 기록
+        if proba >= self._buy_threshold:
+            logger.info(f"DEBUG_ENTRY_BUY: {candidate.code} proba={proba:.4f} "
+                        f"close_last={prices[-1].close} rsi={fv.features.get('rsi_14',0):.2f} "
+                        f"chg1d={fv.features.get('price_change_1d',0):.2f}")
+
         # Determine action
         if proba >= self._buy_threshold:
             action = DecisionAction.BUY
@@ -201,6 +207,13 @@ class MLInference:
         X = np.nan_to_num(X, nan=0.0, posinf=0.0, neginf=0.0)
 
         proba = float(self._model.predict_proba(X)[0])
+
+        # DEBUG: 핑퐝 추적 — BUY/SELL action 발생 시만 기록
+        if proba <= self._sell_threshold:
+            logger.info(f"DEBUG_EXIT_SELL: {code} proba={proba:.4f} "
+                        f"close_last={prices[-1].close} rsi={fv.features.get('rsi_14',0):.2f} "
+                        f"chg1d={fv.features.get('price_change_1d',0):.2f} "
+                        f"profit={current_profit_pct:+.2f}")
 
         # Exit logic: if rise probability is low, sell
         # Also consider current profit — if profitable and prob dropping, take profit

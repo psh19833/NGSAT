@@ -667,7 +667,7 @@ async def run_live(config, args):
     # ── 8. Wait for shutdown signal ──
     stop_event = asyncio.Event()
 
-    def signal_handler(sig, frame=None):
+    def signal_handler(sig=None, frame=None):
         logger.info(f"종료 신호 수신: {sig}")
         stop_event.set()
 
