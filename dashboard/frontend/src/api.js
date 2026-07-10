@@ -47,4 +47,6 @@ export const api = {
   getBacktestState: () => fetchJSON('/backtest/state'),
   getBacktestResults: () => fetchJSON('/backtest/results'),
   retrain: () => fetchJSON('/control/retrain', { method: 'POST' }),
+
+  getDailyPnL: () => fetchJSON('/pnl/daily'),
 }

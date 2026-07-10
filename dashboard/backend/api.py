@@ -386,6 +386,36 @@ def create_app(orchestrator=None, config=None) -> FastAPI:
         except Exception as e:
             return {"connected": True, "trades": [], "message": f"거래 내역 조회 오류: {e}"}
 
+    # ── Daily P&L ──
+    @app.get("/api/pnl/daily")
+    async def get_daily_pnl():
+        orch = _get_orchestrator()
+        if orch is None:
+            return _not_connected()
+
+        try:
+            repo = orch._trade_repo
+            daily = repo.get_daily_pnl()
+            total_pnl = sum(d["net_pnl"] for d in daily)
+            total_realized = sum(d["realized_pnl"] for d in daily)
+            total_fees = sum(d["fee_estimate"] for d in daily)
+            return {
+                "connected": True,
+                "daily": daily,
+                "summary": {
+                    "total_pnl": round(total_pnl, 0),
+                    "total_realized": round(total_realized, 0),
+                    "total_fees": round(total_fees, 0),
+                    "total_trades": sum(d["trade_count"] for d in daily),
+                    "trade_days": len(daily),
+                    "avg_daily_pnl": round(total_pnl / len(daily), 0) if daily else 0,
+                    "win_days": sum(1 for d in daily if d["net_pnl"] > 0),
+                    "lose_days": sum(1 for d in daily if d["net_pnl"] < 0),
+                },
+            }
+        except Exception as e:
+            return {"connected": True, "daily": [], "message": f"손익 조회 오류: {e}"}
+
     # ── Regime ──
     @app.get("/api/regime")
     async def get_regime():

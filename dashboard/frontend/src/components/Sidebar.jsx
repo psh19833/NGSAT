@@ -9,6 +9,7 @@ import {
   SlidersHorizontal,
   RotateCcw,
   Menu, X,
+  TrendingUp,
 } from 'lucide-react'
 
 const TABS = [
@@ -16,6 +17,7 @@ const TABS = [
   { id: 'account', label: '계좌', icon: Wallet },
   { id: 'positions', label: '포지션', icon: BarChart3 },
   { id: 'trades', label: '거래 내역', icon: ListOrdered },
+  { id: 'pnl', label: '손익 분석', icon: TrendingUp },
   { id: 'control', label: '운영 제어', icon: Radio },
   { id: 'diagnosis', label: '진단 현황', icon: Search },
   { id: 'strategy', label: '전략 설정', icon: SlidersHorizontal },

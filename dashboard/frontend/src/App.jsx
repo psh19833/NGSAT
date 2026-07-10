@@ -21,6 +21,7 @@ import ErrorBoundary from './components/ErrorBoundary.jsx'
 import ConfirmModal from './components/ConfirmModal.jsx'
 import BacktestPanel from './components/BacktestPanel.jsx'
 import StrategySummaryCard from './components/StrategySummaryCard.jsx'
+import PnLCard from './components/PnLCard.jsx'
 
 export default function App() {
   const [status, setStatus] = useState(null)
@@ -30,6 +31,7 @@ export default function App() {
   const [trades, setTrades] = useState(null)
   const [strategyConfig, setStrategyConfig] = useState(null)
   const [indices, setIndices] = useState(null)
+  const [dailyPnl, setDailyPnl] = useState(null)
   const [refreshing, setRefreshing] = useState(false)
   const [activeTab, setActiveTab] = useState('overview')
   const [toast, setToast] = useState(null)
@@ -52,6 +54,7 @@ export default function App() {
       diagnosis: [api.getStatus],
       strategy: [api.getStatus, api.getStrategyConfig],
       backtest: [api.getStatus],
+      pnl: [api.getStatus, api.getDailyPnL],
     }
     const apis = tabApiMap[tab] || tabApiMap.overview
     setRefreshing(true)
@@ -70,6 +73,9 @@ export default function App() {
       const d = results[idx++].value
       if (d?.indices) setIndices(d.indices)
     }
+    if (apis.includes(api.getDailyPnL) && results[idx]?.status === 'fulfilled') {
+      setDailyPnl(results[idx++].value)
+    } else if (apis.includes(api.getDailyPnL)) idx++
     setRefreshing(false)
   }, [])
 
@@ -169,6 +175,7 @@ export default function App() {
               <h1 className="text-xl font-semibold text-ngsat-text">
               {activeTab === 'overview' && '운영 요약'}
               {activeTab === 'backtest' && '백테스트'}
+              {activeTab === 'pnl' && '손익 분석'}
               {activeTab === 'account' && '계좌 현황'}
               {activeTab === 'positions' && '보유 포지션'}
               {activeTab === 'trades' && '거래 내역'}
@@ -284,6 +291,10 @@ export default function App() {
 
           {connected && activeTab === 'trades' && (
             <TradesTable trades={trades} />
+          )}
+
+          {connected && activeTab === 'pnl' && (
+            <PnLCard data={dailyPnl} />
           )}
 
           {connected && activeTab === 'diagnosis' && (

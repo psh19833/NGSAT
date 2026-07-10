@@ -96,6 +96,79 @@ class TradeRepository:
         wins = sum(1 for t in sells if t.action not in ("stop_loss",))
         return round(wins / len(sells) * 100, 1)
 
+    def get_daily_pnl(self) -> list[dict]:
+        """Calculate realized P&L grouped by date (FIFO matching).
+
+        Returns:
+            List of dicts with date, trade_count, realized_pnl, fee_estimate,
+            net_pnl, win_rate, and individual trades.
+        """
+        from collections import defaultdict
+
+        all_trades = self.get_recent_trades(limit=10000)
+        if not all_trades:
+            return []
+
+        # Group trades by date
+        by_date: dict[str, list] = defaultdict(list)
+        for t in all_trades:
+            d = t.created_at[:10] if hasattr(t, 'created_at') and t.created_at else t.date[:10]
+            by_date[d].append(t)
+
+        result = []
+        for date in sorted(by_date.keys()):
+            trades = by_date[date]
+            # Match buys and sells by code (FIFO within same date)
+            buys: dict[str, list[dict]] = defaultdict(list)
+            total_pnl = 0
+            total_sell_amount = 0
+            sells_count = 0
+
+            for t in trades:
+                if t.side == "buy":
+                    buys[t.code].append({"qty": t.quantity, "price": t.price})
+                elif t.side == "sell":
+                    sell_qty = t.quantity
+                    sell_price = t.price
+                    total_sell_amount += t.amount
+                    sells_count += 1
+                    # Match against buys (FIFO)
+                    buy_list = buys.get(t.code, [])
+                    remaining = sell_qty
+                    while remaining > 0 and buy_list:
+                        b = buy_list[0]
+                        match_qty = min(remaining, b["qty"])
+                        pnl = (sell_price - b["price"]) * match_qty
+                        total_pnl += pnl
+                        remaining -= match_qty
+                        b["qty"] -= match_qty
+                        if b["qty"] <= 0:
+                            buy_list.pop(0)
+
+            fee_est = round(total_sell_amount * -0.00195, 0)  # 0.18% tax + 0.015% fee
+            net_pnl = round(total_pnl + fee_est, 0)
+
+            sells = [t for t in trades if t.side == "sell"]
+            wins = sum(1 for t in sells if t.action not in ("stop_loss",))
+            win_rate = round(wins / len(sells) * 100, 1) if sells else 0.0
+
+            result.append({
+                "date": date,
+                "trade_count": len(trades),
+                "realized_pnl": round(total_pnl, 0),
+                "fee_estimate": fee_est,
+                "net_pnl": net_pnl,
+                "win_rate": win_rate,
+                "trades": [
+                    {"code": t.code, "name": t.name, "side": t.side,
+                     "qty": t.quantity, "price": t.price, "amount": t.amount,
+                     "action": t.action}
+                    for t in sorted(trades, key=lambda x: x.created_at)
+                ],
+            })
+
+        return result
+
     def get_trades_by_code(self, code: str, limit: int = 50) -> list[TradeRecord]:
         """Get recent trades for a specific stock code."""
         return (
