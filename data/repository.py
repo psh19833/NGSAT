@@ -112,12 +112,13 @@ class TradeRepository:
         # Group trades by date
         by_date: dict[str, list] = defaultdict(list)
         for t in all_trades:
-            d = t.created_at[:10] if hasattr(t, 'created_at') and t.created_at else t.date[:10]
+            ts = t.created_at or getattr(t, 'date', None)
+            d = ts.strftime("%Y-%m-%d")[:10] if hasattr(ts, 'strftime') else str(ts)[:10]
             by_date[d].append(t)
 
         result = []
         for date in sorted(by_date.keys()):
-            trades = by_date[date]
+            trades = sorted(by_date[date], key=lambda x: x.created_at or "")
             # Match buys and sells by code (FIFO within same date)
             buys: dict[str, list[dict]] = defaultdict(list)
             total_pnl = 0
@@ -163,7 +164,7 @@ class TradeRepository:
                     {"code": t.code, "name": t.name, "side": t.side,
                      "qty": t.quantity, "price": t.price, "amount": t.amount,
                      "action": t.action}
-                    for t in sorted(trades, key=lambda x: x.created_at)
+                    for t in sorted(trades, key=lambda x: x.created_at or "")
                 ],
             })
 
