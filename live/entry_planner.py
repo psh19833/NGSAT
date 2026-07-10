@@ -287,23 +287,17 @@ class EntryPlanner:
             if ctx.is_short_term:
                 minute_prices = ctx.minute_cache.get(candidate.code) or await self._fetch_minute_prices(broker, candidate.code, ctx)
                 if minute_prices and len(minute_prices) >= 30:
-                    pred = self._inference.predict_minute_entry(candidate, minute_prices)
-                    # 분봉ML 확률이 매우 낮으면 일봉ML로 fallback
-                    if pred and pred.rise_probability < 0.05 and self._inference.has_minute_model:
-                        daily_pred = self._inference.predict_entry(candidate, prices)
-                        if daily_pred and daily_pred.rise_probability > pred.rise_probability:
-                            from ml.inference import MLPrediction
-                            pred = MLPrediction(
-                                code=daily_pred.code, name=daily_pred.name,
-                                rise_probability=daily_pred.rise_probability,
-                                action=daily_pred.action,
-                                reason=f"일봉ML fallback: {daily_pred.reason}",
-                                evidence=daily_pred.evidence,
-                                feature_vector=daily_pred.feature_vector,
-                            )
-                            logger.info(f"분봉ML→일봉ML fallback: {candidate.code} 분봉확률={pred.rise_probability:.1%}")
+                    if self._inference.has_minute_model:
+                        pred = self._inference.predict_minute_entry(candidate, minute_prices)
+                        if pred is None:
+                            logger.error(f"분봉ML 예측 실패: {candidate.code}({candidate.name}) — predict_minute_entry가 None 반환. 분봉모델 상태를 확인하세요.")
+                            continue
+                    else:
+                        logger.error(f"분봉ML 모델 없음: {candidate.code}({candidate.name}) — 단타모드이나 분봉ML이 로드되지 않음. models/trained/minute_model.pkl 확인 필요.")
+                        continue
                 else:
-                    pred = self._inference.predict_entry(candidate, prices)
+                    logger.error(f"분봉 데이터 부족: {candidate.code}({candidate.name}) — {len(minute_prices) if minute_prices else 0}개 (30개 필요). WebSocket 데이터 수집 상태 확인.")
+                    continue
             else:
                 pred = self._inference.predict_entry(candidate, prices)
 
