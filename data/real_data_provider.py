@@ -456,7 +456,8 @@ class RealDataProvider:
 
         adapter = await self._get_adapter()
         now = datetime.now(KST)
-        start = now - timedelta(days=5)  # 주말/공휴일 커버
+        # Refresh with full date range to get enough KOSPI bars (≥20)
+        start = now - timedelta(days=max(self._training_days, 30))
 
         # Refresh index first (Rate Limit 버킷 Full 상태에서 1번째 호출)
         new_index = await self._fetch_index(adapter)
