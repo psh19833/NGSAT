@@ -136,7 +136,7 @@ class ExitManager:
         # 3) ML 청산 예측
         if ctx.is_short_term:
             minute_prices = await self._fetch_minute_prices(broker, position.code, ctx)
-            if minute_prices and len(minute_prices) >= 60:
+            if minute_prices and len(minute_prices) >= 30:
                 exit_pred = self._inference.predict_minute_exit(
                     position.code, position.name, minute_prices, position.profit_loss_pct
                 )
