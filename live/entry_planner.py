@@ -147,8 +147,8 @@ class EntryPlanner:
     def _apply_intraday_correction(self, regime_result, index_price, index_prices) -> None:
         """TR-16: 장중 KOSPI 등락률 보정 (regime_result를 직접 수정)."""
         intraday_change_pct = index_price.change_pct if index_price.change_pct is not None else 0.0
-        correction = intraday_change_pct * 2.5
-        correction = max(-15.0, min(15.0, correction))
+        correction = intraday_change_pct * 4.0
+        correction = max(-20.0, min(20.0, correction))
         if abs(correction) >= 0.5:
             from core.config import load_config
             from core.types import MarketRegime
