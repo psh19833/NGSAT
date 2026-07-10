@@ -164,7 +164,7 @@ class EntryPlanner:
             elif new_score >= bull_t:
                 new_regime = MarketRegime.BULL
             else:
-                new_regime = regime_result.regime
+                new_regime = MarketRegime.NEUTRAL
             # Note: this modifies regime_result in-place-ish; caller reads .regime after
             regime_result.regime = new_regime
             regime_result.score = new_score
