@@ -206,8 +206,9 @@ class RealDataProvider:
         logger.info(f"KIS 실데이터 로드 완료: {len(universe)}종목, 지수 {len(index_prices)}일")
 
         # 지수 데이터가 부족하면 시장 지수로 보강 (백테스트/모델학습 호환)
+        # 단, KOSPI 지수가 20일 이상이면 실제 지수 유지 (stock avg로 대체하지 않음)
         max_stock_days = max((len(p) for _, p in universe), default=0)
-        if len(index_prices) < 60 and max_stock_days > len(index_prices) and self._universe_cache:
+        if len(index_prices) < 20 and max_stock_days > len(index_prices) and self._universe_cache:
             computed = self._compute_market_index(self._universe_cache)
             if len(computed) > len(index_prices):
                 logger.info(f"KOSPI 지수 보강: {len(index_prices)}일 → {len(computed)}일 (시장 지수 계산)")
