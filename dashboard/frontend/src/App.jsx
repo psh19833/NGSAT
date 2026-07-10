@@ -160,9 +160,9 @@ export default function App() {
       />
 
       {/* Main Content */}
-      <div className="flex-1 overflow-auto">
-        {/* Header */}
-        <header className="flex items-center justify-between px-4 md:px-8 py-5 border-b border-ngsat-border">
+      <div className="flex-1 flex flex-col min-h-0">
+        {/* Header — sticky */}
+        <header className="sticky top-0 z-10 flex items-center justify-between px-4 md:px-8 py-5 border-b border-ngsat-border bg-ngsat-bg">
           <div className="flex items-center gap-3">
             <button
               onClick={() => setMobileSidebarOpen(v => !v)}
@@ -243,7 +243,7 @@ export default function App() {
         )}
 
         {/* Content */}
-        <main className="p-4 md:p-8">
+        <main className="flex-1 overflow-auto p-4 md:p-8">
           {!connected && (
             <div className="ngsat-card p-8 text-center">
               <p className="text-ngsat-red text-lg font-medium">거래 시스템에 연결되지 않았습니다</p>
