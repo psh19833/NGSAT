@@ -95,11 +95,25 @@ class MLInference:
         buy_threshold: float = BUY_PROBABILITY_THRESHOLD,
         sell_threshold: float = SELL_PROBABILITY_THRESHOLD,
         minute_model: PriceRiseModel | None = None,
+        strategy_config=None,
     ):
         self._model = model
         self._minute_model = minute_model  # 단타 모드용 분봉 모델 (옵션)
         self._buy_threshold = buy_threshold
         self._sell_threshold = sell_threshold
+        self._strategy_config = strategy_config  # 동적 config 참조 (DB 변경 즉시 반영용)
+
+    def _get_buy_threshold(self) -> float:
+        """Get buy threshold — use strategy config if available (dynamic), else static."""
+        if self._strategy_config is not None:
+            return getattr(self._strategy_config, 'buy_threshold', self._buy_threshold)
+        return self._buy_threshold
+
+    def _get_sell_threshold(self) -> float:
+        """Get sell threshold — use strategy config if available (dynamic), else static."""
+        if self._strategy_config is not None:
+            return getattr(self._strategy_config, 'sell_threshold', self._sell_threshold)
+        return self._sell_threshold
 
     def predict_entry(
         self,
@@ -136,10 +150,10 @@ class MLInference:
                         f"chg1d={fv.features.get('price_change_1d',0):.2f}")
 
         # Determine action
-        if proba >= self._buy_threshold:
+        if proba >= self._get_buy_threshold():
             action = DecisionAction.BUY
             action_kr = "매수"
-        elif proba <= self._sell_threshold:
+        elif proba <= self._get_sell_threshold():
             action = DecisionAction.NONE
             action_kr = "관망"
         else:
@@ -158,8 +172,8 @@ class MLInference:
         evidence = {
             "rise_probability": proba,
             "screening_score": candidate.score,
-            "buy_threshold": self._buy_threshold,
-            "sell_threshold": self._sell_threshold,
+            "buy_threshold": self._get_buy_threshold(),
+            "sell_threshold": self._get_sell_threshold(),
             "patterns_detected": len(candidate.patterns),
             "rsi": fv.features.get("rsi_14", 0),
             "macd_histogram": fv.features.get("macd_histogram", 0),

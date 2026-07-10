@@ -118,7 +118,7 @@ class TradingOrchestrator:
         self._strategy = strategy_config or StrategyConfig()
         self._controller = TradingController()
         self._executor = OrderExecutor(broker, self._risk, self._controller)
-        self._inference = MLInference(model, buy_threshold, sell_threshold, minute_model=minute_model)
+        self._inference = MLInference(model, buy_threshold, sell_threshold, minute_model=minute_model, strategy_config=self._strategy)
         self._minute_builder = minute_builder  # MinuteBarBuilder (optional, for WS minute bars)
         self._trading_allowed = True  # 09:10 이후 true (main.py에서 제어)
         self._position_budget_pct = position_budget_pct
