@@ -95,14 +95,6 @@ class EntryPlanner:
         if not ctx.market_open:
             return result
 
-        # ── TR-16: 장중 KOSPI 등락률 보정 (B안) ──
-        try:
-            index_price = await broker.get_index_price()
-        except Exception:
-            index_price = None
-        if index_price is not None and len(index_prices) >= 2:
-            self._apply_intraday_correction(regime_result, index_price, index_prices)
-
         # ── Step 4A: Mode selection ──
         vol = estimate_volatility_from_prices(
             [p.close for p in index_prices],

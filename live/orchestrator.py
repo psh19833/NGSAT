@@ -330,6 +330,15 @@ class TradingOrchestrator:
                 result.regime = regime_result.regime
                 logger.info(f"레짐 평가: {regime_result.regime.value} ({regime_result.score:.1f}점)")
 
+            # ── TR-16: 장중 KOSPI 등락률 보정 (모드 결정 전에 적용) ──
+            if self._entry_planner:
+                try:
+                    index_price = await self._broker.get_index_price()
+                    if index_price is not None and len(index_prices) >= 2:
+                        self._entry_planner._apply_intraday_correction(regime_result, index_price, index_prices)
+                except Exception:
+                    pass
+
             # ── Mode selection (하이브리드 2단계) ──
             vol = estimate_volatility_from_prices(
                 [p.close for p in index_prices],
