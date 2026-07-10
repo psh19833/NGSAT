@@ -79,5 +79,17 @@ def load_model(path: str | Path | None = None) -> dict:
 
     data = joblib.load(load_path)
     # Drop legacy in-file integrity hash if present
-    data.pop("_integrity_hash", None)
+    if isinstance(data, dict):
+        data.pop("_integrity_hash", None)
+    # Support PriceRiseModel objects saved directly (e.g. by train_from_minute_data)
+    elif hasattr(data, '_model'):
+        data = {
+            "model": data._model,
+            "scaler": getattr(data, '_scaler', None),
+            "model_type": data.model_type,
+            "forward_days": data.forward_days,
+            "forward_threshold": data.forward_threshold,
+            "last_auc": getattr(data, '_last_auc', 0.0),
+            "data_source": getattr(data, 'data_source', 'kis'),
+        }
     return data
