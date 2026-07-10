@@ -116,6 +116,10 @@ class StrategyConfig:
     regime_weight_volume: float = 10.0
     regime_weight_adx: float = 5.0
 
+    # ── 장중 레짐 보정 (KOSPI 등락률) ──
+    regime_intraday_multiplier: float = 4.0   # 등락률 × multiplier = 보정점수
+    regime_intraday_cap: float = 20.0          # 보정점수 ±cap
+
     # ── 스크리너 ──
     screener_bull_min_score: float = 60.0
     screener_bull_max_candidates: int = 15
@@ -258,6 +262,8 @@ def load_config(env_file: str | None = None) -> Config:
     s.regime_weight_change_rate = float(os.getenv("NGSAT_REGIME_WEIGHT_CHANGE_RATE", "15.0"))
     s.regime_weight_volume = float(os.getenv("NGSAT_REGIME_WEIGHT_VOLUME", "10.0"))
     s.regime_weight_adx = float(os.getenv("NGSAT_REGIME_WEIGHT_ADX", "5.0"))
+    s.regime_intraday_multiplier = float(os.getenv("NGSAT_REGIME_INTRADAY_MULTIPLIER", "4.0"))
+    s.regime_intraday_cap = float(os.getenv("NGSAT_REGIME_INTRADAY_CAP", "20.0"))
     s.screener_bull_min_score = float(os.getenv("NGSAT_SCREENER_BULL_MIN_SCORE", "60.0"))
     s.screener_bull_max_candidates = int(os.getenv("NGSAT_SCREENER_BULL_MAX_CANDIDATES", "15"))
     s.screener_neutral_min_score = float(os.getenv("NGSAT_SCREENER_NEUTRAL_MIN_SCORE", "35.0"))
