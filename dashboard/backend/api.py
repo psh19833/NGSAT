@@ -395,13 +395,14 @@ def create_app(orchestrator=None, config=None) -> FastAPI:
 
         try:
             repo = orch._trade_repo
-            daily = repo.get_daily_pnl()
+            daily, equity_curve = repo.get_daily_pnl()
             total_pnl = sum(d["net_pnl"] for d in daily)
             total_realized = sum(d["realized_pnl"] for d in daily)
             total_fees = sum(d["fee_estimate"] for d in daily)
             return {
                 "connected": True,
                 "daily": daily,
+                "equity_curve": equity_curve,
                 "summary": {
                     "total_pnl": round(total_pnl, 0),
                     "total_realized": round(total_realized, 0),

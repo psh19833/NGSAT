@@ -1,4 +1,5 @@
 import { formatNumber, formatWon, pnlColor } from '../utils.js'
+import EquityChart from './EquityChart.jsx'
 
 function TradeRow({ trade }) {
   const isBuy = trade.side === 'buy'
@@ -31,6 +32,7 @@ export default function PnLCard({ data }) {
 
   const summary = data.summary || {}
   const daily = data.daily || []
+  const equityCurve = data.equity_curve || []
 
   return (
     <div className="space-y-6">
@@ -78,6 +80,18 @@ export default function PnLCard({ data }) {
           </div>
         </div>
       </div>
+
+      {/* Equity Curve */}
+      {equityCurve.length >= 2 && (
+        <div className="ngsat-card p-6">
+          <h3 className="text-sm text-ngsat-muted mb-4">누적 손익 추이</h3>
+          <EquityChart data={equityCurve} height={200} type="line" />
+          <div className="mt-4">
+            <h3 className="text-sm text-ngsat-muted mb-3">일별 손익</h3>
+            <EquityChart data={equityCurve} height={120} type="bar" />
+          </div>
+        </div>
+      )}
 
       {/* Daily Detail */}
       <div className="space-y-4">

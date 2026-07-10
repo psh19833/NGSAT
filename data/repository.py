@@ -97,11 +97,13 @@ class TradeRepository:
         return round(wins / len(sells) * 100, 1)
 
     def get_daily_pnl(self) -> list[dict]:
-        """Calculate realized P&L grouped by date (FIFO matching).
+        """Calculate realized P&L grouped by date with cross-date FIFO matching.
+
+        Maintains a running inventory of unmatched buys across dates,
+        so a buy on day 1 matched with a sell on day 5 is correctly attributed.
 
         Returns:
-            List of dicts with date, trade_count, realized_pnl, fee_estimate,
-            net_pnl, win_rate, and individual trades.
+            List of dicts with date-level summary + equity curve data.
         """
         from collections import defaultdict
 
@@ -109,32 +111,36 @@ class TradeRepository:
         if not all_trades:
             return []
 
-        # Group trades by date
+        # Sort ALL trades chronologically FIRST
+        all_trades.sort(key=lambda x: x.created_at or "")
+
+        # Group by date but keep order
         by_date: dict[str, list] = defaultdict(list)
         for t in all_trades:
             ts = t.created_at or getattr(t, 'date', None)
             d = ts.strftime("%Y-%m-%d")[:10] if hasattr(ts, 'strftime') else str(ts)[:10]
             by_date[d].append(t)
 
+        # Cross-date FIFO inventory: code → [{qty, price}, ...]
+        inventory: dict[str, list[dict]] = defaultdict(list)
+
         result = []
+        cumulative_pnl = 0.0
+        equity_curve: list[dict] = []
+
         for date in sorted(by_date.keys()):
-            trades = sorted(by_date[date], key=lambda x: x.created_at or "")
-            # Match buys and sells by code (FIFO within same date)
-            buys: dict[str, list[dict]] = defaultdict(list)
+            trades = by_date[date]  # already chronological from all_trades
             total_pnl = 0
             total_sell_amount = 0
-            sells_count = 0
 
             for t in trades:
                 if t.side == "buy":
-                    buys[t.code].append({"qty": t.quantity, "price": t.price})
+                    inventory[t.code].append({"qty": t.quantity, "price": t.price})
                 elif t.side == "sell":
                     sell_qty = t.quantity
                     sell_price = t.price
                     total_sell_amount += t.amount
-                    sells_count += 1
-                    # Match against buys (FIFO)
-                    buy_list = buys.get(t.code, [])
+                    buy_list = inventory.get(t.code, [])
                     remaining = sell_qty
                     while remaining > 0 and buy_list:
                         b = buy_list[0]
@@ -146,12 +152,15 @@ class TradeRepository:
                         if b["qty"] <= 0:
                             buy_list.pop(0)
 
-            fee_est = round(total_sell_amount * -0.00195, 0)  # 0.18% tax + 0.015% fee
+            fee_est = round(total_sell_amount * -0.00195, 0)
             net_pnl = round(total_pnl + fee_est, 0)
+            cumulative_pnl += net_pnl
 
             sells = [t for t in trades if t.side == "sell"]
             wins = sum(1 for t in sells if t.action not in ("stop_loss",))
             win_rate = round(wins / len(sells) * 100, 1) if sells else 0.0
+
+            equity_curve.append({"date": date, "cumulative_pnl": round(cumulative_pnl, 0), "daily_pnl": round(net_pnl, 0)})
 
             result.append({
                 "date": date,
@@ -164,11 +173,12 @@ class TradeRepository:
                     {"code": t.code, "name": t.name, "side": t.side,
                      "qty": t.quantity, "price": t.price, "amount": t.amount,
                      "action": t.action}
-                    for t in sorted(trades, key=lambda x: x.created_at or "")
+                    for t in trades
                 ],
             })
 
-        return result
+        # Append equity curve as metadata
+        return result, equity_curve
 
     def get_trades_by_code(self, code: str, limit: int = 50) -> list[TradeRecord]:
         """Get recent trades for a specific stock code."""
