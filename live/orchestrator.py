@@ -305,7 +305,8 @@ class TradingOrchestrator:
         if not market_open:
             result.regime_skipped = True
             self._regime_skipped = True
-            logger.info("장 운영 시간 아님 — 레짐/진입 생략, 청산만 실행")
+            logger.info("장 운영 시간 아님 — 레짐/진입/청산 생략")
+            # 청산도 장중에만 실행 (09:00~15:30)
         else:
             self._regime_skipped = False
 
@@ -387,12 +388,15 @@ class TradingOrchestrator:
             result.errors.extend(entry_result.get("errors", []))
             result.preset_change = entry_result.get("preset_change")
 
-        # ── Step 7: Exit pipeline (ExitManager 위임) — 장중이든 아니든 실행 ──
-        exit_result = await self._exit_manager.check_exits(
-            ctx=ctx,
-            broker=self._broker,
-            stock_universe=stock_universe,
-        )
+        # ── Step 7: Exit pipeline (ExitManager 위임) — 장중에만 실행 ──
+        if market_open:
+            exit_result = await self._exit_manager.check_exits(
+                ctx=ctx,
+                broker=self._broker,
+                stock_universe=stock_universe,
+            )
+        else:
+            exit_result = {}
         result.sells_executed = exit_result.get("sells_executed", 0)
         result.errors.extend(exit_result.get("errors", []))
 
