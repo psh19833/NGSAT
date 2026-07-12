@@ -100,6 +100,19 @@ class ExitManager:
         exit_ref = await self._refine_exit(broker, position.code, position.profit_loss_pct, ctx)
         sell_price = None if exit_ref.urgency == ExitUrgency.IMMEDIATE else exit_ref.limit_price
 
+        # Refresh current price to avoid stale data (pre-market / after-hours)
+        try:
+            fresh_price = await broker.get_price(position.code)
+            if fresh_price and fresh_price.close > 0:
+                current_price = fresh_price.close
+                current_profit_pct = (current_price - position.buy_price) / position.buy_price * 100
+                if current_profit_pct > position.profit_loss_pct + 0.5:
+                    logger.info(f"현재가 반영 수익률 {current_profit_pct:.1f}% (기록 {position.profit_loss_pct:.1f}%) — 가격 회복, 청산 재검토")
+                    position.current_price = current_price
+                    position.profit_loss_pct = current_profit_pct
+        except Exception:
+            pass
+
         # 0) 트레일링 스탑
         result = await self._check_trailing_stop(ctx, position, prices, sell_price, exit_ref)
         if result:
