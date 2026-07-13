@@ -110,6 +110,10 @@ class ExitManager:
                     logger.info(f"현재가 반영 수익률 {current_profit_pct:.1f}% (기록 {position.profit_loss_pct:.1f}%) — 가격 회복, 청산 재검토")
                     position.current_price = current_price
                     position.profit_loss_pct = current_profit_pct
+                # P-81: stale limit price 보정 — fresh_price가 sell_price보다 높으면 갱신
+                if sell_price is not None and current_price > sell_price:
+                    logger.info(f"sell_price 갱신: {sell_price:,.0f}→{current_price:,.0f}원 (fresh_price={current_price:,.0f})")
+                    sell_price = current_price
         except Exception:
             pass
 

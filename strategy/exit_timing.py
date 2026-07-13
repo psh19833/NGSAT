@@ -97,6 +97,16 @@ def refine_exit(
     closes = np.array([p.close for p in minute_prices], dtype=float)
     current_price = float(closes[-1])
 
+    # P-81: volume=0 bar(전일종가/장전데이터)를 현재가로 사용하지 않음
+    if minute_prices[-1].volume == 0:
+        return ExitDecision(
+            should_exit=False,
+            urgency=ExitUrgency.NONE,
+            limit_price=None,
+            reason=f"마지막 분봉 거래량 0 (volume={minute_prices[-1].volume}) — limit_price 신뢰 불가, 시장가 fallback",
+            evidence={"bars": float(n), "volume": 0.0},
+        )
+
     lookback = min(plunge_lookback, n - 1)
     past = float(closes[-1 - lookback]) if lookback >= 1 else current_price
     change_pct = ((current_price - past) / past * 100.0) if past > 0 else 0.0
