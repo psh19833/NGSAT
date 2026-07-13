@@ -305,14 +305,15 @@ class OrderExecutor:
                 fill_price = adapted_price
             amount = fill_price * quantity
 
-            # P-53: 실제 체결가 조회 (시장가 주문 괴리 보정)
+            # P-53 + P-81: 체결가 조회 — 시장가 주문(adapted_price=None)만 조회
+            # 지정가 주문(adapted_price 있음)은 limit가 곧 fill_price이므로 생략
             actual_fill = 0.0
-            if order_id:
+            if order_id and adapted_price is None:
                 try:
-                    await asyncio.sleep(0.3)
+                    await asyncio.sleep(0.2)
                     actual_fill = await self._broker.get_fill_price(order_id)
                 except Exception:
-                    pass
+                    logger.debug(f"체결가 조회 실패: {code} {order_id}")
 
             result = ExecutionResult(
                 success=True,
@@ -401,14 +402,15 @@ class OrderExecutor:
                 fill_price = adapted_price
             amount = fill_price * quantity
 
-            # P-53: 실제 체결가 조회 (시장가 주문 괴리 보정)
+            # P-53 + P-81: 체결가 조회 — 시장가 주문(adapted_price=None)만 조회
+            # 지정가 주문(adapted_price 있음)은 limit가 곧 fill_price이므로 생략
             actual_fill = 0.0
-            if order_id:
+            if order_id and adapted_price is None:
                 try:
-                    await asyncio.sleep(0.3)
+                    await asyncio.sleep(0.2)
                     actual_fill = await self._broker.get_fill_price(order_id)
                 except Exception:
-                    pass
+                    logger.debug(f"체결가 조회 실패: {code} {order_id}")
 
             result = ExecutionResult(
                 success=True,
