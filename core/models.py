@@ -14,6 +14,7 @@ from sqlalchemy import (
     Enum as SAEnum,
     Float,
     ForeignKey,
+    func,
     Integer,
     String,
     Text,
@@ -52,7 +53,7 @@ class TradeRecord(Base):
 
     # Metadata
     mode: Mapped[str] = mapped_column(String(10))                  # live / backtest
-    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.now)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=func.now)
 
     # Relations
     position_id: Mapped[Optional[int]] = mapped_column(
@@ -110,7 +111,7 @@ class DailyReport(Base):
     sell_count: Mapped[int] = mapped_column(Integer, default=0)
 
     summary: Mapped[Optional[dict]] = mapped_column(JSON, nullable=True)  # 상세 요약
-    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.now)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=func.now)
 
 
 class MarketDataCache(Base):
@@ -127,7 +128,7 @@ class MarketDataCache(Base):
     volume: Mapped[int] = mapped_column(Integer)
     change_pct: Mapped[float] = mapped_column(Float, default=0.0)
 
-    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.now)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=func.now)
 
 
 class MinuteDataCache(Base):
@@ -163,7 +164,7 @@ class SystemEvent(Base):
     event_type: Mapped[str] = mapped_column(String(30), index=True)  # start/stop/error/halt/etc
     message: Mapped[str] = mapped_column(Text)
     details: Mapped[Optional[dict]] = mapped_column(JSON, nullable=True)
-    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.now)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=func.now)
 
 
 class SystemConfig(Base):

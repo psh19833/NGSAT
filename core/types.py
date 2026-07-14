@@ -149,6 +149,8 @@ class Position:
     partial_tp1_executed: bool = False                 # 1차 익절 완료 여부
     partial_tp2_executed: bool = False                 # 2차 익절 완료 여부
     original_quantity: Optional[int] = None            # 최초 매수 수량 (잔량 계산용)
+    # ── 핑퐁 방지 (P-82) ──
+    entry_time: float = 0.0                            # time.time() — 최소 보유 시간(min_hold) 계산용
 
 
 @dataclass

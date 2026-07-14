@@ -96,7 +96,7 @@ class TradeRepository:
         wins = sum(1 for t in sells if t.action not in ("stop_loss",))
         return round(wins / len(sells) * 100, 1)
 
-    def get_daily_pnl(self) -> list[dict]:
+    def get_daily_pnl(self) -> tuple[list[dict], list[dict]]:
         """Calculate realized P&L grouped by date with cross-date FIFO matching.
 
         Maintains a running inventory of unmatched buys across dates,

@@ -121,12 +121,17 @@ class StrategyConfig:
     regime_intraday_cap: float = 30.0          # 보정점수 ±cap
 
     # ── 스크리너 ──
-    screener_bull_min_score: float = 60.0
+    screener_bull_min_score: float = 55.0
     screener_bull_max_candidates: int = 15
-    screener_neutral_min_score: float = 35.0
+    screener_neutral_min_score: float = 45.0
     screener_neutral_max_candidates: int = 10
     screener_bear_min_score: float = 50.0
     screener_bear_max_candidates: int = 8
+
+    # ── 다중 TF 필터 (P-83) ──
+    mtf_bear_threshold: float = 0.50      # bear: 2TF 중 1개 일치
+    mtf_neutral_threshold: float = 0.67   # neutral: 3TF 중 2개 일치
+    mtf_bull_threshold: float = 0.67      # bull: 3TF 중 2개 일치
 
     # ── ML 학습 ──
     ml_model_type: str = "gradient_boosting"  # logistic/random_forest/gradient_boosting/xgboost/lightgbm
@@ -136,6 +141,8 @@ class StrategyConfig:
     ml_auto_select_model: bool = False        # True: 5개 모델 전부 학습 후 최고 AUC로 자동 교체
     ml_auto_retrain: bool = False          # True: 매일 장 마감 후 자동 재학습
     ml_minute_auto_retrain: bool = False   # True: 장 마감 후 분봉ML(단타)도 자동 재학습
+    ml_auc_drift_threshold: float = 0.05   # AUC가 최근 3회 평균 대비 이 값 이상 하락 시 drift 경고
+    ml_auc_drift_force_retrain: bool = False  # True: drift 감지 시 즉시 재학습 트리거
     ml_swing_forward_days: int = 3        # 스윙: N일 뒤 +2% 예측
     ml_forward_threshold: float = 0.02    # ML 일봉 양성 판정 임계 수익률 (2%)
     ml_short_forward_minutes: int = 60    # 단타: N분 뒤 +1.0% 예측 (분봉 ML threshold=0.01)
@@ -144,6 +151,10 @@ class StrategyConfig:
     # ── 모드 전환 ──
     mode_high_volatility_atr_pct: float = 1.5   # ATR ≥ 1.5% → 고변동성(단타)
     mode_low_volatility_atr_pct: float = 0.5     # ATR ≤ 0.5% → 저변동성(스윙)
+
+    # ── MDD 복구 모드 (P-XX) ──
+    mode_mdd_recovery_threshold: float = -10.0   # 이 값 이하로 MDD 진입 시 복구모드 활성화
+    mode_mdd_recovery_position_cut: float = 0.5   # 복구모드 시 포지션 크기 감소 비율
 
     # ── 모드별 리스크 ──
     mode_swing_stop_loss_pct: float = 3.0
@@ -264,12 +275,16 @@ def load_config(env_file: str | None = None) -> Config:
     s.regime_weight_adx = float(os.getenv("NGSAT_REGIME_WEIGHT_ADX", "5.0"))
     s.regime_intraday_multiplier = float(os.getenv("NGSAT_REGIME_INTRADAY_MULTIPLIER", "6.0"))
     s.regime_intraday_cap = float(os.getenv("NGSAT_REGIME_INTRADAY_CAP", "30.0"))
-    s.screener_bull_min_score = float(os.getenv("NGSAT_SCREENER_BULL_MIN_SCORE", "60.0"))
+    s.screener_bull_min_score = float(os.getenv("NGSAT_SCREENER_BULL_MIN_SCORE", "55.0"))
     s.screener_bull_max_candidates = int(os.getenv("NGSAT_SCREENER_BULL_MAX_CANDIDATES", "15"))
-    s.screener_neutral_min_score = float(os.getenv("NGSAT_SCREENER_NEUTRAL_MIN_SCORE", "35.0"))
+    s.screener_neutral_min_score = float(os.getenv("NGSAT_SCREENER_NEUTRAL_MIN_SCORE", "45.0"))
     s.screener_neutral_max_candidates = int(os.getenv("NGSAT_SCREENER_NEUTRAL_MAX_CANDIDATES", "10"))
     s.screener_bear_min_score = float(os.getenv("NGSAT_SCREENER_BEAR_MIN_SCORE", "50.0"))
     s.screener_bear_max_candidates = int(os.getenv("NGSAT_SCREENER_BEAR_MAX_CANDIDATES", "8"))
+    # 다중 TF 필터 임계값 (P-83)
+    s.mtf_bear_threshold = float(os.getenv("NGSAT_MTF_BEAR_THRESHOLD", "0.50"))
+    s.mtf_neutral_threshold = float(os.getenv("NGSAT_MTF_NEUTRAL_THRESHOLD", "0.67"))
+    s.mtf_bull_threshold = float(os.getenv("NGSAT_MTF_BULL_THRESHOLD", "0.67"))
     s.mode_high_volatility_atr_pct = float(os.getenv("NGSAT_MODE_HIGH_VOL_ATR_PCT", "1.5"))
     s.mode_low_volatility_atr_pct = float(os.getenv("NGSAT_MODE_LOW_VOL_ATR_PCT", "0.5"))
     s.ml_model_type = os.getenv("NGSAT_ML_MODEL_TYPE", "gradient_boosting")
@@ -279,6 +294,8 @@ def load_config(env_file: str | None = None) -> Config:
     s.ml_auto_retrain = os.getenv("NGSAT_ML_AUTO_RETRAIN", "false").lower() == "true"
     s.ml_minute_auto_retrain = os.getenv("NGSAT_ML_MINUTE_AUTO_RETRAIN", "false").lower() == "true"
     s.ml_auto_select_model = os.getenv("NGSAT_ML_AUTO_SELECT_MODEL", "false").lower() == "true"
+    s.ml_auc_drift_threshold = float(os.getenv("NGSAT_ML_AUC_DRIFT_THRESHOLD", "0.05"))
+    s.ml_auc_drift_force_retrain = os.getenv("NGSAT_ML_AUC_DRIFT_FORCE_RETRAIN", "false").lower() == "true"
     s.ml_swing_forward_days = int(os.getenv("NGSAT_ML_SWING_FORWARD_DAYS", "3"))
     s.ml_short_forward_minutes = int(os.getenv("NGSAT_ML_SHORT_FORWARD_MINUTES", "60"))
     s.mode_swing_stop_loss_pct = float(os.getenv("NGSAT_MODE_SWING_STOP_LOSS", "3.0"))
@@ -290,6 +307,9 @@ def load_config(env_file: str | None = None) -> Config:
     s.mode_hold_stop_loss_pct = float(os.getenv("NGSAT_MODE_HOLD_STOP_LOSS", "3.0"))
     s.mode_hold_daily_loss_pct = float(os.getenv("NGSAT_MODE_HOLD_DAILY_LOSS", "5.0"))
     s.mode_hold_position_size = float(os.getenv("NGSAT_MODE_HOLD_POSITION_SIZE", "0.0"))
+    # MDD 복구 모드
+    s.mode_mdd_recovery_threshold = float(os.getenv("NGSAT_MODE_MDD_RECOVERY_THRESHOLD", "-10.0"))
+    s.mode_mdd_recovery_position_cut = float(os.getenv("NGSAT_MODE_MDD_RECOVERY_POSITION_CUT", "0.5"))
 
     # Portfolio risk
     s.max_holdings = int(os.getenv("NGSAT_MAX_HOLDINGS", "10"))

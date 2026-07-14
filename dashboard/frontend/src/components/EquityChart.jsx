@@ -1,7 +1,13 @@
 import { LineChart, Line, Area, BarChart, Bar, ResponsiveContainer, YAxis, XAxis, Tooltip, CartesianGrid } from 'recharts'
 
 export default function EquityChart({ data, height = 80, type = 'line' }) {
-  if (!data || data.length < 2) return null
+  if (!data || data.length < 2) {
+    return (
+      <div className="flex items-center justify-center" style={{ height }}>
+        <span className="text-ngsat-muted text-sm">데이터가 부족합니다 (2거래일 이상 필요)</span>
+      </div>
+    )
+  }
 
   if (type === 'bar') {
     // Daily P&L bar chart

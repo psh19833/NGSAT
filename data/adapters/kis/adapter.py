@@ -241,6 +241,27 @@ class KisAdapter(BrokerAdapter):
         logger.info(f"일봉 조회: {code} {len(history)}개")
         return history
 
+    async def get_weekly_history(
+        self, code: str, start: datetime, end: datetime
+    ) -> list[PriceData]:
+        """Fetch historical weekly price data (FID_PERIOD_DIV_CODE=W)."""
+        params = {
+            "FID_COND_MRKT_DIV_CODE": "J",
+            "FID_INPUT_ISCD": code,
+            "FID_INPUT_DATE_1": start.strftime("%Y%m%d"),
+            "FID_INPUT_DATE_2": end.strftime("%Y%m%d"),
+            "FID_PERIOD_DIV_CODE": "W",
+            "FID_ORG_ADJ_PRC": "1",
+        }
+        resp = await self._http.get("inquire_daily_chart", params=params)
+        if not resp.success:
+            raise BrokerError(
+                f"KIS weekly chart query failed for {code}: {resp.msg_cd} {resp.msg1}"
+            )
+        history = parse_price_history(resp.raw, code)
+        logger.info(f"주봉 조회: {code} {len(history)}개")
+        return history
+
     async def get_volume_rank(self) -> list[dict]:
         """KIS 거래량순위 API — 실시간 거래량 상위 종목.
 

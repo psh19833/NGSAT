@@ -79,13 +79,14 @@ class CycleResult:
     reason: str = ""
     # Diagnosis data for dashboard (진단 현황)
     screened: list = field(default_factory=list)       # 스크리너 통과 종목
-    predictions: list = field(default_factory=list)    # ML 예측 결과
-    deferred_entries: list = field(default_factory=list) # 진입 보류
-    mode_decision: dict | None = None                  # 모드 선택 정보
-    regime_skipped: bool = False                       # 장 종료로 레짐 스킵
-    preset_change: str | None = None                   # 자동 프리셋 변경 (preset name)
     minute_screened: list = field(default_factory=list) # 분봉 스크리닝 결과
     combined_screened: list = field(default_factory=list) # 통합 점수 (일봉+분봉)
+    mtf_filtered: list = field(default_factory=list)    # P-83: 다중 TF 필터 통과 실패
+    predictions: list = field(default_factory=list)    # ML 예측 결과
+    deferred_entries: list = field(default_factory=list) # 보류된 진입
+    preset_change: str | None = None                   # 자동 프리셋 변경 (preset name)
+    mode_decision: dict | None = None                  # 모드 선택 정보
+    regime_skipped: bool = False                       # 장 종료로 레짐 스킵
 
 
 class TradingOrchestrator:
@@ -122,6 +123,8 @@ class TradingOrchestrator:
         self._minute_builder = minute_builder  # MinuteBarBuilder (optional, for WS minute bars)
         self._trading_allowed = True  # 09:10 이후 true (main.py에서 제어)
         self._position_budget_pct = position_budget_pct
+        # MDD tracking for recovery mode
+        self._peak_total_pnl_pct: float = 0.0
 
         # Database for trade records
         from sqlalchemy import create_engine
@@ -268,6 +271,12 @@ class TradingOrchestrator:
             result.reason = f"리스크 자동 중단: {risk_check.reason}"
             return result
 
+        # ── MDD 추적 (복구모드용) ──
+        current_pnl_pct = getattr(account, 'total_profit_loss_pct', 0.0)
+        if current_pnl_pct > self._peak_total_pnl_pct:
+            self._peak_total_pnl_pct = current_pnl_pct
+        current_drawdown_pct = current_pnl_pct - self._peak_total_pnl_pct
+
         # ── Build CycleContext ──
         market_open = is_market_hours()
         current_positions = await self._fetch_positions()
@@ -313,7 +322,6 @@ class TradingOrchestrator:
             # ── Step 3: Regime evaluation ──
             if self._cycle_count < 5 and self._last_regime is not None:
                 regime_result = self._last_regime
-                result.regime = regime_result.regime
                 logger.info(f"레짐 평가 보류 (사이클 #{self._cycle_count}/5): 직전 레짐 유지")
             else:
                 if len(index_prices) < 20:
@@ -328,7 +336,6 @@ class TradingOrchestrator:
                     prev_regime=self._last_regime.regime if self._last_regime else None,
                 )
                 self._last_regime = regime_result
-                result.regime = regime_result.regime
                 logger.info(f"레짐 평가: {regime_result.regime.value} ({regime_result.score:.1f}점)")
 
             # ── TR-16: 장중 KOSPI 등락률 보정 (모드 결정 전에 적용) ──
@@ -340,13 +347,17 @@ class TradingOrchestrator:
                 except Exception:
                     pass
 
+            # 장중보정 후 최종 레짐을 result에 반영
+            result.regime = regime_result.regime
+
             # ── Mode selection (하이브리드 2단계) ──
             vol = estimate_volatility_from_prices(
                 [p.close for p in index_prices],
                 [p.high for p in index_prices],
                 [p.low for p in index_prices],
             )
-            mode_decision = select_mode(regime_result, atr_pct=vol, config=self._strategy)
+            mode_decision = select_mode(regime_result, atr_pct=vol, config=self._strategy,
+                                       current_drawdown_pct=current_drawdown_pct)
             self._current_mode = mode_decision.mode.value
             ctx.mode = mode_decision.mode
             ctx.mode_str = mode_decision.mode.value
@@ -381,6 +392,7 @@ class TradingOrchestrator:
             result.screened = entry_result.get("screened", [])
             result.minute_screened = entry_result.get("minute_screened", [])
             result.combined_screened = entry_result.get("combined_screened", [])
+            result.mtf_filtered = entry_result.get("mtf_filtered", [])
             result.predictions = entry_result.get("predictions", [])
             result.deferred_entries = entry_result.get("deferred_entries", [])
             result.buys_executed = entry_result.get("buys_executed", 0)
@@ -437,6 +449,7 @@ class TradingOrchestrator:
             "deferred_entries": result.deferred_entries,
             "minute_screened": result.minute_screened,
             "combined_screened": result.combined_screened,
+            "mtf_filtered": result.mtf_filtered,
             "summary": result.reason,
             "minute_ml_status": (
                 "정상(분봉ML)" if self._inference.has_minute_model

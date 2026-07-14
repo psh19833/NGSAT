@@ -29,6 +29,7 @@ from live.risk import RiskManager
 from live.trade_recorder import TradeRecorder
 from ml.inference import MLInference
 from strategy.entry_timing import EntryDecision, EntryTiming, refine_entry
+from strategy.indicators import sma
 from strategy.mode_selector import estimate_volatility_from_prices
 from strategy.screener import screen_stocks
 
@@ -84,6 +85,7 @@ class EntryPlanner:
             "candidates_found": 0,
             "screened": [],
             "minute_screened": [],
+            "mtf_filtered": [],  # P-83: 다중 TF 추세 필터 통과 실패 목록
             "predictions": [],
             "deferred_entries": [],
             "buys_executed": 0,
@@ -144,11 +146,9 @@ class EntryPlanner:
         correction = intraday_change_pct * multiplier
         correction = max(-cap, min(cap, correction))
         if abs(correction) >= 0.5:
-            from core.config import load_config
             from core.types import MarketRegime
-            _cfg = load_config()
-            bull_t = _cfg.strategy.regime_bull_threshold
-            bear_t = _cfg.strategy.regime_bear_threshold
+            bull_t = getattr(self._strategy, 'regime_bull_threshold', 65)
+            bear_t = getattr(self._strategy, 'regime_bear_threshold', 35)
             old_score = regime_result.score
             new_score = max(0.0, min(100.0, old_score + correction))
             if new_score <= bear_t:
@@ -276,6 +276,17 @@ class EntryPlanner:
             if prices is None or len(prices) < 60:
                 continue
 
+            # ── P-83: 다중 타임프레임 추세 필터 ──
+            # HOLD 모드에서는 MTF 필터 skip (ML 예측 결과는 기록, HOLD가 매수 차단)
+            if ctx.mode.value != "hold":
+                regime_str = regime_result.regime.value if hasattr(regime_result, 'regime') else "neutral"
+                mtf_result = await self._check_multitf_alignment(
+                    candidate.code, candidate.name, prices, broker, ctx, regime=regime_str,
+                )
+                if not mtf_result["aligned"]:
+                    result["mtf_filtered"].append(mtf_result)
+                    continue
+
             if ctx.is_short_term:
                 minute_prices = ctx.minute_cache.get(candidate.code) or await self._fetch_minute_prices(broker, candidate.code, ctx)
                 if minute_prices and len(minute_prices) >= 30:
@@ -343,7 +354,8 @@ class EntryPlanner:
             return
 
         ref_price = entry.limit_price or prices[-1].close
-        base_budget_pct = self._risk.position_size_pct
+        kelly_stats = self._trade_recorder.get_kelly_stats()
+        base_budget_pct = self._risk.position_size_pct(kelly_stats=kelly_stats)
 
         # ATR-based dynamic position sizing
         target_vol_pct = self._strategy.target_vol_pct
@@ -524,6 +536,97 @@ class EntryPlanner:
                 reason="분봉 조회 실패 — 정밀화 생략(시장가 진입)", evidence={},
             )
         return refine_entry(minute_prices)
+
+    async def _check_multitf_alignment(
+        self, code: str, name: str, daily_prices: list[PriceData],
+        broker, ctx: CycleContext, regime: str = "neutral",
+    ) -> dict:
+        """P-83: 다중 타임프레임 추세 방향성 일치도 검사.
+
+        주봉(장기) + 일봉(중기) + 분봉(단기) 방향이 모두 일치할 때만
+        aligned=True. 분봉 데이터가 없으면 주봉+일봉 2개로 판단.
+
+        레짐별 임계값은 self._strategy에서 동적으로 조회 (DB config 가능).
+
+        Returns:
+            dict: {aligned: bool, score: float, reason: str, code, name}
+        """
+        daily_closes = np.array([p.close for p in daily_prices], dtype=float)
+
+        # 1) 주봉 추세 (장기): MA5 > MA20 정렬
+        weekly_aligned = False
+        weekly_reason = ""
+        try:
+            from datetime import datetime, timedelta, timezone
+            end = datetime.now(timezone.utc)
+            start = end - timedelta(days=365)
+            weekly = await broker.get_weekly_history(code, start, end)
+            if weekly and len(weekly) >= 25:
+                w_closes = np.array([p.close for p in weekly], dtype=float)
+                w_ma5 = float(sma(w_closes, 5)[-1])
+                w_ma20 = float(sma(w_closes, 20)[-1])
+                w_last = float(w_closes[-1])
+                weekly_aligned = w_last > w_ma5 > w_ma20
+                weekly_reason = (
+                    f"주봉 MA5={w_ma5:.0f}/MA20={w_ma20:.0f} {'상승' if weekly_aligned else '하락'}"
+                )
+            else:
+                weekly_reason = f"주봉 데이터 부족({len(weekly) if weekly else 0}개)"
+        except Exception as e:
+            weekly_reason = f"주봉 조회 실패"
+            logger.debug(f"주봉 조회 실패({code}): {type(e).__name__}")
+
+        # 2) 일봉 추세 (중기): 최근 5일 > 20일 MA 정렬
+        if len(daily_closes) >= 20:
+            d_ma5 = float(sma(daily_closes, 5)[-1])
+            d_ma20 = float(sma(daily_closes, 20)[-1])
+            d_last = float(daily_closes[-1])
+            daily_aligned = d_last > d_ma5 > d_ma20
+            daily_reason = f"일봉 MA5={d_ma5:.0f}/MA20={d_ma20:.0f} {'상승' if daily_aligned else '하락'}"
+        else:
+            daily_aligned = False
+            daily_reason = "일봉 데이터 부족"
+
+        # 3) 분봉 추세 (단기): 최근 5분봉 상승 여부
+        minute_aligned = False
+        minute_reason = ""
+        minute_prices = ctx.minute_cache.get(code)
+        if minute_prices and len(minute_prices) >= 5:
+            m_prev = minute_prices[-5].close
+            m_last = minute_prices[-1].close
+            minute_aligned = m_last > m_prev
+            change_pct = (m_last - m_prev) / m_prev * 100 if m_prev > 0 else 0
+            minute_reason = f"분봉 5개 {change_pct:+.1f}% {'상승' if minute_aligned else '하락'}"
+        else:
+            minute_reason = "분봉 데이터 없음(생략)"
+
+        # 4) 통합 점수: 레짐별 임계값 (self._strategy → DB config 동적)
+        checks = [weekly_aligned, daily_aligned]
+        if minute_prices and len(minute_prices) >= 5:
+            checks.append(minute_aligned)
+        aligned_count = sum(checks)
+        total_checks = len(checks)
+        score = aligned_count / total_checks if total_checks > 0 else 0.0
+        threshold_map = {
+            "bear": getattr(self._strategy, 'mtf_bear_threshold', 0.50),
+            "neutral": getattr(self._strategy, 'mtf_neutral_threshold', 0.67),
+            "bull": getattr(self._strategy, 'mtf_bull_threshold', 0.67),
+        }
+        mtf_threshold = threshold_map.get(regime, 0.50)
+        aligned = score >= mtf_threshold
+
+        reasons = [r for r in [weekly_reason, daily_reason, minute_reason] if r]
+        reason = " | ".join(reasons) if reasons else "TF 데이터 없음"
+
+        return {
+            "code": code,
+            "name": name,
+            "aligned": aligned,
+            "score": round(score, 2),
+            "aligned_count": aligned_count,
+            "total_checks": total_checks,
+            "reason": reason,
+        }
 
     async def _fetch_minute_prices(self, broker, code: str, ctx: CycleContext) -> list[PriceData] | None:
         """Fetch minute data — cache-first, REST fallback."""

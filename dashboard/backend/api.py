@@ -73,6 +73,9 @@ CONFIG_FIELD_MAP: dict[str, str] = {
     "NGSAT_PARTIAL_TP2_PCT": "partial_tp2_pct",
     "NGSAT_PARTIAL_TP2_RATIO": "partial_tp2_ratio",
     "NGSAT_TARGET_VOL_PCT": "target_vol_pct",
+    "NGSAT_MTF_BEAR_THRESHOLD": "mtf_bear_threshold",
+    "NGSAT_MTF_NEUTRAL_THRESHOLD": "mtf_neutral_threshold",
+    "NGSAT_MTF_BULL_THRESHOLD": "mtf_bull_threshold",
 }
 
 
@@ -134,6 +137,9 @@ class StrategyUpdateRequest(BaseModel):
     partial_tp2_pct: float | None = Field(None, ge=1.0, le=50)
     partial_tp2_ratio: float | None = Field(None, ge=0.1, le=0.5)
     target_vol_pct: float | None = Field(None, ge=1.0, le=20.0)
+    mtf_bear_threshold: float | None = Field(None, ge=0.1, le=1.0)
+    mtf_neutral_threshold: float | None = Field(None, ge=0.1, le=1.0)
+    mtf_bull_threshold: float | None = Field(None, ge=0.1, le=1.0)
     reset: bool = False
 
 

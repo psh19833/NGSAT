@@ -13,6 +13,7 @@ Orchestrator creates one ExitManager and calls `check_exits()` each cycle.
 """
 from __future__ import annotations
 
+import time
 from typing import Any
 
 import numpy as np
@@ -55,6 +56,8 @@ class ExitManager:
         self._inference = inference
         self._risk = risk
         self._trade_recorder = trade_recorder
+        # P-82: 핑퐁 방지 — 포지션별 진입 시각 (code → time.time())
+        self._position_entry_times: dict[str, float] = {}   
 
     async def check_exits(
         self,
@@ -116,6 +119,26 @@ class ExitManager:
                     sell_price = current_price
         except Exception:
             pass
+
+        # ── 핑퐁 방지 (P-82): 최소 보유 시간(min_hold) ──
+        MIN_HOLD_MINUTES = 20
+        now = time.time()
+        # position.code로 entry_time 추적 (Position 객체는 매 사이클 새로 생성됨)
+        if position.code not in self._position_entry_times:
+            self._position_entry_times[position.code] = now
+        entry_ts = self._position_entry_times[position.code]
+        elapsed_min = (now - entry_ts) / 60
+        if elapsed_min < MIN_HOLD_MINUTES:
+            # stop_loss는 예외적으로 허용 (급락 방어)
+            loss_pct = abs(min(position.profit_loss_pct, 0))
+            base_stop = self._risk.effective_stop_loss_pct or position.stop_loss_pct
+            effective_stop = self._risk.regime_adjusted_stop_loss(base_stop)
+            if loss_pct < effective_stop:
+                logger.debug(
+                    f"핑퐁 방지: {position.name}({position.code}) "
+                    f"보유 {elapsed_min:.0f}분 < {MIN_HOLD_MINUTES}분 min_hold — 청산 보류"
+                )
+                return None
 
         # 0) 트레일링 스탑
         result = await self._check_trailing_stop(ctx, position, prices, sell_price, exit_ref)
@@ -268,14 +291,17 @@ class ExitManager:
             action=action,
             reason=reason,
         )
-        # DB 기록 via TradeRecorder
-        self._trade_recorder.record_sell(
-            exec_result, position, sell_price,
-            action=action,
-            reason=reason,
-            partial_sold_qty=None,
-        )
         if exec_result.success:
+            # DB 기록 via TradeRecorder (성공 시에만)
+            self._trade_recorder.record_sell(
+                exec_result, position, sell_price,
+                action=action,
+                reason=reason,
+                partial_sold_qty=None,
+            )
+            # P-82: 핑퐁 방지 — 포지션 청산 시 entry_time 정리
+            if position.code in self._position_entry_times:
+                del self._position_entry_times[position.code]
             return {"sold": True}
         return {"error": f"매도 실패 {position.code}: {exec_result.error}"}
 

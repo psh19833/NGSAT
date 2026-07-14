@@ -52,6 +52,7 @@ def select_mode(
     atr_pct: float | None = None,
     volatility_pct: float | None = None,
     config: _StrategyConfig | None = None,
+    current_drawdown_pct: float | None = None,
 ) -> ModeDecision:
     """시장 레짐 + 변동성 → 매매 모드 선택.
 
@@ -75,6 +76,20 @@ def select_mode(
         "low_volatility": 1.0 if vol <= cfg.mode_low_volatility_atr_pct else 0.0,
         "strong_trend": 1.0 if regime_score >= cfg.regime_bull_threshold - 5 else 0.0,
     }
+
+    # ── MDD 복구 모드 체크 (P-XX) ──
+    if current_drawdown_pct is not None and current_drawdown_pct <= cfg.mode_mdd_recovery_threshold:
+        return ModeDecision(
+            mode=StrategyMode.HOLD,
+            confidence=0.95,
+            reason=(
+                f"MDD 복구 모드: 현재 낙폭 {current_drawdown_pct:.1f}%, "
+                f"임계값 {cfg.mode_mdd_recovery_threshold:.0f}% 초과. "
+                f"신규 진입 전면 차단, 기존 포지션만 청산."
+            ),
+            forward_days=cfg.ml_swing_forward_days,
+            evidence={**evidence, "mdd_recovery": 1.0, "drawdown_pct": current_drawdown_pct},
+        )
 
     if regime.regime == MarketRegime.BULL:
         # 강세장 → 스윙 (추세를 따라간다)

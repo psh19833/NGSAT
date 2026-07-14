@@ -282,6 +282,7 @@ async def run_live(config, args):
         _refresh_counter = 1
         _consecutive_errors = 0
         _last_retrain_date = ""
+        _auc_history: list[float] = []  # 최근 3회 AUC (드리프트 감지용)
         _last_status_time = 0.0  # 마지막 정기 Status 발송 시간 (timestamp)
         session_tracker = MarketSessionTracker()
         # C-2: refresh 주기 상수 (tick_interval=10s 기준)
@@ -401,7 +402,7 @@ async def run_live(config, args):
 
         # ── Helper: 데이터 갱신 + 자동 재학습 ──
         async def _refresh_data_and_retrain() -> None:
-            nonlocal _refresh_counter, _last_retrain_date, universe, index_prices
+            nonlocal _refresh_counter, _last_retrain_date, _auc_history, universe, index_prices
             _refresh_counter += 1
             if _refresh_counter not in (REFRESH_FIRST_CYCLE, REFRESH_AFTER_RETRAIN) and _refresh_counter % REFRESH_INTERVAL != 0:
                 return
@@ -424,6 +425,18 @@ async def run_live(config, args):
                             logger.info(f"자동 재학습 완료: AUC={result.auc:.3f}")
                             if dashboard_app:
                                 dashboard_app.state.model = model
+                            # AUC 드리프트 감지
+                            _auc_history.append(result.auc)
+                            if len(_auc_history) > 3:
+                                _auc_history.pop(0)
+                            if len(_auc_history) >= 3 and config.strategy.ml_auc_drift_threshold > 0:
+                                avg_auc = sum(_auc_history) / len(_auc_history)
+                                latest_auc = _auc_history[-1]
+                                if avg_auc - latest_auc >= config.strategy.ml_auc_drift_threshold:
+                                    logger.warning(
+                                        f"AUC 드리프트 감지: 최근 {len(_auc_history)}회 평균 {avg_auc:.3f} 대비 "
+                                        f"{avg_auc - latest_auc:.3f} 하락 (임계: {config.strategy.ml_auc_drift_threshold:.3f})"
+                                    )
                     except Exception as e:
                         logger.exception(f"자동 재학습 실패: {e}")
 
@@ -452,7 +465,7 @@ async def run_live(config, args):
                                     forward_threshold=config.strategy.ml_minute_forward_threshold,
                                 )
                                 if minute_model and minute_model.is_trained:
-                                    model.update_minute_model(minute_model)
+                                    orchestrator._inference.update_minute_model(minute_model)
                                     from ml.training.persistence import save_model
                                     save_model(minute_model, "models/trained/minute_model.pkl")
                                     logger.info(f"분봉ML 재학습 완료: AUC={minute_result.auc:.3f}")

@@ -97,6 +97,77 @@ class TradeRecorder:
 
     # ── Sell trade recording ──
 
+    # ── Win rate stats for Kelly Criterion ──
+
+    def get_kelly_stats(self) -> dict:
+        """Calculate win rate and avg win/loss ratio for Kelly Criterion.
+
+        Queries last 100 trades from DB. Returns safe defaults if < 20 trades.
+        Win = sell trade with profit (sell_price > avg buy_price).
+        Loss = sell trade at loss (stop_loss or price decline).
+
+        Returns:
+            dict with: win_rate (0~1), avg_win_pct, avg_loss_pct, trade_count
+        """
+        try:
+            from data.repository import TradeRepository
+            from collections import defaultdict
+
+            with self._Session() as session:
+                trades = TradeRepository(session).get_recent_trades(limit=100)
+
+            # Group by code → track buy prices for each position
+            buys: dict[str, list[dict]] = defaultdict(list)
+            wins = 0
+            losses = 0
+            total_win_pct = 0.0
+            total_loss_pct = 0.0
+
+            for t in trades:
+                if t.side == "buy":
+                    buys[t.code].append({"qty": t.quantity, "price": t.price})
+                elif t.side == "sell":
+                    inventory = buys.get(t.code, [])
+                    if not inventory:
+                        continue
+                    # FIFO matching
+                    sell_qty = t.quantity
+                    total_cost = 0.0
+                    matched_qty = 0
+                    while sell_qty > 0 and inventory:
+                        b = inventory[0]
+                        use_qty = min(sell_qty, b["qty"])
+                        total_cost += use_qty * b["price"]
+                        matched_qty += use_qty
+                        b["qty"] -= use_qty
+                        if b["qty"] <= 0:
+                            inventory.pop(0)
+                        sell_qty -= use_qty
+                    if matched_qty > 0:
+                        avg_buy = total_cost / matched_qty
+                        profit_pct = (t.price - avg_buy) / avg_buy * 100
+                        if profit_pct > 0:
+                            wins += 1
+                            total_win_pct += profit_pct
+                        else:
+                            losses += 1
+                            total_loss_pct += abs(profit_pct)
+
+            total = wins + losses
+            if total < 20:
+                return {"win_rate": 0.5, "avg_win_pct": 3.0, "avg_loss_pct": 2.0,
+                        "trade_count": total, "use_fallback": True}
+
+            win_rate = wins / total
+            avg_win = total_win_pct / max(wins, 1)
+            avg_loss = total_loss_pct / max(losses, 1)
+            return {"win_rate": win_rate, "avg_win_pct": avg_win,
+                    "avg_loss_pct": avg_loss, "trade_count": total, "use_fallback": False}
+        except Exception as e:
+            logger.warning(f"Kelly 통계 계산 실패(폴백): {e}")
+            return {"win_rate": 0.5, "avg_win_pct": 3.0, "avg_loss_pct": 2.0,
+                    "trade_count": 0, "use_fallback": True}
+
     def record_sell(
         self,
         exec_result,

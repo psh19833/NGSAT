@@ -101,20 +101,20 @@ class RiskManager:
         self._last_regime_score = regime_score
         self._last_atr_pct = atr_pct
 
-    @property
-    def position_size_pct(self) -> float:
+    def position_size_pct(self, kelly_stats: dict | None = None) -> float:
         """현재 모드의 포지션 크기 비율.
 
         BEAR(hold) 모드에서는 position_sizer의 Kelly 기반 동적 배분 사용.
+        kelly_stats가 제공되면 Half-Kelly Criterion 적용 (TradeRecorder에서 조회).
         """
-        if self._mode == "hold":
-            from live.position_sizer import calc_position_size
-            return calc_position_size(
-                regime=MarketRegime.BEAR,
-                regime_score=self._last_regime_score,
-                atr_pct=self._last_atr_pct,
-            )
-        return self._mode_position_size_map().get(self._mode, 0.10)
+        from live.position_sizer import calc_position_size
+        regime = MarketRegime.BEAR if self._mode == "hold" else MarketRegime.NEUTRAL
+        return calc_position_size(
+            regime=regime,
+            regime_score=self._last_regime_score,
+            atr_pct=self._last_atr_pct,
+            kelly_stats=kelly_stats,
+        )
 
     @property
     def effective_stop_loss_pct(self) -> float:
