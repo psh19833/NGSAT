@@ -30,17 +30,17 @@ _REGIME_WEIGHTS: dict[str, dict[str, float]] = {
     "bull": {
         "rsi": 10, "mfi": 10, "adx_di": 20, "obv": 15,
         "ma": 15, "volume": 10, "pattern": 10, "candle": 5,
-        "rs": 5,
+        "rs": 5, "investor": 5,
     },
     "neutral": {
         "rsi": 15, "mfi": 10, "adx_di": 10, "obv": 10,
         "ma": 10, "volume": 10, "pattern": 15, "candle": 5,
-        "stochastic_k": 10, "rs": 5,
+        "stochastic_k": 10, "rs": 5, "investor": 8,
     },
     "bear": {
         "rsi": 15, "mfi": 10, "adx_di": 10, "obv": 5,
         "ma": 5, "volume": 10, "pattern": 10, "candle": 5,
-        "rs": 20,
+        "rs": 20, "investor": 10,
     },
 }
 
@@ -196,6 +196,26 @@ def score_candlestick(bullish: bool, bearish: bool) -> float:
     elif bearish:
         return 30.0
     return 50.0
+
+
+def score_investor_flow(investor_data: dict | None) -> float:
+    """외인/기관 순매수 데이터 기반 점수 (0~100).
+
+    Args:
+        investor_data: get_investor_data() 결과 dict.
+            foreign_net_buy_amt, institution_net_buy_amt
+
+    Returns:
+        0~100 점수. 데이터 없으면 50.0 (중립).
+    """
+    if not investor_data:
+        return 50.0
+    foreign_amt = investor_data.get("foreign_net_buy_amt", 0.0)
+    inst_amt = investor_data.get("institution_net_buy_amt", 0.0)
+    total = float(foreign_amt) + float(inst_amt)
+    # +1억 = 100점, 0 = 50점, -1억 = 0점
+    score = 50.0 + (total / 100_000_000) * 50.0
+    return max(0.0, min(100.0, score))
 
 
 # Pattern scoring weights (P-66 강화: 패턴별 + 레짐별 차등)

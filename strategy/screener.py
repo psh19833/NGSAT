@@ -55,6 +55,7 @@ from strategy.scorer import (
     score_relative_strength,
     score_candlestick,
     score_patterns,
+    score_investor_flow,
 )
 from strategy.regime import RegimeResult
 
@@ -362,6 +363,12 @@ def _evaluate_single_stock(
 
     # Pattern score (P-66: scorer.py 위임, 레짐별 차등 + 체감 효과)
     indicator_scores["pattern"] = score_patterns(patterns, regime)
+
+    # 수급 점수 (P-85: 외인/기관 순매수)
+    investor_data = thresholds.get("investor_data", {})
+    if isinstance(investor_data, dict):
+        inv_score = score_investor_flow(investor_data.get(stock.code))
+        indicator_scores["investor"] = inv_score
 
     total_score = compute_total_score(indicator_scores, regime)
 

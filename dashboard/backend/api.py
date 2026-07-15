@@ -76,6 +76,10 @@ CONFIG_FIELD_MAP: dict[str, str] = {
     "NGSAT_MTF_BEAR_THRESHOLD": "mtf_bear_threshold",
     "NGSAT_MTF_NEUTRAL_THRESHOLD": "mtf_neutral_threshold",
     "NGSAT_MTF_BULL_THRESHOLD": "mtf_bull_threshold",
+    "NGSAT_SURGE_DAY_MIN_CORRECTION": "surge_day_min_correction",
+    "NGSAT_SURGE_DAY_MTF_THRESHOLD": "surge_day_mtf_threshold",
+    "NGSAT_SURGE_DAY_BUY_THRESHOLD": "surge_day_buy_threshold",
+    "NGSAT_SURGE_DAY_POSITION_MULTIPLIER": "surge_day_position_multiplier",
 }
 
 
@@ -140,6 +144,10 @@ class StrategyUpdateRequest(BaseModel):
     mtf_bear_threshold: float | None = Field(None, ge=0.1, le=1.0)
     mtf_neutral_threshold: float | None = Field(None, ge=0.1, le=1.0)
     mtf_bull_threshold: float | None = Field(None, ge=0.1, le=1.0)
+    surge_day_min_correction: float | None = Field(None, ge=0.0, le=50.0)
+    surge_day_mtf_threshold: float | None = Field(None, ge=0.1, le=1.0)
+    surge_day_buy_threshold: float | None = Field(None, ge=0.1, le=1.0)
+    surge_day_position_multiplier: float | None = Field(None, ge=0.5, le=3.0)
     reset: bool = False
 
 

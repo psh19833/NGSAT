@@ -57,7 +57,7 @@ class ExitManager:
         self._risk = risk
         self._trade_recorder = trade_recorder
         # P-82: 핑퐁 방지 — 포지션별 진입 시각 (code → time.time())
-        self._position_entry_times: dict[str, float] = {}   
+        self._position_entry_times: dict[str, float] = {}
 
     async def check_exits(
         self,

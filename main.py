@@ -489,9 +489,7 @@ async def run_live(config, args):
             else:
                 if not um.initialized:
                     await um.initialize(broker, data_provider)
-                # 09:10 이후 _trading_allowed 초기화 (09:00~09:10에 False 설정된 것 복원)
-                if orchestrator._trading_allowed is False or orchestrator._trading_allowed is None:
-                    orchestrator._trading_allowed = True
+                # _trading_allowed는 대시보드 start 버튼으로만 제어
             # 보유 포지션 업데이트
             try:
                 positions = await broker.get_positions()

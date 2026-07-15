@@ -133,6 +133,12 @@ class StrategyConfig:
     mtf_neutral_threshold: float = 0.67   # neutral: 3TF 중 2개 일치
     mtf_bull_threshold: float = 0.67      # bull: 3TF 중 2개 일치
 
+    # ── 급등일 모드 (P-86) ──
+    surge_day_min_correction: float = 15.0     # 장중보정 점수 ≥ 이 값 → 급등일 모드
+    surge_day_mtf_threshold: float = 0.34      # 급등일 MTF 임계값 (3TF 중 1개)
+    surge_day_buy_threshold: float = 0.50      # 급등일 ML 매수 임계값
+    surge_day_position_multiplier: float = 1.5 # 급등일 포지션 크기 배수
+
     # ── ML 학습 ──
     ml_model_type: str = "gradient_boosting"  # logistic/random_forest/gradient_boosting/xgboost/lightgbm
     ml_training_days: int = 250               # 학습 기간 (일), KIS API 조회 기간
@@ -285,6 +291,11 @@ def load_config(env_file: str | None = None) -> Config:
     s.mtf_bear_threshold = float(os.getenv("NGSAT_MTF_BEAR_THRESHOLD", "0.50"))
     s.mtf_neutral_threshold = float(os.getenv("NGSAT_MTF_NEUTRAL_THRESHOLD", "0.67"))
     s.mtf_bull_threshold = float(os.getenv("NGSAT_MTF_BULL_THRESHOLD", "0.67"))
+    # 급등일 모드 (P-86)
+    s.surge_day_min_correction = float(os.getenv("NGSAT_SURGE_DAY_MIN_CORRECTION", "15.0"))
+    s.surge_day_mtf_threshold = float(os.getenv("NGSAT_SURGE_DAY_MTF_THRESHOLD", "0.34"))
+    s.surge_day_buy_threshold = float(os.getenv("NGSAT_SURGE_DAY_BUY_THRESHOLD", "0.50"))
+    s.surge_day_position_multiplier = float(os.getenv("NGSAT_SURGE_DAY_POSITION_MULTIPLIER", "1.5"))
     s.mode_high_volatility_atr_pct = float(os.getenv("NGSAT_MODE_HIGH_VOL_ATR_PCT", "1.5"))
     s.mode_low_volatility_atr_pct = float(os.getenv("NGSAT_MODE_LOW_VOL_ATR_PCT", "0.5"))
     s.ml_model_type = os.getenv("NGSAT_ML_MODEL_TYPE", "gradient_boosting")

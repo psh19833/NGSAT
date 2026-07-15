@@ -11,6 +11,7 @@ Orchestrator creates one EntryPlanner and calls `plan_entries()` each cycle.
 from __future__ import annotations
 
 from dataclasses import replace as dc_replace
+import dataclasses
 from typing import Any
 
 import numpy as np
@@ -110,6 +111,18 @@ class EntryPlanner:
         if preset_change:
             result["preset_change"] = preset_change
 
+        # ── P-86: 급등일 모드 감지 ──
+        intraday_correction = abs(
+            getattr(regime_result, 'evidence', {}).get("intraday_correction", 0)
+        )
+        is_surge_day = intraday_correction >= self._strategy.surge_day_min_correction
+        if is_surge_day:
+            logger.info(
+                f"급등일 모드 활성: 장중보정 {intraday_correction:.0f}점, "
+                f"MTF={self._strategy.surge_day_mtf_threshold:.2f}, "
+                f"ML buy≥{self._strategy.surge_day_buy_threshold:.0%}"
+            )
+
         # ── Step 5: Screen stocks ──
         screen_result = screen_stocks(
             stock_universe, regime_result,
@@ -119,6 +132,31 @@ class EntryPlanner:
         if screen_result.candidates:
             filtered = [c for c in screen_result.candidates if c.product_type == "stock"]
             screen_result = dc_replace(screen_result, candidates=filtered)
+
+        # ── P-85: 외인/기관 수급 데이터 조회 (후보 종목만) ──
+        investor_scores: dict[str, float] = {}
+        for c in screen_result.candidates[:10]:
+            try:
+                from strategy.scorer import score_investor_flow
+                data = await broker.get_investor_data(c.code)
+                if data:
+                    investor_scores[c.code] = score_investor_flow(data)
+            except Exception:
+                pass
+        if investor_scores:
+            updated_candidates = []
+            from dataclasses import replace as dc_replace_cand
+            for c in screen_result.candidates:
+                inv_score = investor_scores.get(c.code)
+                if inv_score is not None:
+                    # 수급 점수 가중치 반영 (bear 10, total ~100 → 약 10% 반영)
+                    bonus = (inv_score - 50.0) * 0.1  # ±5점 범위
+                    new_score = max(0, min(100, c.score + bonus))
+                    c = dc_replace_cand(c, score=new_score,
+                        indicators={**c.indicators, "investor_score": round(inv_score, 1)})
+                updated_candidates.append(c)
+            screen_result = dc_replace(screen_result, candidates=updated_candidates)
+
         result["candidates_found"] = len(screen_result.candidates)
         result["screened"] = [
             {"code": c.code, "name": c.name, "score": round(c.score, 1),
@@ -130,7 +168,8 @@ class EntryPlanner:
         await self._minute_screen(ctx, screen_result, result, broker)
 
         # ── Step 6: ML predictions & buy execution ──
-        await self._evaluate_and_execute(ctx, screen_result, result, regime_result, stock_universe, broker)
+        await self._evaluate_and_execute(ctx, screen_result, result, regime_result, stock_universe, broker,
+                                         is_surge_day=is_surge_day)
 
         return result
 
@@ -248,6 +287,7 @@ class EntryPlanner:
         regime_result,
         stock_universe: list[tuple[Any, list[PriceData]]],
         broker,
+        is_surge_day: bool = False,
     ) -> None:
         """Step 6: 각 후보에 대해 ML 평가 → 리스크 체크 → 매수 실행."""
         for candidate in screen_result.candidates if screen_result else []:
@@ -280,8 +320,10 @@ class EntryPlanner:
             # HOLD 모드에서는 MTF 필터 skip (ML 예측 결과는 기록, HOLD가 매수 차단)
             if ctx.mode.value != "hold":
                 regime_str = regime_result.regime.value if hasattr(regime_result, 'regime') else "neutral"
+                mtf_threshold_override = self._strategy.surge_day_mtf_threshold if is_surge_day else None
                 mtf_result = await self._check_multitf_alignment(
                     candidate.code, candidate.name, prices, broker, ctx, regime=regime_str,
+                    threshold_override=mtf_threshold_override,
                 )
                 if not mtf_result["aligned"]:
                     result["mtf_filtered"].append(mtf_result)
@@ -312,6 +354,15 @@ class EntryPlanner:
                     "reason": pred.reason,
                     "evidence": pred.evidence,
                 }
+                # P-86: 급등일 모드 — buy threshold 완화
+                if is_surge_day and pred.rise_probability >= self._strategy.surge_day_buy_threshold:
+                    if pred.action != DecisionAction.BUY:
+                        pred_entry["action"] = DecisionAction.BUY.value
+                        pred_entry["reason"] += f" | 급등일 모드({pred.rise_probability:.0%}≥{self._strategy.surge_day_buy_threshold:.0%})"
+                        pred = dataclasses.replace(pred,
+                            action=DecisionAction.BUY,
+                            reason=pred_entry["reason"],
+                        )
 
             # HOLD 모드: 평가만 기록, 매수 차단
             if ctx.mode == StrategyMode.HOLD:
@@ -540,6 +591,7 @@ class EntryPlanner:
     async def _check_multitf_alignment(
         self, code: str, name: str, daily_prices: list[PriceData],
         broker, ctx: CycleContext, regime: str = "neutral",
+        threshold_override: float | None = None,
     ) -> dict:
         """P-83: 다중 타임프레임 추세 방향성 일치도 검사.
 
@@ -607,12 +659,15 @@ class EntryPlanner:
         aligned_count = sum(checks)
         total_checks = len(checks)
         score = aligned_count / total_checks if total_checks > 0 else 0.0
-        threshold_map = {
-            "bear": getattr(self._strategy, 'mtf_bear_threshold', 0.50),
-            "neutral": getattr(self._strategy, 'mtf_neutral_threshold', 0.67),
-            "bull": getattr(self._strategy, 'mtf_bull_threshold', 0.67),
-        }
-        mtf_threshold = threshold_map.get(regime, 0.50)
+        if threshold_override is not None:
+            mtf_threshold = threshold_override
+        else:
+            threshold_map = {
+                "bear": getattr(self._strategy, 'mtf_bear_threshold', 0.50),
+                "neutral": getattr(self._strategy, 'mtf_neutral_threshold', 0.67),
+                "bull": getattr(self._strategy, 'mtf_bull_threshold', 0.67),
+            }
+            mtf_threshold = threshold_map.get(regime, 0.50)
         aligned = score >= mtf_threshold
 
         reasons = [r for r in [weekly_reason, daily_reason, minute_reason] if r]

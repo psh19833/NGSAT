@@ -121,7 +121,7 @@ class TradingOrchestrator:
         self._executor = OrderExecutor(broker, self._risk, self._controller)
         self._inference = MLInference(model, buy_threshold, sell_threshold, minute_model=minute_model, strategy_config=self._strategy)
         self._minute_builder = minute_builder  # MinuteBarBuilder (optional, for WS minute bars)
-        self._trading_allowed = True  # 09:10 이후 true (main.py에서 제어)
+        self._trading_allowed = False  # 대시보드 매매시작 버튼으로만 활성화
         self._position_budget_pct = position_budget_pct
         # MDD tracking for recovery mode
         self._peak_total_pnl_pct: float = 0.0
@@ -456,6 +456,7 @@ class TradingOrchestrator:
                 else "미설정(일봉폴백)" if self._current_mode == "short_term"
                 else "비활성(스윙모드)"
             ),
+            "is_surge_day": getattr(result, 'is_surge_day', False),
         }
         return result
 
