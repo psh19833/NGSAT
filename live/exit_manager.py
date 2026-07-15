@@ -129,16 +129,13 @@ class ExitManager:
         entry_ts = self._position_entry_times[position.code]
         elapsed_min = (now - entry_ts) / 60
         if elapsed_min < MIN_HOLD_MINUTES:
-            # stop_loss는 예외적으로 허용 (급락 방어)
-            loss_pct = abs(min(position.profit_loss_pct, 0))
-            base_stop = self._risk.effective_stop_loss_pct or position.stop_loss_pct
-            effective_stop = self._risk.regime_adjusted_stop_loss(base_stop)
-            if loss_pct < effective_stop:
-                logger.debug(
-                    f"핑퐁 방지: {position.name}({position.code}) "
-                    f"보유 {elapsed_min:.0f}분 < {MIN_HOLD_MINUTES}분 min_hold — 청산 보류"
-                )
-                return None
+            # P-87: min_hold 내에는 stop_loss 포함 모든 청산 금지
+            # (regime_adjusted_stop_loss가 bear에서 0.5%까지 낮아져 min_hold 무력화 방지)
+            logger.debug(
+                f"핑퐁 방지: {position.name}({position.code}) "
+                f"보유 {elapsed_min:.0f}분 < {MIN_HOLD_MINUTES}분 min_hold — 청산 보류"
+            )
+            return None
 
         # 0) 트레일링 스탑
         result = await self._check_trailing_stop(ctx, position, prices, sell_price, exit_ref)
@@ -173,10 +170,10 @@ class ExitManager:
                 exit_ref,
             )
 
-        # 3) ML 청산 예측
+        # 3) ML 청산 예측 (핑퐁 방지: PnL ≥ 1% 이상일 때만 ML 청산 허용)
         if ctx.is_short_term:
             minute_prices = await self._fetch_minute_prices(broker, position.code, ctx)
-            if minute_prices and len(minute_prices) >= 30:
+            if minute_prices and len(minute_prices) >= 60:
                 exit_pred = self._inference.predict_minute_exit(
                     position.code, position.name, minute_prices, position.profit_loss_pct
                 )
@@ -190,11 +187,18 @@ class ExitManager:
             )
 
         if exit_pred and exit_pred.action == DecisionAction.SELL:
-            return await self._execute_exit(
-                ctx, position, sell_price, DecisionAction.SELL,
-                f"{exit_pred.reason} || 청산정밀화: {exit_ref.reason}",
-                exit_ref,
-            )
+            # P-87: 핑퐁 방지 — PnL이 ±1% 미만이면 ML 청산 보류
+            if abs(position.profit_loss_pct) < 1.0:
+                logger.debug(
+                    f"ML 청산 보류(핑퐁방지): {position.name}({position.code}) "
+                    f"PnL={position.profit_loss_pct:+.1f}% < 1%"
+                )
+            else:
+                return await self._execute_exit(
+                    ctx, position, sell_price, DecisionAction.SELL,
+                    f"{exit_pred.reason} || 청산정밀화: {exit_ref.reason}",
+                    exit_ref,
+                )
 
         return None
 

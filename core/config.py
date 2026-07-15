@@ -104,7 +104,7 @@ class StrategyConfig:
     """
     # ── 진입/청산 임계 ──
     buy_threshold: float = 0.65         # ML 예측 확률 ≥ 65% → 매수
-    sell_threshold: float = 0.35        # ML 예측 확률 ≤ 35% → 매도
+    sell_threshold: float = 0.20        # ML 예측 확률 ≤ 20% → 매도 (핑퐁 방지, 기존 0.35)
 
     # ── 레짐 판정 ──
     regime_bull_threshold: float = 65.0    # ≥ 65점 → 강세
@@ -270,7 +270,7 @@ def load_config(env_file: str | None = None) -> Config:
     # Strategy settings
     s = config.strategy
     s.buy_threshold = float(os.getenv("NGSAT_BUY_THRESHOLD", "0.65"))
-    s.sell_threshold = float(os.getenv("NGSAT_SELL_THRESHOLD", "0.35"))
+    s.sell_threshold = float(os.getenv("NGSAT_SELL_THRESHOLD", "0.20"))
     s.regime_bull_threshold = float(os.getenv("NGSAT_REGIME_BULL_THRESHOLD", "65.0"))
     s.regime_bear_threshold = float(os.getenv("NGSAT_REGIME_BEAR_THRESHOLD", "35.0"))
     s.regime_weight_ma = float(os.getenv("NGSAT_REGIME_WEIGHT_MA", "30.0"))

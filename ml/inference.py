@@ -72,7 +72,7 @@ class ExitPrediction:
 
 # ── Thresholds ──
 BUY_PROBABILITY_THRESHOLD = 0.65    # ≥ 65% → BUY
-SELL_PROBABILITY_THRESHOLD = 0.35   # ≤ 35% → SELL (price likely to fall)
+SELL_PROBABILITY_THRESHOLD = 0.20   # ≤ 20% → SELL (price likely to fall / 핑퐁 방지, 기존 0.35)
 # Between 35-65% → HOLD
 
 
