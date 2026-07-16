@@ -92,6 +92,9 @@ class RealDataProvider:
         self._ws: Any = None
         self._ws_task: Any = None
         self._minute_builder: MinuteBarBuilder = MinuteBarBuilder()
+        # P-88: 차등 갱신 (reserve 종목 30분 주기)
+        self._reserve_codes: set[str] = set()
+        self._reserve_refresh_counter: int = 0
 
     def update_date_range(
         self,
@@ -467,8 +470,15 @@ class RealDataProvider:
             else:
                 new_index = self._synthetic_index()
 
-        # Refresh each stock's latest bar
+        # Refresh each stock's latest bar (P-88: 차등 갱신)
+        reserve_skip = False
+        if self._reserve_codes:
+            self._reserve_refresh_counter += 1
+            reserve_skip = self._reserve_refresh_counter % 3 != 0  # 3번 중 2번 skip
         for i, (info, prices) in enumerate(self._universe_cache):
+            # P-88: reserve 종목은 30분마다만 갱신
+            if reserve_skip and info.code in self._reserve_codes:
+                continue
             try:
                 new_bars = await adapter.get_price_history(info.code, start, now)
                 if new_bars:

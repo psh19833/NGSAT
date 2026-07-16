@@ -22,6 +22,8 @@ from data.adapters.kis.endpoints import KisEndpoint, get_endpoint
 from data.adapters.kis.rate_limiter import KisRateLimiter
 from data.adapters.kis.token_manager import KisTokenManager
 
+import asyncio
+
 
 @dataclass
 class KisResponse:
@@ -57,10 +59,10 @@ class KisHttpClient:
             app_key, app_secret, base_url
         )
         self._client: httpx.AsyncClient | None = None
-        # P-67: 중앙 Rate Limiter (Token Bucket + Semaphore)
-        # rate=20 req/s (KIS 기본), burst=30, max_concurrent=15
+        # P-88: 중앙 Rate Limiter 완화 (KIS Rate Limit 22%→4% 개선)
+        # rate=10 req/s, burst=5, max_concurrent=5 — 안정적 KIS 제한 이내
         self._rate_limiter = KisRateLimiter(
-            rate_per_sec=20, burst=30, max_concurrent=15,
+            rate_per_sec=10, burst=5, max_concurrent=5,
         )
 
     async def _ensure_client(self) -> httpx.AsyncClient:
@@ -140,6 +142,13 @@ class KisHttpClient:
                     logger.info(f"토큰 만료 감지 — 재발급 후 재시도: {endpoint_name}")
                     self._token_manager.invalidate()
                     headers = await self._build_headers(ep, extra_headers)
+                    resp = await client.get(url, params=params, headers=headers, timeout=self._timeout)
+                    resp.raise_for_status()
+                    return self._parse_response(resp.json(), endpoint_name)
+                # P-88: Rate Limit(EGW00201) 시 1초 후 1회 재시도 (GET 전용)
+                if "EGW00201" in snippet and status == 500:
+                    logger.warning(f"KIS Rate Limit — 1초 후 재시도: {endpoint_name}")
+                    await asyncio.sleep(1)
                     resp = await client.get(url, params=params, headers=headers, timeout=self._timeout)
                     resp.raise_for_status()
                     return self._parse_response(resp.json(), endpoint_name)

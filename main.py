@@ -410,6 +410,10 @@ async def run_live(config, args):
             if dashboard_app:
                 dashboard_app.state.latest_universe = universe
                 dashboard_app.state.latest_index_prices = index_prices
+            # P-88: 차등 갱신용 reserve 코드 업데이트
+            if hasattr(orchestrator, '_universe_manager') and orchestrator._universe_manager:
+                um = orchestrator._universe_manager
+                data_provider._reserve_codes = set(um.get_reserve_codes())
             # Auto retrain
             if config.strategy.ml_auto_retrain and model:
                 today_kst = datetime.now(timezone.utc).strftime("%Y-%m-%d")

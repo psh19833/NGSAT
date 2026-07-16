@@ -169,7 +169,11 @@ class UniverseManager:
         )
         if isinstance(volume_rank, Exception) or not volume_rank:
             volume_rank = []
-        else:
+        if isinstance(volume_power, Exception) or not volume_power:
+            volume_power = []
+        if isinstance(fluctuation, Exception) or not fluctuation:
+            fluctuation = []
+        if volume_rank:
             # ranking 성공 → 캐시 갱신 (최대 100종목)
             merged = self._merge_rankings(volume_rank, volume_power, fluctuation)
             if merged:
@@ -263,6 +267,10 @@ class UniverseManager:
 
     def get_active_codes(self) -> list[str]:
         return list(self.active.keys())
+
+    def get_reserve_codes(self) -> list[str]:
+        """예비 리스트 종목코드 반환 (차등 갱신용)."""
+        return list(self.reserve.keys())
 
     def get_active_stocks(self) -> list[ScoredStock]:
         return list(self.active.values())
