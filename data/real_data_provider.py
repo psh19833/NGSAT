@@ -24,7 +24,7 @@ from zoneinfo import ZoneInfo
 
 from core.config import load_config
 from core.logger import logger
-from core.types import Market, PriceData, StockInfo
+from core.types import Market, PriceData, StockInfo, is_market_hours
 from data.minute_bar_builder import MinuteBarBuilder
 
 KST = ZoneInfo("Asia/Seoul")
@@ -475,9 +475,21 @@ class RealDataProvider:
         if self._reserve_codes:
             self._reserve_refresh_counter += 1
             reserve_skip = self._reserve_refresh_counter % 3 != 0  # 3번 중 2번 skip
+        today = now.date()
         for i, (info, prices) in enumerate(self._universe_cache):
             # P-88: reserve 종목은 30분마다만 갱신
             if reserve_skip and info.code in self._reserve_codes:
+                continue
+            # P-89: WS 실시간 갱신 중인 종목 REST 생략
+            if (self._ws is not None
+                and hasattr(self._ws, 'is_connected')
+                and self._ws.is_connected()
+                and is_market_hours()
+                and prices
+                and prices[-1].timestamp.date() == today
+                and info.code in (self._ws.subscribed_codes() or [])):
+                if (i + 1) % 10 == 0:
+                    logger.debug(f"  [{info.code}] WS 실시간 — REST 생략")
                 continue
             try:
                 new_bars = await adapter.get_price_history(info.code, start, now)
