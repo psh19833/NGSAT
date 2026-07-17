@@ -632,7 +632,7 @@ async def run_live(config, args):
                 break
             except Exception as e:
                 _consecutive_errors += 1
-                logger.error(
+                logger.exception(
                     f"매매 루프 오류 ({_consecutive_errors}/5): "
                     f"{type(e).__name__}: {e}"
                 )

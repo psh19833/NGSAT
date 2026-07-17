@@ -483,11 +483,11 @@ class RealDataProvider:
             # P-89: WS 실시간 갱신 중인 종목 REST 생략
             if (self._ws is not None
                 and hasattr(self._ws, 'is_connected')
-                and self._ws.is_connected()
+                and self._ws.is_connected
                 and is_market_hours()
                 and prices
                 and prices[-1].timestamp.date() == today
-                and info.code in (self._ws.subscribed_codes() or [])):
+                and info.code in (self._ws.subscribed_codes or [])):
                 if (i + 1) % 10 == 0:
                     logger.debug(f"  [{info.code}] WS 실시간 — REST 생략")
                 continue
